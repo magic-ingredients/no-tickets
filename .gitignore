@@ -6,3 +6,4 @@ reports/
 .turbo/
 .env
 .env.*
+package-lock.json

@@ -86,6 +86,18 @@ Each file uses YAML frontmatter + markdown. See [SPEC.md](SPEC.md) for the full 
 
 tiny-brain is optional — no-tickets works with any tool.
 
+## Contributing
+
+This project uses [pnpm](https://pnpm.io/) as its package manager. The correct version is enforced via [corepack](https://nodejs.org/api/corepack.html):
+
+```bash
+corepack enable
+pnpm install
+pnpm run build
+pnpm run test
+pnpm run lint
+```
+
 ## Documentation
 
 Full docs at [docs.no-tickets.com](https://docs.no-tickets.com)

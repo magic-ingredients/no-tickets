@@ -1,0 +1,14 @@
+{
+  "id": "pnpm-migration",
+  "title": "Migrate to pnpm and add GitHub Actions CI",
+  "type": "active",
+  "status": "not_started",
+  "prdId": "pnpm-migration",
+  "prdDirPath": "docs/prd/pnpm-migration",
+  "created": "2026-04-15T08:53:01.396Z",
+  "lastUpdated": "2026-04-15T08:53:09.915Z",
+  "features": [],
+  "gitUserName": "Andy Richardson",
+  "gitUserEmail": "rishson@gmail.com",
+  "author": "Andy Richardson"
+}

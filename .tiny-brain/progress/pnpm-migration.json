@@ -2,13 +2,96 @@
   "id": "pnpm-migration",
   "title": "Migrate to pnpm and add GitHub Actions CI",
   "type": "active",
-  "status": "not_started",
+  "status": "in_progress",
   "prdId": "pnpm-migration",
   "prdDirPath": "docs/prd/pnpm-migration",
   "created": "2026-04-15T08:53:01.396Z",
-  "lastUpdated": "2026-04-15T08:53:09.915Z",
-  "features": [],
+  "lastUpdated": "2026-04-15T08:56:54.837Z",
+  "features": [
+    {
+      "id": "pnpm-swap",
+      "number": 1,
+      "title": "Replace npm with pnpm",
+      "status": "in_progress",
+      "tasks": [
+        {
+          "id": "task-1-1",
+          "description": "Add pnpm lockfile and packageManager field",
+          "status": "completed",
+          "redStartedAt": "2026-04-15T08:54:04.913Z",
+          "greenStartedAt": "2026-04-15T08:54:04.913Z",
+          "testCommitSha": "skipped",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-15T08:55:56.101Z",
+              "completedAt": "2026-04-15T08:56:54.835Z",
+              "reviewSha": "42b413f",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-15T08:56:54.835Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-15T08:56:54.835Z"
+            }
+          },
+          "commitSha": "42b413f27b6e1e001e979d308c42625028d49f2f",
+          "greenCompletedAt": "2026-04-15T08:55:56.101Z",
+          "completedAt": "2026-04-15T08:56:54.837Z"
+        },
+        {
+          "id": "task-1-2",
+          "description": "Update README and documentation for pnpm",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 2,
+        "completed": 1,
+        "remaining": 1
+      }
+    },
+    {
+      "id": "github-actions-ci",
+      "number": 2,
+      "title": "Add GitHub Actions CI workflow",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-2-1",
+          "description": "Add CI workflow file",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 1,
+        "completed": 0,
+        "remaining": 1
+      }
+    }
+  ],
   "gitUserName": "Andy Richardson",
   "gitUserEmail": "rishson@gmail.com",
-  "author": "Andy Richardson"
+  "author": "Andy Richardson",
+  "currentState": {
+    "feature": 1,
+    "featureTitle": "Replace npm with pnpm",
+    "overallProgress": {
+      "completedFeatures": 0,
+      "totalFeatures": 2,
+      "completedTasks": 1,
+      "totalTasks": 3,
+      "percentComplete": 33
+    },
+    "workRemaining": {
+      "pendingFeatures": [
+        "Add GitHub Actions CI workflow"
+      ],
+      "currentFeatureTasks": 1,
+      "futureFeatureTasks": 1
+    },
+    "nextAction": {
+      "featureId": "pnpm-swap",
+      "taskId": "task-1-2",
+      "description": "Update README and documentation for pnpm"
+    },
+    "blockers": []
+  }
 }

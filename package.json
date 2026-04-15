@@ -1,0 +1,64 @@
+{
+  "name": "@magic-ingredients/no-tickets",
+  "version": "2.0.0",
+  "description": "CLI, MCP server, and SDK for no-tickets — ticketless project management for AI teams",
+  "type": "module",
+  "main": "dist/core/index.js",
+  "types": "dist/core/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./types": {
+      "types": "./dist/core/types.d.ts",
+      "import": "./dist/core/types.js"
+    },
+    "./schemas": {
+      "types": "./dist/core/schemas.d.ts",
+      "import": "./dist/core/schemas.js"
+    },
+    "./sdk": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    }
+  },
+  "bin": {
+    "no-tickets": "bin/no-tickets.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "test:mutate": "npx stryker run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "gray-matter": "^4.0.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.0",
+    "@stryker-mutator/vitest-runner": "^9.6.0",
+    "@types/node": "^25.5.2",
+    "@vitest/coverage-v8": "^4.1.2",
+    "eslint": "^9.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/magic-ingredients/no-tickets.git"
+  },
+  "keywords": [
+    "no-tickets",
+    "project-management",
+    "ai",
+    "mcp",
+    "cli",
+    "ticketless"
+  ]
+}

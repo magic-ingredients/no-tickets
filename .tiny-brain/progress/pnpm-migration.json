@@ -2,11 +2,11 @@
   "id": "pnpm-migration",
   "title": "Migrate to pnpm and add GitHub Actions CI",
   "type": "active",
-  "status": "in_progress",
+  "status": "completed",
   "prdId": "pnpm-migration",
   "prdDirPath": "docs/prd/pnpm-migration",
   "created": "2026-04-15T08:53:01.396Z",
-  "lastUpdated": "2026-04-15T09:00:03.170Z",
+  "lastUpdated": "2026-04-15T09:03:47.997Z",
   "features": [
     {
       "id": "pnpm-swap",
@@ -69,18 +69,36 @@
       "id": "github-actions-ci",
       "number": 2,
       "title": "Add GitHub Actions CI workflow",
-      "status": "not_started",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-2-1",
           "description": "Add CI workflow file",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-15T09:00:35.965Z",
+          "greenStartedAt": "2026-04-15T09:00:35.965Z",
+          "testCommitSha": "skipped",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-15T09:01:02.130Z",
+              "completedAt": "2026-04-15T09:01:57.134Z",
+              "reviewSha": "5e943fe",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-15T09:01:57.134Z",
+              "refactorCommitSha": "e98b0c9cd42df26564ac93f9fd1ef33aaed7671f",
+              "refactorCompletedAt": "2026-04-15T09:03:26.658Z",
+              "refactorCommittedAt": "2026-04-15T09:03:26.658Z"
+            }
+          },
+          "commitSha": "5e943fed0d32815a8bb6ed09b350d95f0bde6ccc",
+          "greenCompletedAt": "2026-04-15T09:01:02.130Z",
+          "completedAt": "2026-04-15T09:03:26.658Z"
         }
       ],
       "taskSummary": {
         "total": 1,
-        "completed": 0,
-        "remaining": 1
+        "completed": 1,
+        "remaining": 0
       }
     }
   ],
@@ -91,23 +109,16 @@
     "feature": 2,
     "featureTitle": "Add GitHub Actions CI workflow",
     "overallProgress": {
-      "completedFeatures": 1,
+      "completedFeatures": 2,
       "totalFeatures": 2,
-      "completedTasks": 2,
+      "completedTasks": 3,
       "totalTasks": 3,
-      "percentComplete": 67
+      "percentComplete": 100
     },
     "workRemaining": {
-      "pendingFeatures": [
-        "Add GitHub Actions CI workflow"
-      ],
-      "currentFeatureTasks": 1,
+      "pendingFeatures": [],
+      "currentFeatureTasks": 0,
       "futureFeatureTasks": 0
-    },
-    "nextAction": {
-      "featureId": "github-actions-ci",
-      "taskId": "task-2-1",
-      "description": "Add CI workflow file"
     },
     "blockers": []
   }

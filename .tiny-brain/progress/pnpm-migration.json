@@ -6,13 +6,13 @@
   "prdId": "pnpm-migration",
   "prdDirPath": "docs/prd/pnpm-migration",
   "created": "2026-04-15T08:53:01.396Z",
-  "lastUpdated": "2026-04-15T08:56:54.837Z",
+  "lastUpdated": "2026-04-15T09:00:03.170Z",
   "features": [
     {
       "id": "pnpm-swap",
       "number": 1,
       "title": "Replace npm with pnpm",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-1-1",
@@ -39,13 +39,30 @@
         {
           "id": "task-1-2",
           "description": "Update README and documentation for pnpm",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-15T08:57:26.719Z",
+          "greenStartedAt": "2026-04-15T08:57:26.719Z",
+          "testCommitSha": "skipped",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-15T08:59:21.816Z",
+              "completedAt": "2026-04-15T09:00:03.169Z",
+              "reviewSha": "09ee6de",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-15T09:00:03.169Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-15T09:00:03.169Z"
+            }
+          },
+          "commitSha": "09ee6de05a4d9bd63154151a8aeced449e97728e",
+          "greenCompletedAt": "2026-04-15T08:59:21.816Z",
+          "completedAt": "2026-04-15T09:00:03.170Z"
         }
       ],
       "taskSummary": {
         "total": 2,
-        "completed": 1,
-        "remaining": 1
+        "completed": 2,
+        "remaining": 0
       }
     },
     {
@@ -71,26 +88,26 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 1,
-    "featureTitle": "Replace npm with pnpm",
+    "feature": 2,
+    "featureTitle": "Add GitHub Actions CI workflow",
     "overallProgress": {
-      "completedFeatures": 0,
+      "completedFeatures": 1,
       "totalFeatures": 2,
-      "completedTasks": 1,
+      "completedTasks": 2,
       "totalTasks": 3,
-      "percentComplete": 33
+      "percentComplete": 67
     },
     "workRemaining": {
       "pendingFeatures": [
         "Add GitHub Actions CI workflow"
       ],
       "currentFeatureTasks": 1,
-      "futureFeatureTasks": 1
+      "futureFeatureTasks": 0
     },
     "nextAction": {
-      "featureId": "pnpm-swap",
-      "taskId": "task-1-2",
-      "description": "Update README and documentation for pnpm"
+      "featureId": "github-actions-ci",
+      "taskId": "task-2-1",
+      "description": "Add CI workflow file"
     },
     "blockers": []
   }

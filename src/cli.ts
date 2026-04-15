@@ -18,6 +18,38 @@ interface ParsedArgs {
  * Parse CLI arguments into command, positional args, and flags.
  * Pure function — no I/O.
  */
+/**
+ * Run the CLI with the given arguments.
+ */
+export async function runCli(argv: readonly string[]): Promise<void> {
+  const parsed = parseArgs(argv);
+
+  switch (parsed.command) {
+    case 'help':
+      console.log('Usage: npx no-tickets <command> [options]\n\nCommands: init, push, status, validate, connect, disconnect');
+      break;
+    case 'version':
+      console.log('2.0.0');
+      break;
+    case 'init':
+      console.error('Command "init" is not yet implemented.');
+      process.exitCode = 1;
+      break;
+    case 'unknown':
+      console.error(`Unknown command: ${argv[0]}\nRun "npx no-tickets --help" for usage.`);
+      process.exitCode = 1;
+      break;
+    default:
+      console.error(`Command "${parsed.command}" is not yet implemented.`);
+      process.exitCode = 1;
+      break;
+  }
+}
+
+/**
+ * Parse CLI arguments into command, positional args, and flags.
+ * Pure function — no I/O.
+ */
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   if (argv.length === 0) {
     return { command: 'help', args: [], flags: {} };

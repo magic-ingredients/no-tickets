@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-16T10:45:45.646Z",
+  "lastUpdated": "2026-04-16T10:53:34.112Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -123,21 +123,47 @@
       "taskSummary": {
         "total": 4,
         "completed": 3,
-        "remaining": 1,
-        "weightedProgress": 0.75,
-        "nextTask": "Wire auth into init command"
+        "remaining": 1
       }
     },
     {
       "id": "push-token-cli",
       "number": 2,
       "title": "Push Token CLI Commands",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-2-1",
           "description": "Add CLI token commands",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-16T10:46:44.058Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-16T10:49:02.902Z",
+              "completedAt": "2026-04-16T10:50:28.925Z",
+              "reviewSha": "cc225fb",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-16T10:50:28.925Z",
+              "refactorCommitSha": "f1586137f3b59c22ccdf5c8fe7dd0662b4fff0d9",
+              "refactorCompletedAt": "2026-04-16T10:52:49.134Z",
+              "refactorCommittedAt": "2026-04-16T10:52:49.134Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-16T10:52:49.134Z",
+              "completedAt": "2026-04-16T10:53:34.110Z",
+              "reviewSha": "f1586137f3b59c22ccdf5c8fe7dd0662b4fff0d9",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-16T10:53:34.110Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-16T10:53:34.110Z"
+            }
+          },
+          "greenStartedAt": "2026-04-16T10:48:05.699Z",
+          "testCommitSha": "804d1b85ff88b77383765e8325f236455b4ce9c3",
+          "redCompletedAt": "2026-04-16T10:48:05.699Z",
+          "commitSha": "cc225fb4f8e85c8c7cd4d9175d8ef49b46ba537e",
+          "greenCompletedAt": "2026-04-16T10:49:02.901Z",
+          "completedAt": "2026-04-16T10:53:34.112Z"
         },
         {
           "id": "task-2-2",
@@ -147,8 +173,10 @@
       ],
       "taskSummary": {
         "total": 2,
-        "completed": 0,
-        "remaining": 2
+        "completed": 1,
+        "remaining": 1,
+        "weightedProgress": 0.5,
+        "nextTask": "Update push command to support token auth"
       }
     },
     {
@@ -204,18 +232,17 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 3,
-      "completedTasks": 3,
+      "completedTasks": 4,
       "totalTasks": 12,
-      "percentComplete": 25,
-      "weightedPercentComplete": 25
+      "percentComplete": 33,
+      "weightedPercentComplete": 8
     },
     "workRemaining": {
       "pendingFeatures": [
-        "Push Token CLI Commands",
         "MCP Server"
       ],
       "currentFeatureTasks": 1,
-      "futureFeatureTasks": 8
+      "futureFeatureTasks": 6
     },
     "nextAction": {
       "featureId": "cli-auth-flow",

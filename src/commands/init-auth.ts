@@ -14,6 +14,15 @@ interface InitAuthResult {
 
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// Placeholder until server-side /auth/cli returns email in the callback
+const PLACEHOLDER_EMAIL = 'authenticated@no-tickets.com';
+
+function buildCallbackUrl(authUrl: string, port: number): string {
+  const url = new URL(authUrl);
+  url.searchParams.set('callback_port', String(port));
+  return url.toString();
+}
+
 export async function resolveInitAuth(options: InitAuthOptions): Promise<InitAuthResult> {
   const existing = loadCredentials();
   if (existing) {
@@ -27,16 +36,15 @@ export async function resolveInitAuth(options: InitAuthOptions): Promise<InitAut
   const server = await startAuthServer();
 
   try {
-    const callbackUrl = `${options.authUrl}?callback_port=${server.port}`;
+    const callbackUrl = buildCallbackUrl(options.authUrl, server.port);
     await options.openBrowser(callbackUrl);
 
     const token = await server.tokenPromise;
-    const email = 'user@no-tickets.com';
     const expiresAt = new Date(Date.now() + SESSION_DURATION_MS).toISOString();
 
-    saveCredentials(token, email, expiresAt);
+    saveCredentials(token, PLACEHOLDER_EMAIL, expiresAt);
 
-    return { token, email, isNewAuth: true };
+    return { token, email: PLACEHOLDER_EMAIL, isNewAuth: true };
   } finally {
     await server.close();
   }

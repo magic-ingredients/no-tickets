@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe('resolveInitAuth', () => {
-  it('returns existing credentials when valid and not expired', async () => {
+  it('returns existing credentials when loadCredentials succeeds', async () => {
     vi.mocked(credentials.loadCredentials).mockReturnValue({
       token: 'nt_session_existing',
       email: 'user@example.com',
@@ -82,8 +82,12 @@ describe('resolveInitAuth', () => {
 
     const [token, email, expiresAt] = vi.mocked(credentials.saveCredentials).mock.calls[0]!;
     expect(token).toBe('nt_session_saved');
-    expect(typeof email).toBe('string');
-    expect(typeof expiresAt).toBe('string');
+    expect(email).toBe('authenticated@no-tickets.com');
+    const expiresDate = new Date(expiresAt);
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const diff = expiresDate.getTime() - Date.now();
+    expect(diff).toBeGreaterThan(sevenDaysMs - 5000);
+    expect(diff).toBeLessThanOrEqual(sevenDaysMs);
   });
 
   it('throws when OAuth flow times out', async () => {
@@ -126,6 +130,29 @@ describe('resolveInitAuth', () => {
     ).rejects.toThrow('Failed to open browser');
 
     expect(closeFn).toHaveBeenCalled();
+  });
+
+  it('builds valid URL when authUrl already has query parameters', async () => {
+    vi.mocked(credentials.loadCredentials).mockReturnValue(null);
+
+    const closeFn = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(authServer.startAuthServer).mockResolvedValue({
+      port: 9999,
+      tokenPromise: Promise.resolve('nt_session_qp'),
+      close: closeFn,
+    });
+    vi.mocked(credentials.saveCredentials).mockReturnValue(undefined);
+
+    const openBrowser = vi.fn().mockResolvedValue(undefined);
+
+    await resolveInitAuth({
+      authUrl: 'https://auth.no-tickets.com/cli?provider=kinde',
+      openBrowser,
+    });
+
+    const calledUrl = new URL(openBrowser.mock.calls[0]![0] as string);
+    expect(calledUrl.searchParams.get('provider')).toBe('kinde');
+    expect(calledUrl.searchParams.get('callback_port')).toBe('9999');
   });
 
   it('does not call saveCredentials when auth fails', async () => {

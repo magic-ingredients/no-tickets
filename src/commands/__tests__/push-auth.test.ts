@@ -33,6 +33,7 @@ describe('buildPushAuth', () => {
       projectId: 'proj-xyz',
       tokenType: 'session',
     });
+    expect(result).not.toHaveProperty('source');
   });
 
   it('uses push token and omits teamId and projectId', () => {
@@ -55,24 +56,6 @@ describe('buildPushAuth', () => {
       projectId: undefined,
       tokenType: 'push',
     });
-  });
-
-  it('prefers session over push when resolveAuth returns session', () => {
-    vi.mocked(auth.resolveAuth).mockReturnValue({
-      token: 'nt_session_interactive',
-      source: 'credentials',
-      tokenType: 'session',
-    });
-
-    const result = buildPushAuth({
-      apiUrl: 'https://api.no-tickets.com',
-      teamId: 'team-abc',
-      projectId: 'proj-xyz',
-    });
-
-    expect(result.tokenType).toBe('session');
-    expect(result.teamId).toBe('team-abc');
-    expect(result.projectId).toBe('proj-xyz');
   });
 
   it('throws when resolveAuth throws (no auth available)', () => {
@@ -102,7 +85,12 @@ describe('buildPushAuth', () => {
       projectId: 'proj-xyz',
     });
 
-    expect(result.teamId).toBeUndefined();
-    expect(result.projectId).toBeUndefined();
+    expect(result).toEqual({
+      token: 'some_other_token',
+      apiUrl: 'https://api.no-tickets.com',
+      teamId: undefined,
+      projectId: undefined,
+      tokenType: 'unknown',
+    });
   });
 });

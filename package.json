@@ -31,6 +31,7 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "lint": "eslint src/",
+    "test:coverage": "vitest run --coverage",
     "test:mutate": "npx stryker run",
     "typecheck": "tsc --noEmit"
   },

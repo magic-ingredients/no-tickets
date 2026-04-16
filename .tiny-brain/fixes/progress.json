@@ -1,4 +1,93 @@
 {
-  "fixes": [],
-  "lastSynced": "2026-04-15T08:25:32.483Z"
+  "fixes": [
+    {
+      "id": "branch-protection",
+      "title": "Add branch protection rules to main before going public",
+      "status": "not_started",
+      "severity": "major",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Make repo public and create branch protection ruleset",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/branch-protection.md",
+      "reported": "2026-04-15T09:00:00.000Z",
+      "resolved": null
+    },
+    {
+      "id": "qip-code-quality",
+      "title": "Code-quality quality issues",
+      "status": "not_started",
+      "severity": "critical",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "[critical] bin/no-tickets.js:46",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "[major] src/client.ts:133",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "[major] src/commands/task-update.ts:50",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "[major] src/core/state.ts:44",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5",
+          "description": "[minor] src/core/diff.ts:103",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6",
+          "description": "[minor] src/mcp/create-server.ts:1",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/qip-code-quality.md",
+      "reported": "2026-04-15T08:44:32.354Z",
+      "resolved": null
+    },
+    {
+      "id": "qip-security",
+      "title": "Security quality issues",
+      "status": "not_started",
+      "severity": "major",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "[major] src/client.ts:66",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "[major] src/client.ts:100",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "[minor] src/client.ts:44",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "[minor] src/client.ts:112",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/qip-security.md",
+      "reported": "2026-04-15T11:41:19.434Z",
+      "resolved": null
+    }
+  ],
+  "lastSynced": "2026-04-16T06:44:38.147Z"
 }

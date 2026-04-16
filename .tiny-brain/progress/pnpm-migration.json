@@ -1,125 +1,98 @@
 {
   "id": "pnpm-migration",
-  "title": "Migrate to pnpm and add GitHub Actions CI",
-  "type": "active",
-  "status": "completed",
+  "title": "\"Migrate to pnpm and add GitHub Actions CI\"",
+  "type": "archived",
+  "status": "not_started",
+  "created": "2026-04-15T11:41:09.292Z",
+  "lastUpdated": "2026-04-15T11:41:09.292Z",
   "prdId": "pnpm-migration",
-  "prdDirPath": "docs/prd/pnpm-migration",
-  "created": "2026-04-15T08:53:01.396Z",
-  "lastUpdated": "2026-04-15T09:03:47.997Z",
-  "features": [
-    {
-      "id": "pnpm-swap",
-      "number": 1,
-      "title": "Replace npm with pnpm",
-      "status": "completed",
-      "tasks": [
-        {
-          "id": "task-1-1",
-          "description": "Add pnpm lockfile and packageManager field",
-          "status": "completed",
-          "redStartedAt": "2026-04-15T08:54:04.913Z",
-          "greenStartedAt": "2026-04-15T08:54:04.913Z",
-          "testCommitSha": "skipped",
-          "reviews": {
-            "adversarial": {
-              "startedAt": "2026-04-15T08:55:56.101Z",
-              "completedAt": "2026-04-15T08:56:54.835Z",
-              "reviewSha": "42b413f",
-              "verdict": "clean",
-              "refactorStartedAt": "2026-04-15T08:56:54.835Z",
-              "refactorCommitSha": "skipped",
-              "refactorCompletedAt": "2026-04-15T08:56:54.835Z"
-            }
-          },
-          "commitSha": "42b413f27b6e1e001e979d308c42625028d49f2f",
-          "greenCompletedAt": "2026-04-15T08:55:56.101Z",
-          "completedAt": "2026-04-15T08:56:54.837Z"
-        },
-        {
-          "id": "task-1-2",
-          "description": "Update README and documentation for pnpm",
-          "status": "completed",
-          "redStartedAt": "2026-04-15T08:57:26.719Z",
-          "greenStartedAt": "2026-04-15T08:57:26.719Z",
-          "testCommitSha": "skipped",
-          "reviews": {
-            "adversarial": {
-              "startedAt": "2026-04-15T08:59:21.816Z",
-              "completedAt": "2026-04-15T09:00:03.169Z",
-              "reviewSha": "09ee6de",
-              "verdict": "clean",
-              "refactorStartedAt": "2026-04-15T09:00:03.169Z",
-              "refactorCommitSha": "skipped",
-              "refactorCompletedAt": "2026-04-15T09:00:03.169Z"
-            }
-          },
-          "commitSha": "09ee6de05a4d9bd63154151a8aeced449e97728e",
-          "greenCompletedAt": "2026-04-15T08:59:21.816Z",
-          "completedAt": "2026-04-15T09:00:03.170Z"
-        }
-      ],
-      "taskSummary": {
-        "total": 2,
-        "completed": 2,
-        "remaining": 0
-      }
-    },
-    {
-      "id": "github-actions-ci",
-      "number": 2,
-      "title": "Add GitHub Actions CI workflow",
-      "status": "completed",
-      "tasks": [
-        {
-          "id": "task-2-1",
-          "description": "Add CI workflow file",
-          "status": "completed",
-          "redStartedAt": "2026-04-15T09:00:35.965Z",
-          "greenStartedAt": "2026-04-15T09:00:35.965Z",
-          "testCommitSha": "skipped",
-          "reviews": {
-            "adversarial": {
-              "startedAt": "2026-04-15T09:01:02.130Z",
-              "completedAt": "2026-04-15T09:01:57.134Z",
-              "reviewSha": "5e943fe",
-              "verdict": "needs-refactoring",
-              "refactorStartedAt": "2026-04-15T09:01:57.134Z",
-              "refactorCommitSha": "e98b0c9cd42df26564ac93f9fd1ef33aaed7671f",
-              "refactorCompletedAt": "2026-04-15T09:03:26.658Z",
-              "refactorCommittedAt": "2026-04-15T09:03:26.658Z"
-            }
-          },
-          "commitSha": "5e943fed0d32815a8bb6ed09b350d95f0bde6ccc",
-          "greenCompletedAt": "2026-04-15T09:01:02.130Z",
-          "completedAt": "2026-04-15T09:03:26.658Z"
-        }
-      ],
-      "taskSummary": {
-        "total": 1,
-        "completed": 1,
-        "remaining": 0
-      }
-    }
-  ],
-  "gitUserName": "Andy Richardson",
-  "gitUserEmail": "rishson@gmail.com",
-  "author": "Andy Richardson",
+  "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/pnpm-migration",
+  "author": "Claude Code",
   "currentState": {
     "feature": 2,
     "featureTitle": "Add GitHub Actions CI workflow",
     "overallProgress": {
-      "completedFeatures": 2,
+      "completedFeatures": 0,
       "totalFeatures": 2,
-      "completedTasks": 3,
+      "completedTasks": 0,
       "totalTasks": 3,
-      "percentComplete": 100
+      "percentComplete": 0,
+      "weightedPercentComplete": 0
+    },
+    "nextAction": {
+      "featureId": "github-actions-ci",
+      "taskId": "task-2-1",
+      "description": "Add CI workflow file"
     },
     "workRemaining": {
-      "pendingFeatures": [],
-      "currentFeatureTasks": 0,
-      "futureFeatureTasks": 0
+      "currentFeatureTasks": 1,
+      "futureFeatureTasks": 0,
+      "pendingFeatures": [
+        "Add GitHub Actions CI workflow",
+        "Replace npm with pnpm"
+      ]
+    }
+  },
+  "overview": "",
+  "features": [
+    {
+      "id": "github-actions-ci",
+      "number": 2,
+      "title": "Add GitHub Actions CI workflow",
+      "description": "",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-2-1",
+          "description": "Add CI workflow file",
+          "status": "not_started",
+          "createdAt": "2026-04-15T11:41:09.292Z"
+        }
+      ],
+      "taskSummary": {
+        "total": 1,
+        "completed": 0,
+        "remaining": 1,
+        "weightedProgress": 0,
+        "nextTask": "Add CI workflow file"
+      }
     },
-    "blockers": []
+    {
+      "id": "pnpm-swap",
+      "number": 1,
+      "title": "Replace npm with pnpm",
+      "description": "",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-1-1",
+          "description": "Add pnpm lockfile and packageManager field",
+          "status": "not_started",
+          "createdAt": "2026-04-15T11:41:09.292Z"
+        },
+        {
+          "id": "task-1-2",
+          "description": "Update README and documentation for pnpm",
+          "status": "not_started",
+          "createdAt": "2026-04-15T11:41:09.292Z"
+        }
+      ],
+      "taskSummary": {
+        "total": 2,
+        "completed": 0,
+        "remaining": 2,
+        "weightedProgress": 0,
+        "nextTask": "Add pnpm lockfile and packageManager field"
+      }
+    }
+  ],
+  "metadata": {
+    "totalFeatures": 2,
+    "completedFeatures": 0,
+    "totalTasks": 3,
+    "completedTasks": 0,
+    "lastChanges": [],
+    "contributors": [],
+    "tags": []
   }
 }

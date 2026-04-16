@@ -1,16 +1,33 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { createMcpServer } from '../create-server.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createMcpServer, startMcpServer } from '../create-server.js';
 
-const constructorArgs: unknown[][] = [];
+interface MockServerInstance {
+  readonly constructorArgs: unknown[];
+  readonly registerToolCalls: Array<{ name: string; config: Record<string, unknown>; callback: unknown }>;
+  readonly connectCalls: unknown[];
+}
+
+let lastInstance: MockServerInstance | undefined;
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
-  const registerTool = vi.fn();
-  const connect = vi.fn().mockResolvedValue(undefined);
   class McpServer {
-    registerTool = registerTool;
-    connect = connect;
+    private _calls: MockServerInstance;
+
     constructor(...args: unknown[]) {
-      constructorArgs.push(args);
+      this._calls = {
+        constructorArgs: args,
+        registerToolCalls: [],
+        connectCalls: [],
+      };
+      lastInstance = this._calls;
+    }
+
+    registerTool(name: string, config: Record<string, unknown>, callback: unknown) {
+      this._calls.registerToolCalls.push({ name, config, callback });
+    }
+
+    async connect(transport: unknown) {
+      this._calls.connectCalls.push(transport);
     }
   }
   return { McpServer };
@@ -22,29 +39,30 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => {
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  constructorArgs.length = 0;
+  lastInstance = undefined;
 });
 
 describe('createMcpServer', () => {
   it('creates an McpServer with correct name and version', () => {
     createMcpServer();
 
-    expect(constructorArgs).toHaveLength(1);
-    const [serverInfo] = constructorArgs[0]! as [Record<string, string>];
-    expect(serverInfo).toEqual(
-      expect.objectContaining({
-        name: 'no-tickets',
-        version: expect.stringMatching(/^\d+\.\d+\.\d+/) as string,
-      }),
-    );
+    expect(lastInstance).toBeDefined();
+    const [serverInfo] = lastInstance!.constructorArgs as [Record<string, string>];
+    expect(serverInfo.name).toBe('no-tickets');
+    expect(serverInfo.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('passes version from package.json', () => {
+    createMcpServer();
+
+    const [serverInfo] = lastInstance!.constructorArgs as [Record<string, string>];
+    expect(serverInfo.version).toBe('2.0.0');
   });
 
   it('registers all expected tools', () => {
-    const server = createMcpServer();
-    const registerTool = server.registerTool as unknown as Mock;
+    createMcpServer();
 
-    const registeredNames = registerTool.mock.calls.map((call: unknown[]) => call[0]);
+    const registeredNames = lastInstance!.registerToolCalls.map((c) => c.name);
 
     const expectedTools = [
       'create_epic',
@@ -66,27 +84,32 @@ describe('createMcpServer', () => {
   });
 
   it('registers each tool with a description and inputSchema', () => {
-    const server = createMcpServer();
-    const registerTool = server.registerTool as unknown as Mock;
+    createMcpServer();
 
-    for (const call of registerTool.mock.calls as unknown[][]) {
-      const [name, config] = call;
-      expect(config).toHaveProperty('description');
-      expect(typeof (config as Record<string, unknown>).description).toBe('string');
-      expect((config as Record<string, unknown>).description).not.toBe('');
-      expect(config).toHaveProperty('inputSchema');
-      expect((config as Record<string, unknown>).inputSchema).toBeDefined();
+    for (const { name, config } of lastInstance!.registerToolCalls) {
       expect(name).toBeTruthy();
+      expect(typeof config.description).toBe('string');
+      expect(config.description).not.toBe('');
+      expect(config.inputSchema).toBeDefined();
     }
   });
 
   it('registers each tool with a callback function', () => {
-    const server = createMcpServer();
-    const registerTool = server.registerTool as unknown as Mock;
+    createMcpServer();
 
-    for (const call of registerTool.mock.calls as unknown[][]) {
-      const callback = call[2];
+    for (const { callback } of lastInstance!.registerToolCalls) {
       expect(typeof callback).toBe('function');
     }
+  });
+});
+
+describe('startMcpServer', () => {
+  it('creates server, connects with StdioServerTransport', async () => {
+    await startMcpServer();
+
+    expect(lastInstance).toBeDefined();
+    expect(lastInstance!.connectCalls).toHaveLength(1);
+    const [transport] = lastInstance!.connectCalls;
+    expect(transport).toBeDefined();
   });
 });

@@ -1,11 +1,14 @@
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
 const SERVER_NAME = 'no-tickets';
-const SERVER_VERSION = '2.0.0';
 
-function stubHandler(): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+const require = createRequire(import.meta.url);
+const { version: SERVER_VERSION } = require('../../package.json') as { version: string };
+
+function stubHandler() {
   return Promise.resolve({
     content: [{ type: 'text' as const, text: 'Not yet implemented' }],
   });

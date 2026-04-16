@@ -63,6 +63,7 @@ describe('saveCredentials', () => {
     expect(parsed.token).toBe('nt_session_abc123');
     expect(parsed.email).toBe('user@example.com');
     expect(parsed.expiresAt).toBe('2026-05-01T00:00:00Z');
+    expect(vi.mocked(fs.writeFileSync).mock.calls[0]![2]).toBe('utf-8');
   });
 
   it('sets file permissions to 600 on POSIX systems', () => {
@@ -99,6 +100,7 @@ describe('loadCredentials', () => {
     const result = loadCredentials();
 
     expect(result).toEqual(stored);
+    expect(fs.readFileSync).toHaveBeenCalledWith(CREDENTIALS_PATH, 'utf-8');
   });
 
   it('returns null when credentials file does not exist', () => {
@@ -157,6 +159,47 @@ describe('loadCredentials', () => {
     const result = loadCredentials();
 
     expect(result).toBeNull();
+  });
+
+  it('returns null when required fields are present but not strings', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ token: 123, email: true, expiresAt: null })
+    );
+
+    expect(loadCredentials()).toBeNull();
+  });
+
+  it('returns null when parsed JSON is a primitive', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('42');
+
+    expect(loadCredentials()).toBeNull();
+  });
+
+  it('returns null when parsed JSON is an array', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('[]');
+
+    expect(loadCredentials()).toBeNull();
+  });
+
+  it('returns null when token is missing but email and expiresAt are present', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ email: 'a@b.com', expiresAt: '2099-01-01T00:00:00Z' })
+    );
+
+    expect(loadCredentials()).toBeNull();
+  });
+
+  it('returns null when expiresAt is missing but token and email are present', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ token: 'nt_session_abc', email: 'a@b.com' })
+    );
+
+    expect(loadCredentials()).toBeNull();
   });
 });
 

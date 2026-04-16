@@ -16,14 +16,13 @@ function credentialsPath(): string {
   return path.join(credentialsDir(), 'credentials');
 }
 
+function hasStringProp(obj: object, key: string): boolean {
+  return key in obj && typeof (obj as Record<string, unknown>)[key] === 'string';
+}
+
 function isStoredCredentials(value: unknown): value is StoredCredentials {
   if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  return (
-    typeof obj['token'] === 'string' &&
-    typeof obj['email'] === 'string' &&
-    typeof obj['expiresAt'] === 'string'
-  );
+  return hasStringProp(value, 'token') && hasStringProp(value, 'email') && hasStringProp(value, 'expiresAt');
 }
 
 export function saveCredentials(token: string, email: string, expiresAt: string): void {

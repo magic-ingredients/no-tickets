@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('saveCredentials', () => {
   it('creates the .notickets directory if it does not exist', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fs.existsSync).mockImplementation((p) => p !== CREDENTIALS_DIR);
     vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
     vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
     vi.mocked(fs.chmodSync).mockReturnValue(undefined);
@@ -35,6 +35,16 @@ describe('saveCredentials', () => {
     saveCredentials('nt_session_abc123', 'user@example.com', '2026-05-01T00:00:00Z');
 
     expect(fs.mkdirSync).toHaveBeenCalledWith(CREDENTIALS_DIR, { recursive: true });
+  });
+
+  it('skips mkdir when directory already exists', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.chmodSync).mockReturnValue(undefined);
+
+    saveCredentials('nt_session_abc123', 'user@example.com', '2026-05-01T00:00:00Z');
+
+    expect(fs.mkdirSync).not.toHaveBeenCalled();
   });
 
   it('writes credentials as JSON to ~/.notickets/credentials', () => {
@@ -47,8 +57,9 @@ describe('saveCredentials', () => {
     expect(fs.writeFileSync).toHaveBeenCalledOnce();
     const [filePath, content] = vi.mocked(fs.writeFileSync).mock.calls[0]!;
     expect(filePath).toBe(CREDENTIALS_PATH);
+    expect(typeof content).toBe('string');
 
-    const parsed = JSON.parse(content as string) as StoredCredentials;
+    const parsed = JSON.parse(String(content)) as StoredCredentials;
     expect(parsed.token).toBe('nt_session_abc123');
     expect(parsed.email).toBe('user@example.com');
     expect(parsed.expiresAt).toBe('2026-05-01T00:00:00Z');
@@ -119,6 +130,24 @@ describe('loadCredentials', () => {
     const result = loadCredentials();
 
     expect(result).toBeNull();
+  });
+
+  it('returns null when token expires at exactly the current time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+
+    const stored: StoredCredentials = {
+      token: 'nt_session_abc123',
+      email: 'user@example.com',
+      expiresAt: '2026-06-01T12:00:00Z',
+    };
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(stored));
+
+    const result = loadCredentials();
+
+    expect(result).toBeNull();
+    vi.useRealTimers();
   });
 
   it('returns null when file is missing required fields', () => {

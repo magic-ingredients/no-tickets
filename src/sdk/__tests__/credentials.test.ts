@@ -16,6 +16,7 @@ const CREDENTIALS_DIR = '/home/testuser/.notickets';
 const CREDENTIALS_PATH = path.join(CREDENTIALS_DIR, 'credentials');
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(os.homedir).mockReturnValue('/home/testuser');
   vi.mocked(os.platform).mockReturnValue('linux');
 });

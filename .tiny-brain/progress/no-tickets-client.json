@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-16T10:35:47.286Z",
+  "lastUpdated": "2026-04-16T10:45:45.646Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -17,7 +17,36 @@
         {
           "id": "task-1-1",
           "description": "Build CLI localhost callback server",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-16T10:36:35.877Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-16T10:38:33.796Z",
+              "completedAt": "2026-04-16T10:39:55.420Z",
+              "reviewSha": "9f6f7be",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-16T10:39:55.420Z",
+              "refactorCommitSha": "f6592bed88a60cdfd031ecea1dbb2ccc1c265ab7",
+              "refactorCompletedAt": "2026-04-16T10:42:45.420Z",
+              "refactorCommittedAt": "2026-04-16T10:42:45.420Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-16T10:42:45.420Z",
+              "completedAt": "2026-04-16T10:44:29.598Z",
+              "reviewSha": "f6592bed88a60cdfd031ecea1dbb2ccc1c265ab7",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-16T10:44:29.598Z",
+              "refactorCommitSha": "9fadf40cad47e5feb097889039f97f0236674197",
+              "refactorCompletedAt": "2026-04-16T10:45:45.644Z",
+              "refactorCommittedAt": "2026-04-16T10:45:45.644Z"
+            }
+          },
+          "greenStartedAt": "2026-04-16T10:37:32.515Z",
+          "testCommitSha": "922faea60ef1c3d165c5f017fce51272404a6125",
+          "redCompletedAt": "2026-04-16T10:37:32.515Z",
+          "commitSha": "9f6f7be97623c1ba5578d1202758c5f8eb3d9ad0",
+          "greenCompletedAt": "2026-04-16T10:38:33.795Z",
+          "completedAt": "2026-04-16T10:45:45.646Z"
         },
         {
           "id": "task-1-2",
@@ -93,10 +122,10 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 2,
-        "remaining": 2,
-        "weightedProgress": 0.5,
-        "nextTask": "Build CLI localhost callback server"
+        "completed": 3,
+        "remaining": 1,
+        "weightedProgress": 0.75,
+        "nextTask": "Wire auth into init command"
       }
     },
     {
@@ -175,23 +204,23 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 3,
-      "completedTasks": 2,
+      "completedTasks": 3,
       "totalTasks": 12,
-      "percentComplete": 17,
-      "weightedPercentComplete": 17
+      "percentComplete": 25,
+      "weightedPercentComplete": 25
     },
     "workRemaining": {
       "pendingFeatures": [
         "Push Token CLI Commands",
         "MCP Server"
       ],
-      "currentFeatureTasks": 2,
+      "currentFeatureTasks": 1,
       "futureFeatureTasks": 8
     },
     "nextAction": {
       "featureId": "cli-auth-flow",
-      "taskId": "task-1-1",
-      "description": "Build CLI localhost callback server"
+      "taskId": "task-1-4",
+      "description": "Wire auth into init command"
     },
     "blockers": []
   }

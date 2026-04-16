@@ -1,0 +1,128 @@
+{
+  "version": "1.0.0",
+  "preferences": {
+    "repo": {
+      "autoArchive": true,
+      "autoCommitProgress": false,
+      "enableAgenticCoding": false,
+      "enableSDD": true,
+      "enableTDD": true,
+      "enableADR": true,
+      "enableQuality": true,
+      "manageAgentsMd": true,
+      "defaultPersona": "developer",
+      "directories": {
+        "docs": "docs",
+        "adr": "docs/adr",
+        "prd": "docs/prd"
+      },
+      "testPatterns": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx"
+      ],
+      "reviewPipeline": [
+        {
+          "type": "typescript",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "TypeScript",
+          "emoji": "📝",
+          "analyzer": "typescript",
+          "hook": "pre-commit",
+          "color": "#cc3385"
+        },
+        {
+          "type": "eslint",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "ESLint",
+          "emoji": "🧹",
+          "analyzer": "eslint",
+          "hook": "pre-commit",
+          "color": "#a133cc"
+        },
+        {
+          "type": "coverage",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "Code Coverage",
+          "emoji": "📈",
+          "analyzer": "coverage",
+          "analyzerThreshold": {
+            "min": 80
+          },
+          "hook": "pre-commit",
+          "runsTests": true,
+          "color": "#cc33ba"
+        },
+        {
+          "type": "adversarial",
+          "agent": "tiny-brain:adversarial-reviewer",
+          "label": "Adversarial Review",
+          "emoji": "😈",
+          "color": "#7833cc"
+        },
+        {
+          "type": "mutation",
+          "agent": "mutation-reviewer",
+          "label": "Mutation Testing",
+          "emoji": "🧟"
+        }
+      ],
+      "pushPipeline": [],
+      "qualityPipeline": [
+        {
+          "type": "code-quality",
+          "agent": "tiny-brain:code-quality-reviewer",
+          "label": "Code Quality",
+          "emoji": "🔍",
+          "color": "#cc5c33"
+        },
+        {
+          "type": "coverage",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "Code Coverage",
+          "emoji": "📈",
+          "analyzer": "coverage",
+          "analyzerThreshold": {
+            "min": 80
+          },
+          "color": "#cc33ba"
+        },
+        {
+          "type": "dependency-audit",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "Dependency Audit",
+          "emoji": "📦",
+          "analyzer": "dependency-audit",
+          "analyzerThreshold": {
+            "maxSeverity": "high"
+          },
+          "color": "#cc336e"
+        },
+        {
+          "type": "performance",
+          "agent": "tiny-brain:performance-reviewer",
+          "label": "Performance Review",
+          "emoji": "⚡",
+          "color": "#33ccb0"
+        },
+        {
+          "type": "security",
+          "agent": "tiny-brain:security-reviewer",
+          "label": "Security Review",
+          "emoji": "🔐",
+          "color": "#cc6333"
+        },
+        {
+          "type": "testing",
+          "agent": "tiny-brain:testing-reviewer",
+          "label": "Testing Review",
+          "emoji": "🧪",
+          "color": "#7a33cc"
+        }
+      ],
+      "combineRedGreenCommits": false,
+      "enableAdversarial": true
+    }
+  }
+}

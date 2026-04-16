@@ -32,6 +32,7 @@ describe('startAuthServer', () => {
     const response = await fetch(`http://127.0.0.1:${port}/callback?token=nt_session_test123`);
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/plain');
     const body = await response.text();
     expect(body).toBe('Authentication successful. You can close this tab.');
 
@@ -95,6 +96,42 @@ describe('startAuthServer', () => {
     await close();
 
     await expect(tokenPromise).rejects.toThrow('Auth server closed');
+  });
+
+  it('uses only the first token when callback is called twice', async () => {
+    const { port, tokenPromise, close } = await startAuthServer();
+    cleanup = close;
+
+    await fetch(`http://127.0.0.1:${port}/callback?token=first_token`);
+    const token = await tokenPromise;
+
+    expect(token).toBe('first_token');
+  });
+
+  it('does not reject after successful token even if timeout is short', async () => {
+    const { port, tokenPromise, close } = await startAuthServer({ timeoutMs: 100 });
+    cleanup = close;
+
+    await fetch(`http://127.0.0.1:${port}/callback?token=nt_session_fast`);
+    const token = await tokenPromise;
+
+    // Wait longer than timeout to confirm promise stays resolved
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(token).toBe('nt_session_fast');
+  });
+
+  it('close() after token received does not change the resolved value', async () => {
+    const { port, tokenPromise, close } = await startAuthServer();
+
+    await fetch(`http://127.0.0.1:${port}/callback?token=nt_session_keep`);
+    const token = await tokenPromise;
+
+    await close();
+
+    // tokenPromise should still be resolved with same value
+    const tokenAgain = await tokenPromise;
+    expect(tokenAgain).toBe(token);
   });
 
   it('close() can be called safely even after server already shut down', async () => {

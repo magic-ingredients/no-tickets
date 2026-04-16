@@ -6,13 +6,13 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-16T10:59:11.108Z",
+  "lastUpdated": "2026-04-16T23:10:31.592Z",
   "features": [
     {
       "id": "cli-auth-flow",
       "number": 1,
       "title": "CLI Authentication Flow",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-1-1",
@@ -117,13 +117,39 @@
         {
           "id": "task-1-4",
           "description": "Wire auth into init command",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-16T11:37:06.050Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-16T23:04:34.175Z",
+              "completedAt": "2026-04-16T23:05:44.437Z",
+              "reviewSha": "400255a",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-16T23:05:44.437Z",
+              "refactorCommitSha": "da3e0ff7b0e48bada609ceea07b5e56fb52d11cf",
+              "refactorCompletedAt": "2026-04-16T23:07:15.779Z",
+              "refactorCommittedAt": "2026-04-16T23:07:15.779Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-16T23:07:15.779Z",
+              "completedAt": "2026-04-16T23:10:31.592Z",
+              "reviewSha": "da3e0ff7b0e48bada609ceea07b5e56fb52d11cf",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-16T23:10:31.592Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-16T23:10:31.592Z"
+            }
+          },
+          "testCommitSha": "skipped",
+          "commitSha": "400255adcd4b68edfbce046c6ffd5b6cf3beb91f",
+          "greenCompletedAt": "2026-04-16T23:04:34.175Z",
+          "completedAt": "2026-04-16T23:10:31.592Z"
         }
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 3,
-        "remaining": 1
+        "completed": 4,
+        "remaining": 0
       }
     },
     {
@@ -202,8 +228,7 @@
       "taskSummary": {
         "total": 2,
         "completed": 2,
-        "remaining": 0,
-        "weightedProgress": 1
+        "remaining": 0
       }
     },
     {
@@ -254,27 +279,26 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 1,
-    "featureTitle": "CLI Authentication Flow",
+    "feature": 3,
+    "featureTitle": "MCP Server",
     "overallProgress": {
-      "completedFeatures": 1,
+      "completedFeatures": 2,
       "totalFeatures": 3,
-      "completedTasks": 5,
+      "completedTasks": 6,
       "totalTasks": 12,
-      "percentComplete": 42,
-      "weightedPercentComplete": 17
+      "percentComplete": 50
     },
     "workRemaining": {
       "pendingFeatures": [
         "MCP Server"
       ],
-      "currentFeatureTasks": 1,
-      "futureFeatureTasks": 6
+      "currentFeatureTasks": 6,
+      "futureFeatureTasks": 0
     },
     "nextAction": {
-      "featureId": "cli-auth-flow",
-      "taskId": "task-1-4",
-      "description": "Wire auth into init command"
+      "featureId": "mcp-server",
+      "taskId": "task-3-1",
+      "description": "Build MCP server entry point and tool registry"
     },
     "blockers": []
   }

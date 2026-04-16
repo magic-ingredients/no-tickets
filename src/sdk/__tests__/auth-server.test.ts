@@ -3,17 +3,23 @@ import { startAuthServer } from '../auth-server.js';
 
 describe('startAuthServer', () => {
   let cleanup: (() => Promise<void>) | undefined;
+  let pendingToken: Promise<string> | undefined;
 
   afterEach(async () => {
     if (cleanup) {
       await cleanup();
       cleanup = undefined;
     }
+    if (pendingToken) {
+      await pendingToken.catch(() => {});
+      pendingToken = undefined;
+    }
   });
 
   it('starts an HTTP server on a random available port', async () => {
-    const { port, close } = await startAuthServer();
+    const { port, tokenPromise, close } = await startAuthServer();
     cleanup = close;
+    pendingToken = tokenPromise;
 
     expect(port).toBeGreaterThan(0);
     expect(port).toBeLessThanOrEqual(65535);
@@ -26,14 +32,27 @@ describe('startAuthServer', () => {
     const response = await fetch(`http://127.0.0.1:${port}/callback?token=nt_session_test123`);
 
     expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toBe('Authentication successful. You can close this tab.');
 
     const token = await tokenPromise;
     expect(token).toBe('nt_session_test123');
   });
 
-  it('returns 400 when callback is missing the token param', async () => {
-    const { port, close } = await startAuthServer();
+  it('returns 400 when token param is empty', async () => {
+    const { port, tokenPromise, close } = await startAuthServer();
     cleanup = close;
+    pendingToken = tokenPromise;
+
+    const response = await fetch(`http://127.0.0.1:${port}/callback?token=`);
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 400 when callback is missing the token param', async () => {
+    const { port, tokenPromise, close } = await startAuthServer();
+    cleanup = close;
+    pendingToken = tokenPromise;
 
     const response = await fetch(`http://127.0.0.1:${port}/callback`);
 
@@ -41,8 +60,9 @@ describe('startAuthServer', () => {
   });
 
   it('returns 404 for non-callback paths', async () => {
-    const { port, close } = await startAuthServer();
+    const { port, tokenPromise, close } = await startAuthServer();
     cleanup = close;
+    pendingToken = tokenPromise;
 
     const response = await fetch(`http://127.0.0.1:${port}/other`);
 
@@ -67,6 +87,14 @@ describe('startAuthServer', () => {
     cleanup = close;
 
     await expect(tokenPromise).rejects.toThrow('timed out');
+  });
+
+  it('rejects the token promise when close() is called before token arrives', async () => {
+    const { tokenPromise, close } = await startAuthServer();
+
+    await close();
+
+    await expect(tokenPromise).rejects.toThrow('Auth server closed');
   });
 
   it('close() can be called safely even after server already shut down', async () => {

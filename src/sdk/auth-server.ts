@@ -63,9 +63,12 @@ export async function startAuthServer(
 
   const close = async (): Promise<void> => {
     clearTimeout(timeout);
+    if (!settled) {
+      settled = true;
+      rejectToken(new Error('Auth server closed'));
+    }
     return new Promise<void>((resolve) => {
       server.close(() => resolve());
-      // If server is already closed, the callback fires immediately
     });
   };
 

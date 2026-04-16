@@ -1,33 +1,37 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { createMcpServer } from '../create-server.js';
+
+const constructorArgs: unknown[][] = [];
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
   const registerTool = vi.fn();
   const connect = vi.fn().mockResolvedValue(undefined);
-  const McpServer = vi.fn().mockImplementation(() => ({
-    registerTool,
-    connect,
-  }));
+  class McpServer {
+    registerTool = registerTool;
+    connect = connect;
+    constructor(...args: unknown[]) {
+      constructorArgs.push(args);
+    }
+  }
   return { McpServer };
 });
 
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => {
-  const StdioServerTransport = vi.fn();
+  class StdioServerTransport {}
   return { StdioServerTransport };
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  constructorArgs.length = 0;
 });
 
 describe('createMcpServer', () => {
-  it('creates an McpServer with correct name and version', async () => {
-    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
-
+  it('creates an McpServer with correct name and version', () => {
     createMcpServer();
 
-    expect(McpServer).toHaveBeenCalledOnce();
-    const [serverInfo] = vi.mocked(McpServer).mock.calls[0]!;
+    expect(constructorArgs).toHaveLength(1);
+    const [serverInfo] = constructorArgs[0]! as [Record<string, string>];
     expect(serverInfo).toEqual(
       expect.objectContaining({
         name: 'no-tickets',
@@ -38,9 +42,9 @@ describe('createMcpServer', () => {
 
   it('registers all expected tools', () => {
     const server = createMcpServer();
-    const registerTool = vi.mocked(server.registerTool);
+    const registerTool = server.registerTool as unknown as Mock;
 
-    const registeredNames = registerTool.mock.calls.map((call) => call[0]);
+    const registeredNames = registerTool.mock.calls.map((call: unknown[]) => call[0]);
 
     const expectedTools = [
       'create_epic',
@@ -63,15 +67,14 @@ describe('createMcpServer', () => {
 
   it('registers each tool with a description and inputSchema', () => {
     const server = createMcpServer();
-    const registerTool = vi.mocked(server.registerTool);
+    const registerTool = server.registerTool as unknown as Mock;
 
-    for (const call of registerTool.mock.calls) {
+    for (const call of registerTool.mock.calls as unknown[][]) {
       const [name, config] = call;
       expect(config).toHaveProperty('description');
       expect(typeof (config as Record<string, unknown>).description).toBe('string');
       expect((config as Record<string, unknown>).description).not.toBe('');
       expect(config).toHaveProperty('inputSchema');
-      // inputSchema should be defined (Zod schema shape)
       expect((config as Record<string, unknown>).inputSchema).toBeDefined();
       expect(name).toBeTruthy();
     }
@@ -79,9 +82,9 @@ describe('createMcpServer', () => {
 
   it('registers each tool with a callback function', () => {
     const server = createMcpServer();
-    const registerTool = vi.mocked(server.registerTool);
+    const registerTool = server.registerTool as unknown as Mock;
 
-    for (const call of registerTool.mock.calls) {
+    for (const call of registerTool.mock.calls as unknown[][]) {
       const callback = call[2];
       expect(typeof callback).toBe('function');
     }

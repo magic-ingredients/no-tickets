@@ -102,6 +102,22 @@ describe('createToken', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe('Network error');
   });
+
+  it('handles non-JSON error response gracefully', async () => {
+    mockFetch().mockResolvedValueOnce(
+      new Response('<html>502 Bad Gateway</html>', { status: 502 })
+    );
+
+    const result = await createToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      projectId: 'proj-xyz',
+      label: 'CI deploy',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Request failed with status 502');
+  });
 });
 
 describe('listTokens', () => {
@@ -146,8 +162,10 @@ describe('listTokens', () => {
     });
   });
 
-  it('returns empty list on non-ok response', async () => {
-    mockFetch().mockResolvedValueOnce(jsonResponse({}, 401));
+  it('returns failure with error on non-ok response', async () => {
+    mockFetch().mockResolvedValueOnce(
+      jsonResponse({ error: 'Unauthorized' }, 401)
+    );
 
     const result = await listTokens({
       apiUrl: TEST_API_URL,
@@ -156,6 +174,42 @@ describe('listTokens', () => {
 
     expect(result.success).toBe(false);
     expect(result.tokens).toEqual([]);
+    expect(result.error).toBe('Unauthorized');
+  });
+
+  it('returns failure on network error', async () => {
+    mockFetch().mockRejectedValueOnce(new Error('Connection refused'));
+
+    const result = await listTokens({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.tokens).toEqual([]);
+    expect(result.error).toBe('Connection refused');
+  });
+
+  it('handles malformed token entries gracefully', async () => {
+    mockFetch().mockResolvedValueOnce(
+      jsonResponse({
+        tokens: [
+          { id: 'tok_1', prefix: 'nt_push_abc', label: 'CI', createdAt: '2026-04-16T10:00:00Z' },
+          null,
+          { id: 123 },
+        ],
+      })
+    );
+
+    const result = await listTokens({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tokens).toHaveLength(2);
+    expect(result.tokens[0]!.id).toBe('tok_1');
+    expect(result.tokens[1]!.id).toBe('');
   });
 });
 
@@ -215,5 +269,20 @@ describe('revokeToken', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Connection refused');
+  });
+
+  it('handles non-JSON error response gracefully', async () => {
+    mockFetch().mockResolvedValueOnce(
+      new Response('Internal Server Error', { status: 500 })
+    );
+
+    const result = await revokeToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      tokenId: 'tok_1',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Request failed with status 500');
   });
 });

@@ -56,10 +56,19 @@ function jsonHeaders(sessionToken: string): Record<string, string> {
 
 function parseErrorMessage(data: unknown): string {
   if (typeof data === 'object' && data !== null && 'error' in data) {
-    const obj = data as Record<string, unknown>;
-    if (typeof obj['error'] === 'string') return obj['error'];
+    const errorVal = (data as Record<string, unknown>)['error'];
+    if (typeof errorVal === 'string') return errorVal;
   }
   return 'Request failed';
+}
+
+async function safeParseErrorBody(response: Response): Promise<string> {
+  try {
+    const data: unknown = await response.json();
+    return parseErrorMessage(data);
+  } catch {
+    return `Request failed with status ${response.status}`;
+  }
 }
 
 export async function createToken(params: TokenCreateParams): Promise<TokenCreateResult> {
@@ -74,8 +83,8 @@ export async function createToken(params: TokenCreateParams): Promise<TokenCreat
     });
 
     if (!response.ok) {
-      const data: unknown = await response.json();
-      return { success: false, error: parseErrorMessage(data) };
+      const error = await safeParseErrorBody(response);
+      return { success: false, error };
     }
 
     const data = (await response.json()) as Record<string, unknown>;
@@ -96,7 +105,8 @@ export async function listTokens(params: TokenListParams): Promise<TokenListResu
     });
 
     if (!response.ok) {
-      return { success: false, tokens: [] };
+      const error = await safeParseErrorBody(response);
+      return { success: false, tokens: [], error };
     }
 
     const data = (await response.json()) as Record<string, unknown>;
@@ -111,8 +121,8 @@ export async function listTokens(params: TokenListParams): Promise<TokenListResu
       }));
 
     return { success: true, tokens };
-  } catch {
-    return { success: false, tokens: [] };
+  } catch (err) {
+    return { success: false, tokens: [], error: err instanceof Error ? err.message : 'Unknown error' };
   }
 }
 
@@ -124,8 +134,8 @@ export async function revokeToken(params: TokenRevokeParams): Promise<TokenRevok
     });
 
     if (!response.ok) {
-      const data: unknown = await response.json();
-      return { success: false, error: parseErrorMessage(data) };
+      const error = await safeParseErrorBody(response);
+      return { success: false, error };
     }
 
     return { success: true };

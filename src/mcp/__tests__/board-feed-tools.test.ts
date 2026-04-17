@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { listBoardHandler, listFeedHandler } from '../tools/board-feed.js';
 import type { ApiClient } from '../../sdk/api-client.js';
 import type { BoardState, FeedEvent } from '../../core/types.js';

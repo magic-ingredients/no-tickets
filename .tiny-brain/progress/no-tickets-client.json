@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-16T23:10:31.592Z",
+  "lastUpdated": "2026-04-17T01:26:00.468Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -235,12 +235,41 @@
       "id": "mcp-server",
       "number": 3,
       "title": "MCP Server",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-3-1",
           "description": "Build MCP server entry point and tool registry",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-16T23:31:32.289Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-16T23:38:09.616Z",
+              "completedAt": "2026-04-16T23:39:47.084Z",
+              "reviewSha": "5d0a4f4bcbb5624c5b841956a250ca7edb431e18",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-16T23:39:47.084Z",
+              "refactorCommitSha": "d976f159fe18391f485a24aa2c900ec106a50c32",
+              "refactorCompletedAt": "2026-04-16T23:41:14.495Z",
+              "refactorCommittedAt": "2026-04-16T23:41:14.495Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-16T23:41:14.496Z",
+              "completedAt": "2026-04-17T01:24:20.806Z",
+              "reviewSha": "d976f159fe18391f485a24aa2c900ec106a50c32",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-17T01:24:20.806Z",
+              "refactorCommitSha": "25eea805d22b6d88bc73cf361887198bf9934595",
+              "refactorCompletedAt": "2026-04-17T01:26:00.464Z",
+              "refactorCommittedAt": "2026-04-17T01:26:00.464Z"
+            }
+          },
+          "greenStartedAt": "2026-04-16T23:35:16.716Z",
+          "testCommitSha": "9034c7cb4731fac54e712d7ebc86e841ab616108",
+          "redCompletedAt": "2026-04-16T23:35:16.716Z",
+          "commitSha": "5d0a4f4bcbb5624c5b841956a250ca7edb431e18",
+          "greenCompletedAt": "2026-04-16T23:38:09.616Z",
+          "completedAt": "2026-04-17T01:26:00.467Z"
         },
         {
           "id": "task-3-2",
@@ -270,8 +299,59 @@
       ],
       "taskSummary": {
         "total": 6,
+        "completed": 1,
+        "remaining": 5
+      }
+    },
+    {
+      "id": "oss-launch",
+      "number": 4,
+      "title": "Open Source Launch & npm Publish",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-4-1",
+          "description": "Set up CI for public repo",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-2",
+          "description": "Publish initial npm release",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-3",
+          "description": "Wire tiny-brain to consume npm package",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-4",
+          "description": "Update tiny-brain for open source",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 4,
         "completed": 0,
-        "remaining": 6
+        "remaining": 4
+      }
+    },
+    {
+      "id": "migration-script",
+      "number": 5,
+      "title": "Migration Script (docs/prd/ → .notickets/)",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-5-1",
+          "description": "Build migration command",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 1,
+        "completed": 0,
+        "remaining": 1
       }
     }
   ],
@@ -283,22 +363,23 @@
     "featureTitle": "MCP Server",
     "overallProgress": {
       "completedFeatures": 2,
-      "totalFeatures": 3,
-      "completedTasks": 6,
-      "totalTasks": 12,
-      "percentComplete": 50
+      "totalFeatures": 5,
+      "completedTasks": 7,
+      "totalTasks": 17,
+      "percentComplete": 41
     },
     "workRemaining": {
       "pendingFeatures": [
-        "MCP Server"
+        "Open Source Launch & npm Publish",
+        "Migration Script (docs/prd/ → .notickets/)"
       ],
-      "currentFeatureTasks": 6,
-      "futureFeatureTasks": 0
+      "currentFeatureTasks": 5,
+      "futureFeatureTasks": 5
     },
     "nextAction": {
       "featureId": "mcp-server",
-      "taskId": "task-3-1",
-      "description": "Build MCP server entry point and tool registry"
+      "taskId": "task-3-2",
+      "description": "Build API client for MCP tools"
     },
     "blockers": []
   }

@@ -20,8 +20,19 @@ function jsonResponse(body: unknown, status = 200) {
   }));
 }
 
+function textResponse(text: string, status: number) {
+  return Promise.resolve(new Response(text, { status }));
+}
+
+function lastFetchCall(): { url: string; init: RequestInit } {
+  expect(fetchSpy).toHaveBeenCalled();
+  const calls = fetchSpy.mock.calls;
+  const last = calls[calls.length - 1] as [string, RequestInit];
+  return { url: last[0], init: last[1] };
+}
+
 describe('createApiClient', () => {
-  it('creates a client with token and apiUrl', () => {
+  it('creates a client with all methods', () => {
     const client = createApiClient({ token: 'nt_push_abc', apiUrl: 'https://api.no-tickets.com' });
     expect(client).toBeDefined();
     expect(client.getBoard).toBeTypeOf('function');
@@ -37,14 +48,44 @@ describe('createApiClient', () => {
 });
 
 describe('auth header', () => {
-  it('sends Bearer token on every request', async () => {
+  it('sends Bearer token on GET requests', async () => {
     const client = createApiClient({ token: 'nt_push_secret', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ projectId: 'p1', columns: [] }));
 
     await client.getBoard('p1');
 
-    const [, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { init } = lastFetchCall();
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer nt_push_secret');
+  });
+
+  it('sends Bearer token on POST requests', async () => {
+    const client = createApiClient({ token: 'nt_push_post', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ id: 'e1' }));
+
+    await client.createEpic({ projectId: 'p1', title: 'Epic' });
+
+    const { init } = lastFetchCall();
+    expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer nt_push_post');
+  });
+
+  it('does not send Content-Type on GET requests', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ projectId: 'p1', columns: [] }));
+
+    await client.getBoard('p1');
+
+    const { init } = lastFetchCall();
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+
+  it('sends Content-Type on POST requests', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ id: 'e1' }));
+
+    await client.createEpic({ projectId: 'p1', title: 'Epic' });
+
+    const { init } = lastFetchCall();
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
   });
 });
 
@@ -56,8 +97,7 @@ describe('getBoard', () => {
 
     const result = await client.getBoard('proj1');
 
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    const [url] = fetchSpy.mock.calls[0]! as [string];
+    const { url } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/board/proj1');
     expect(result).toEqual(mockBoard);
   });
@@ -74,7 +114,7 @@ describe('getFeed', () => {
 
     const result = await client.getFeed('proj1');
 
-    const [url] = fetchSpy.mock.calls[0]! as [string];
+    const { url } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/feed/proj1');
     expect(result).toEqual(mockEvents);
   });
@@ -87,7 +127,7 @@ describe('createEpic', () => {
 
     await client.createEpic({ projectId: 'p1', title: 'My Epic', description: 'Desc' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/epics');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'p1', title: 'My Epic', description: 'Desc' });
@@ -101,7 +141,7 @@ describe('createFeature', () => {
 
     await client.createFeature({ projectId: 'p1', epicId: 'e1', title: 'Feat', description: 'Desc' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/features');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
@@ -117,7 +157,7 @@ describe('createFix', () => {
 
     await client.createFix({ projectId: 'p1', epicId: 'e1', title: 'Fix', description: 'Desc' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/fixes');
     expect(init.method).toBe('POST');
   });
@@ -130,7 +170,7 @@ describe('updateFeature', () => {
 
     await client.updateFeature({ projectId: 'p1', featureId: 'f1', title: 'New Title' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/features/f1');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'p1', title: 'New Title' });
@@ -144,7 +184,7 @@ describe('moveToPhase', () => {
 
     await client.moveToPhase({ projectId: 'p1', featureId: 'f1', phase: 'testing' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/features/f1/move');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'p1', phase: 'testing' });
@@ -158,7 +198,7 @@ describe('assignFeature', () => {
 
     await client.assignFeature({ projectId: 'p1', featureId: 'f1', assignee: 'alice', assigneeType: 'human' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/features/f1/assign');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
@@ -174,7 +214,7 @@ describe('breakDown', () => {
 
     await client.breakDown({ projectId: 'p1', featureId: 'f1', context: 'extra info' });
 
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    const { url, init } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/break-down');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
@@ -184,17 +224,31 @@ describe('breakDown', () => {
 });
 
 describe('error handling', () => {
-  it('throws with status and message on non-OK response', async () => {
+  it('throws with status and error field from JSON response', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ error: 'Not found' }, 404));
 
-    await expect(client.getBoard('missing')).rejects.toThrow('404');
+    await expect(client.getBoard('missing')).rejects.toThrow('404: Not found');
   });
 
-  it('includes response body in error message', async () => {
+  it('uses fallback message when error field is missing', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
-    fetchSpy.mockReturnValue(jsonResponse({ error: 'Unauthorized' }, 401));
+    fetchSpy.mockReturnValue(jsonResponse({ detail: 'something' }, 500));
 
-    await expect(client.getBoard('p1')).rejects.toThrow('Unauthorized');
+    await expect(client.getBoard('p1')).rejects.toThrow('500: Request failed');
+  });
+
+  it('handles non-JSON error responses', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(textResponse('<html>Server Error</html>', 502));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('502: <html>Server Error</html>');
+  });
+
+  it('throws on network-level failures', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('fetch failed');
   });
 });

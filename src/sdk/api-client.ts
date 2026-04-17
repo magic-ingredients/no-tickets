@@ -63,23 +63,42 @@ interface ApiClient {
   breakDown(params: BreakDownParams): Promise<unknown>;
 }
 
+function hasErrorField(value: unknown): value is { error: unknown } {
+  return typeof value === 'object' && value !== null && 'error' in value;
+}
+
 async function request(apiUrl: string, token: string, path: string, options?: RequestInit): Promise<unknown> {
   const url = `${apiUrl}${path}`;
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+  };
+  if (options?.body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...options?.headers,
+      ...headers,
+      ...options?.headers as Record<string, string> | undefined,
     },
   });
 
-  const body: unknown = await response.json();
+  const text = await response.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    if (!response.ok) {
+      throw new Error(`${response.status}: ${text || 'Request failed'}`);
+    }
+    return text;
+  }
 
   if (!response.ok) {
-    const message = typeof body === 'object' && body !== null && 'error' in body
-      ? String((body as Record<string, unknown>).error)
-      : `Request failed`;
+    const message = hasErrorField(body)
+      ? String(body.error)
+      : 'Request failed';
     throw new Error(`${response.status}: ${message}`);
   }
 

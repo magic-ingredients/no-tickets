@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-17T02:34:08.183Z",
+  "lastUpdated": "2026-04-17T07:40:19.228Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -307,7 +307,34 @@
         {
           "id": "task-3-3",
           "description": "Build board and feed tools",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-17T04:09:17.929Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-17T04:13:14.683Z",
+              "completedAt": "2026-04-17T04:14:29.670Z",
+              "reviewSha": "b2f0496aefb71d4e0821cf44f15cd11f71ec7efd",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-17T04:14:29.670Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-17T04:14:29.670Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-17T04:14:29.671Z",
+              "completedAt": "2026-04-17T07:40:19.226Z",
+              "reviewSha": "b2f0496aefb71d4e0821cf44f15cd11f71ec7efd",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-17T07:40:19.226Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-17T07:40:19.226Z"
+            }
+          },
+          "greenStartedAt": "2026-04-17T04:11:46.542Z",
+          "testCommitSha": "1c3214d052fdbe297f2641915e077b17d000d5c2",
+          "redCompletedAt": "2026-04-17T04:11:46.542Z",
+          "commitSha": "b2f0496aefb71d4e0821cf44f15cd11f71ec7efd",
+          "greenCompletedAt": "2026-04-17T04:13:14.683Z",
+          "completedAt": "2026-04-17T07:40:19.228Z"
         },
         {
           "id": "task-3-4",
@@ -327,8 +354,8 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 2,
-        "remaining": 4
+        "completed": 3,
+        "remaining": 3
       }
     },
     {
@@ -381,6 +408,49 @@
         "completed": 0,
         "remaining": 1
       }
+    },
+    {
+      "id": "platform-distribution",
+      "number": 6,
+      "title": "Platform Distribution — MCP Wrappers",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-6-1",
+          "description": "Build Claude Code plugin wrapper",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6-2",
+          "description": "Build Claude Desktop extension",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6-3",
+          "description": "Build Cursor plugin wrapper",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6-4",
+          "description": "Build ChatGPT integration",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6-5",
+          "description": "Build Gemini CLI extension",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6-6",
+          "description": "Create config snippets for Copilot, Windsurf, Continue.dev",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 6,
+        "completed": 0,
+        "remaining": 6
+      }
     }
   ],
   "gitUserName": "Andy Richardson",
@@ -391,23 +461,24 @@
     "featureTitle": "MCP Server",
     "overallProgress": {
       "completedFeatures": 2,
-      "totalFeatures": 5,
-      "completedTasks": 8,
-      "totalTasks": 17,
-      "percentComplete": 47
+      "totalFeatures": 6,
+      "completedTasks": 9,
+      "totalTasks": 23,
+      "percentComplete": 39
     },
     "workRemaining": {
       "pendingFeatures": [
         "Open Source Launch & npm Publish",
-        "Migration Script (docs/prd/ → .notickets/)"
+        "Migration Script (docs/prd/ → .notickets/)",
+        "Platform Distribution — MCP Wrappers"
       ],
-      "currentFeatureTasks": 4,
-      "futureFeatureTasks": 5
+      "currentFeatureTasks": 3,
+      "futureFeatureTasks": 11
     },
     "nextAction": {
       "featureId": "mcp-server",
-      "taskId": "task-3-3",
-      "description": "Build board and feed tools"
+      "taskId": "task-3-4",
+      "description": "Build creation tools"
     },
     "blockers": []
   }

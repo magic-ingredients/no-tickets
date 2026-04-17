@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-17T01:26:00.468Z",
+  "lastUpdated": "2026-04-17T02:34:08.183Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -274,7 +274,35 @@
         {
           "id": "task-3-2",
           "description": "Build API client for MCP tools",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-17T02:26:03.099Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-17T02:29:01.672Z",
+              "completedAt": "2026-04-17T02:30:18.128Z",
+              "reviewSha": "b9d2d02f2ad6b19897e0cad8c3e47e5c26ed8cde",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-17T02:30:18.128Z",
+              "refactorCommitSha": "909c70950fb0529cd7ea83b4338eb3b7f929620f",
+              "refactorCompletedAt": "2026-04-17T02:32:42.504Z",
+              "refactorCommittedAt": "2026-04-17T02:32:42.504Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-17T02:32:42.504Z",
+              "completedAt": "2026-04-17T02:34:08.181Z",
+              "reviewSha": "909c70950fb0529cd7ea83b4338eb3b7f929620f",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-17T02:34:08.181Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-17T02:34:08.181Z"
+            }
+          },
+          "greenStartedAt": "2026-04-17T02:28:05.977Z",
+          "testCommitSha": "97e2bcf1f74472c6d9ff16f47b7336416fcb08d4",
+          "redCompletedAt": "2026-04-17T02:28:05.977Z",
+          "commitSha": "b9d2d02f2ad6b19897e0cad8c3e47e5c26ed8cde",
+          "greenCompletedAt": "2026-04-17T02:29:01.672Z",
+          "completedAt": "2026-04-17T02:34:08.183Z"
         },
         {
           "id": "task-3-3",
@@ -299,8 +327,8 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 1,
-        "remaining": 5
+        "completed": 2,
+        "remaining": 4
       }
     },
     {
@@ -364,22 +392,22 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 7,
+      "completedTasks": 8,
       "totalTasks": 17,
-      "percentComplete": 41
+      "percentComplete": 47
     },
     "workRemaining": {
       "pendingFeatures": [
         "Open Source Launch & npm Publish",
         "Migration Script (docs/prd/ → .notickets/)"
       ],
-      "currentFeatureTasks": 5,
+      "currentFeatureTasks": 4,
       "futureFeatureTasks": 5
     },
     "nextAction": {
       "featureId": "mcp-server",
-      "taskId": "task-3-2",
-      "description": "Build API client for MCP tools"
+      "taskId": "task-3-3",
+      "description": "Build board and feed tools"
     },
     "blockers": []
   }

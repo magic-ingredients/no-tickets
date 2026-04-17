@@ -42,6 +42,12 @@ beforeEach(() => {
   lastInstance = undefined;
 });
 
+function findTool(name: string) {
+  const tool = lastInstance!.registerToolCalls.find((c) => c.name === name);
+  expect(tool).toBeDefined();
+  return tool!;
+}
+
 describe('createMcpServer', () => {
   it('creates an McpServer with correct name and version', () => {
     createMcpServer();
@@ -57,6 +63,13 @@ describe('createMcpServer', () => {
 
     const [serverInfo] = lastInstance!.constructorArgs as [Record<string, string>];
     expect(serverInfo.version).toBe('2.0.0');
+  });
+
+  it('passes tools capability in options', () => {
+    createMcpServer();
+
+    const [, options] = lastInstance!.constructorArgs as [unknown, { capabilities: Record<string, unknown> }];
+    expect(options.capabilities).toHaveProperty('tools');
   });
 
   it('registers all expected tools', () => {
@@ -83,7 +96,7 @@ describe('createMcpServer', () => {
     expect(registeredNames).toHaveLength(expectedTools.length);
   });
 
-  it('registers each tool with a description and inputSchema', () => {
+  it('registers each tool with a non-empty description and inputSchema', () => {
     createMcpServer();
 
     for (const { name, config } of lastInstance!.registerToolCalls) {
@@ -91,6 +104,8 @@ describe('createMcpServer', () => {
       expect(typeof config.description).toBe('string');
       expect(config.description).not.toBe('');
       expect(config.inputSchema).toBeDefined();
+      expect(typeof config.inputSchema).toBe('object');
+      expect(Object.keys(config.inputSchema as object).length).toBeGreaterThan(0);
     }
   });
 
@@ -100,6 +115,90 @@ describe('createMcpServer', () => {
     for (const { callback } of lastInstance!.registerToolCalls) {
       expect(typeof callback).toBe('function');
     }
+  });
+
+  it('stub callbacks return not-yet-implemented content', async () => {
+    createMcpServer();
+
+    const { callback } = lastInstance!.registerToolCalls[0]!;
+    const result = await (callback as () => Promise<unknown>)();
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'Not yet implemented' }],
+    });
+  });
+
+  describe('tool input schemas', () => {
+    beforeEach(() => {
+      createMcpServer();
+    });
+
+    it('list_board requires projectId', () => {
+      const schema = findTool('list_board').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+    });
+
+    it('list_feed requires projectId', () => {
+      const schema = findTool('list_feed').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+    });
+
+    it('create_epic requires projectId and title', () => {
+      const schema = findTool('create_epic').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('title');
+      expect(schema).toHaveProperty('description');
+    });
+
+    it('create_feature requires projectId, epicId, and title', () => {
+      const schema = findTool('create_feature').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('epicId');
+      expect(schema).toHaveProperty('title');
+      expect(schema).toHaveProperty('description');
+    });
+
+    it('create_fix requires projectId, epicId, and title', () => {
+      const schema = findTool('create_fix').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('epicId');
+      expect(schema).toHaveProperty('title');
+      expect(schema).toHaveProperty('description');
+    });
+
+    it('update_feature requires projectId and featureId', () => {
+      const schema = findTool('update_feature').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('featureId');
+      expect(schema).toHaveProperty('title');
+      expect(schema).toHaveProperty('description');
+    });
+
+    it('move_to_phase requires projectId, featureId, and phase', () => {
+      const schema = findTool('move_to_phase').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('featureId');
+      expect(schema).toHaveProperty('phase');
+    });
+
+    it('assign requires projectId, featureId, assignee, and assigneeType', () => {
+      const schema = findTool('assign').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('featureId');
+      expect(schema).toHaveProperty('assignee');
+      expect(schema).toHaveProperty('assigneeType');
+    });
+
+    it('get_template requires templateType', () => {
+      const schema = findTool('get_template').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('templateType');
+    });
+
+    it('break_down requires projectId and featureId', () => {
+      const schema = findTool('break_down').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('projectId');
+      expect(schema).toHaveProperty('featureId');
+      expect(schema).toHaveProperty('context');
+    });
   });
 });
 

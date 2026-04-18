@@ -251,4 +251,33 @@ describe('error handling', () => {
 
     await expect(client.getBoard('p1')).rejects.toThrow('fetch failed');
   });
+
+  it('uses fallback message when error body is null', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse(null, 500));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('500: Request failed');
+  });
+
+  it('uses fallback message when error body is an array', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse(['err'], 500));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('500: Request failed');
+  });
+
+  it('returns plain text for successful non-JSON response', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(textResponse('OK', 200));
+
+    const result = await client.getBoard('p1');
+    expect(result).toBe('OK');
+  });
+
+  it('uses fallback message for empty-body error response', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(textResponse('', 503));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('503: Request failed');
+  });
 });

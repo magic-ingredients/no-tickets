@@ -1,9 +1,5 @@
 import type { ApiClient } from '../../sdk/api-client.js';
-
-interface ToolResult {
-  readonly content: Array<{ readonly type: 'text'; readonly text: string }>;
-  readonly isError?: boolean;
-}
+import { toolSuccess, toolError, type ToolResult } from './types.js';
 
 export async function listBoardHandler(
   params: { readonly projectId: string },
@@ -11,14 +7,9 @@ export async function listBoardHandler(
 ): Promise<ToolResult> {
   try {
     const board = await client.getBoard(params.projectId);
-    return {
-      content: [{ type: 'text', text: JSON.stringify(board) }],
-    };
+    return toolSuccess(board);
   } catch (err) {
-    return {
-      isError: true,
-      content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-    };
+    return toolError(err);
   }
 }
 
@@ -28,13 +19,8 @@ export async function listFeedHandler(
 ): Promise<ToolResult> {
   try {
     const events = await client.getFeed(params.projectId);
-    return {
-      content: [{ type: 'text', text: JSON.stringify(events) }],
-    };
+    return toolSuccess(events);
   } catch (err) {
-    return {
-      isError: true,
-      content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-    };
+    return toolError(err);
   }
 }

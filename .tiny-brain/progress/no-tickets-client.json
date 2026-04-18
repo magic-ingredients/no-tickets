@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-17T07:40:19.228Z",
+  "lastUpdated": "2026-04-18T07:15:33.224Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -339,7 +339,36 @@
         {
           "id": "task-3-4",
           "description": "Build creation tools",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-18T02:03:42.337Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-18T02:06:07.172Z",
+              "completedAt": "2026-04-18T02:07:21.027Z",
+              "reviewSha": "2a1c37c505fdaed3fcb50a5029f18f25cfb09da3",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-18T02:07:21.027Z",
+              "refactorCommitSha": "5fe2a750c7a5c259259822daf622d8c9e749697c",
+              "refactorCompletedAt": "2026-04-18T02:10:28.556Z",
+              "refactorCommittedAt": "2026-04-18T02:10:28.556Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-18T02:10:28.556Z",
+              "completedAt": "2026-04-18T07:14:05.369Z",
+              "reviewSha": "5fe2a750c7a5c259259822daf622d8c9e749697c",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-18T07:14:05.369Z",
+              "refactorCommitSha": "1347ce6693978c1731cb6e1cd537bbe8545f454e",
+              "refactorCompletedAt": "2026-04-18T07:15:33.222Z",
+              "refactorCommittedAt": "2026-04-18T07:15:33.222Z"
+            }
+          },
+          "greenStartedAt": "2026-04-18T02:04:44.632Z",
+          "testCommitSha": "4b050a9ade0ec47f8c83dcfc7a58c0949712e388",
+          "redCompletedAt": "2026-04-18T02:04:44.632Z",
+          "commitSha": "2a1c37c505fdaed3fcb50a5029f18f25cfb09da3",
+          "greenCompletedAt": "2026-04-18T02:06:07.172Z",
+          "completedAt": "2026-04-18T07:15:33.224Z"
         },
         {
           "id": "task-3-5",
@@ -354,8 +383,8 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 3,
-        "remaining": 3
+        "completed": 4,
+        "remaining": 2
       }
     },
     {
@@ -462,9 +491,9 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 6,
-      "completedTasks": 9,
+      "completedTasks": 10,
       "totalTasks": 23,
-      "percentComplete": 39
+      "percentComplete": 43
     },
     "workRemaining": {
       "pendingFeatures": [
@@ -472,13 +501,13 @@
         "Migration Script (docs/prd/ → .notickets/)",
         "Platform Distribution — MCP Wrappers"
       ],
-      "currentFeatureTasks": 3,
+      "currentFeatureTasks": 2,
       "futureFeatureTasks": 11
     },
     "nextAction": {
       "featureId": "mcp-server",
-      "taskId": "task-3-4",
-      "description": "Build creation tools"
+      "taskId": "task-3-5",
+      "description": "Build mutation tools"
     },
     "blockers": []
   }

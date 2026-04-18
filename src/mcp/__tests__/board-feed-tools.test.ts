@@ -1,22 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { listBoardHandler, listFeedHandler } from '../tools/board-feed.js';
-import type { ApiClient } from '../../sdk/api-client.js';
+import { mockApiClient } from './mock-api-client.js';
 import type { BoardState, FeedEvent } from '../../core/types.js';
-
-function mockApiClient(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
-    getBoard: vi.fn(),
-    getFeed: vi.fn(),
-    createEpic: vi.fn(),
-    createFeature: vi.fn(),
-    createFix: vi.fn(),
-    updateFeature: vi.fn(),
-    moveToPhase: vi.fn(),
-    assignFeature: vi.fn(),
-    breakDown: vi.fn(),
-    ...overrides,
-  };
-}
 
 describe('listBoardHandler', () => {
   it('calls apiClient.getBoard with projectId', async () => {

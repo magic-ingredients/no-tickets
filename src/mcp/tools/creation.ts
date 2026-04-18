@@ -1,28 +1,8 @@
-import type { ApiClient } from '../../sdk/api-client.js';
+import type { ApiClient, CreateEpicParams, CreateFeatureParams, CreateFixParams } from '../../sdk/api-client.js';
 import { toolSuccess, toolError, type ToolResult } from './types.js';
 
-interface CreateEpicInput {
-  readonly projectId: string;
-  readonly title: string;
-  readonly description?: string;
-}
-
-interface CreateFeatureInput {
-  readonly projectId: string;
-  readonly epicId: string;
-  readonly title: string;
-  readonly description?: string;
-}
-
-interface CreateFixInput {
-  readonly projectId: string;
-  readonly epicId: string;
-  readonly title: string;
-  readonly description?: string;
-}
-
 export async function createEpicHandler(
-  params: CreateEpicInput,
+  params: CreateEpicParams,
   client: ApiClient,
 ): Promise<ToolResult> {
   try {
@@ -34,7 +14,7 @@ export async function createEpicHandler(
 }
 
 export async function createFeatureHandler(
-  params: CreateFeatureInput,
+  params: CreateFeatureParams,
   client: ApiClient,
 ): Promise<ToolResult> {
   try {
@@ -46,7 +26,7 @@ export async function createFeatureHandler(
 }
 
 export async function createFixHandler(
-  params: CreateFixInput,
+  params: CreateFixParams,
   client: ApiClient,
 ): Promise<ToolResult> {
   try {

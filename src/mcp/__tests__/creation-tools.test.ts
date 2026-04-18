@@ -1,21 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createEpicHandler, createFeatureHandler, createFixHandler } from '../tools/creation.js';
-import type { ApiClient } from '../../sdk/api-client.js';
-
-function mockApiClient(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
-    getBoard: vi.fn(),
-    getFeed: vi.fn(),
-    createEpic: vi.fn(),
-    createFeature: vi.fn(),
-    createFix: vi.fn(),
-    updateFeature: vi.fn(),
-    moveToPhase: vi.fn(),
-    assignFeature: vi.fn(),
-    breakDown: vi.fn(),
-    ...overrides,
-  };
-}
+import { mockApiClient } from './mock-api-client.js';
 
 describe('createEpicHandler', () => {
   it('calls apiClient.createEpic with params', async () => {
@@ -139,5 +124,18 @@ describe('createFixHandler', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain('401');
+  });
+});
+
+describe('toolError non-Error handling', () => {
+  it('converts non-Error rejection to string', async () => {
+    const client = mockApiClient({
+      createEpic: vi.fn().mockRejectedValue('plain string error'),
+    });
+
+    const result = await createEpicHandler({ projectId: 'p1', title: 'Epic' }, client);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toBe('plain string error');
   });
 });

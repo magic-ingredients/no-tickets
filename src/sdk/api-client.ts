@@ -171,4 +171,14 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
   };
 }
 
-export type { ApiClient, ApiClientConfig };
+export type {
+  ApiClient,
+  ApiClientConfig,
+  CreateEpicParams,
+  CreateFeatureParams,
+  CreateFixParams,
+  UpdateFeatureParams,
+  MoveToPhaseParams,
+  AssignFeatureParams,
+  BreakDownParams,
+};

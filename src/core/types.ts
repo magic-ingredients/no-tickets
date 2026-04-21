@@ -199,3 +199,121 @@ export interface NoTicketsConfig {
   readonly teamId?: string;
   readonly projectId?: string;
 }
+
+// =============================================================================
+// Push Payload v2 — generic core envelope with published extension schemas.
+// =============================================================================
+
+// -- Enums as unions (v2) -----------------------------------------------------
+
+export type ProjectEntityType = 'epic' | 'feature' | 'task';
+
+export type DevPhase = 'red' | 'green' | 'refactor' | 'review' | 'complete';
+
+export type AcceptanceStatus = 'unreviewed' | 'accepted' | 'changes_requested';
+
+export type Priority = 'critical' | 'high' | 'medium' | 'low';
+
+export type QualitySource = 'local' | 'ci';
+
+// -- Core envelope (Task 1) ---------------------------------------------------
+
+export interface Push {
+  readonly projectId: string;
+  readonly timestamp: string;
+  readonly session?: Session;
+
+  readonly project?: ProjectSchema;
+  readonly dev?: DevSchema;
+  readonly pm?: PMSchema;
+  readonly quality?: QualitySchema;
+
+  readonly custom?: Readonly<Record<string, unknown>>;
+}
+
+export interface Session {
+  readonly agent: string;
+  readonly agentType: AssigneeType;
+  readonly model?: string;
+  readonly vendor?: string;
+  readonly environment?: PushEnvironment;
+  readonly duration?: number;
+  readonly result?: string;
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+export interface PushEnvironment {
+  readonly os?: string;
+  readonly runtime?: string;
+  readonly ci?: boolean;
+  readonly ciProvider?: string;
+}
+
+// -- Schema: "project" (Task 3) -----------------------------------------------
+
+export interface ProjectSchema {
+  readonly entities: readonly ProjectEntity[];
+}
+
+export interface ProjectEntity {
+  readonly id: string;
+  readonly type: ProjectEntityType;
+  readonly parentId?: string;
+  readonly title: string;
+  readonly status: EntityStatus;
+  readonly assignee?: string;
+  readonly assigneeType?: AssigneeType;
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+// -- Schema: "dev" (Task 4) ---------------------------------------------------
+
+export interface DevSchema {
+  readonly tasks?: readonly DevTask[];
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+export interface DevTask {
+  readonly entityId: string;
+  readonly phase?: DevPhase;
+  readonly commitSha?: string;
+  readonly startedAt?: string;
+  readonly completedAt?: string;
+  readonly duration?: number;
+  readonly reviews?: readonly DevReview[];
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+export interface DevReview {
+  readonly reviewer: string;
+  readonly verdict: string;
+  readonly findings?: number;
+}
+
+// -- Schema: "pm" (Task 5) ----------------------------------------------------
+
+export interface PMSchema {
+  readonly updates: readonly PMUpdate[];
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+export interface PMUpdate {
+  readonly entityId: string;
+  readonly acceptance?: AcceptanceStatus;
+  readonly priority?: Priority;
+  readonly labels?: readonly string[];
+  readonly releaseId?: string;
+  readonly notes?: string;
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+// -- Schema: "quality" (Task 6) -----------------------------------------------
+
+export interface QualitySchema {
+  readonly score: number;
+  readonly grade?: string;
+  readonly source?: QualitySource;
+  readonly entityId?: string;
+  readonly categories?: Readonly<Record<string, number>>;
+  readonly meta?: Readonly<Record<string, unknown>>;
+}

@@ -110,6 +110,96 @@
       "archived": true
     },
     {
+      "id": "schema-domain-rename",
+      "title": "Rename push payload schemas to domain conventions (ADR-0004)",
+      "status": "completed",
+      "severity": "high",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Rename types in core/types.ts",
+          "status": "completed",
+          "commitSha": "2e64b37d7ab5dc57540ea0c4643422d00242eaca",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-22T18:21:57.039Z",
+          "greenStartedAt": "2026-04-22T18:27:01.006Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T18:35:17.152Z",
+              "completedAt": "2026-04-22T18:39:43.890Z",
+              "reviewSha": "2e64b37",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T18:39:43.890Z",
+              "refactorCommitSha": "a42fe8d7e708845093aeb232d87843388f52c40f",
+              "refactorCompletedAt": "2026-04-22T18:42:06.186Z",
+              "refactorCommittedAt": "2026-04-22T18:42:06.186Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T18:42:06.186Z",
+              "completedAt": "2026-04-22T18:46:26.084Z",
+              "reviewSha": "a42fe8d",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T18:46:26.084Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T18:46:26.084Z"
+            }
+          },
+          "completedAt": "2026-04-22T18:46:26.084Z"
+        },
+        {
+          "id": "task-2",
+          "description": "Update Zod schemas in core/schemas.ts",
+          "status": "completed",
+          "commitSha": "2e64b37",
+          "committedAt": "2026-04-22T18:47:26.254Z",
+          "completedAt": "2026-04-22T18:47:26.254Z"
+        },
+        {
+          "id": "task-3",
+          "description": "Update state computation",
+          "status": "completed",
+          "commitSha": "2e64b37",
+          "committedAt": "2026-04-22T18:47:26.254Z",
+          "completedAt": "2026-04-22T18:47:26.254Z"
+        },
+        {
+          "id": "task-4",
+          "description": "Update push command and SDK",
+          "status": "completed",
+          "commitSha": "2e64b37",
+          "committedAt": "2026-04-22T18:47:26.254Z",
+          "completedAt": "2026-04-22T18:47:26.254Z"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/schema-domain-rename.md",
+      "reported": "2026-04-22T19:30:00.000Z",
+      "resolved": "2026-04-22T19:45:00.000Z",
+      "archived": true,
+      "resolution": {
+        "rootCause": "Server renamed Push payload schemas per ADR-0004; client was still using old generic names (project/dev/pm/quality), breaking the push endpoint.",
+        "fix": [
+          "Renamed types in core/types.ts (project→work, dev→engineering, pm→product, quality→codeQuality)",
+          "Renamed Zod schemas in core/schemas.ts with matching pushSchema field names",
+          "Renamed toProjectEntities → toWorkEntities in state.ts",
+          "Updated all test files, push command, SDK tests, MCP e2e, and PRD docs"
+        ],
+        "filesModified": [
+          "src/core/types.ts",
+          "src/core/schemas.ts",
+          "src/core/state.ts",
+          "src/core/__tests__/push-schemas.test.ts",
+          "src/core/__tests__/state.test.ts",
+          "src/commands/push.ts",
+          "src/commands/__tests__/push.test.ts",
+          "src/sdk/__tests__/api-client.test.ts",
+          "src/__tests__/push-e2e.test.ts",
+          "src/__tests__/mcp-e2e.test.ts",
+          "docs/prd/no-tickets-client/features/push-schemas.md",
+          "docs/prd/no-tickets-client/features/push-cli.md"
+        ]
+      }
+    },
+    {
       "id": "quick-quality-fixes",
       "title": "Batch trivial/small quality fixes",
       "status": "completed",
@@ -476,7 +566,7 @@
     {
       "id": "deferred-server-coordination",
       "title": "Deferred fixes requiring server-side coordination",
-      "status": "in_progress",
+      "status": "completed",
       "severity": "major",
       "tasks": [
         {
@@ -525,14 +615,28 @@
         {
           "id": "task-4",
           "description": "Sanitize server error messages",
-          "status": "superseded",
+          "status": "completed",
+          "commitSha": "08c43ac",
+          "committedAt": "2026-04-22T17:37:39.987Z",
           "completedAt": "2026-04-22T17:29:32.782Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/deferred-server-coordination.md",
       "reported": "2026-04-22",
-      "resolved": null,
-      "archived": false
+      "resolved": "2026-04-22",
+      "resolution": {
+        "rootCause": "Path injection risk and error message leaking in API client",
+        "fix": [
+          "Tasks 1-2 handled server-side (superseded)",
+          "encodeURIComponent applied to all path params",
+          "Error messages truncated to 200 chars"
+        ],
+        "filesModified": [
+          "src/sdk/api-client.ts",
+          "src/commands/token.ts"
+        ]
+      },
+      "archived": true
     },
     {
       "id": "branch-protection",
@@ -552,5 +656,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-22T17:37:20.939Z"
+  "lastSynced": "2026-04-22T18:47:30.782Z"
 }

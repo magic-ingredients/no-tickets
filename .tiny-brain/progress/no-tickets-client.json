@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T15:52:21.907Z",
+  "lastUpdated": "2026-04-22T18:07:57.987Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -289,7 +289,7 @@
       "id": "oss-launch",
       "number": 7,
       "title": "Open Source Launch & npm Publish",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-7-1",
@@ -326,7 +326,10 @@
         {
           "id": "task-7-2",
           "description": "Publish initial npm release",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "f049b46",
+          "committedAt": "2026-04-22T18:07:36.637Z",
+          "completedAt": "2026-04-22T18:07:36.637Z"
         },
         {
           "id": "task-7-3",
@@ -343,8 +346,8 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 3,
-        "remaining": 1
+        "completed": 4,
+        "remaining": 0
       }
     },
     {
@@ -753,11 +756,11 @@
     "feature": 7,
     "featureTitle": "Open Source Launch & npm Publish",
     "overallProgress": {
-      "completedFeatures": 7,
+      "completedFeatures": 8,
       "totalFeatures": 9,
-      "completedTasks": 30,
+      "completedTasks": 31,
       "totalTasks": 32,
-      "percentComplete": 94
+      "percentComplete": 97
     },
     "workRemaining": {
       "pendingFeatures": [

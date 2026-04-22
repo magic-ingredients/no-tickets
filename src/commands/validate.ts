@@ -4,7 +4,8 @@ import type { FileEntry, ValidationResult } from '../core/types.js';
 
 /**
  * Validate .notickets/ files against the format spec.
- * Pure function — accepts file contents, no I/O.
+ * Files with unrecognized or missing type fields are silently skipped
+ * (parseFiles only processes epic/feature/fix types).
  */
 export function validateFiles(files: readonly FileEntry[]): ValidationResult {
   const parsed = parseFiles(files);

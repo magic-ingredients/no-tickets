@@ -33,7 +33,11 @@ describe('validateFiles', () => {
     const result = validateFiles([badEpic]);
 
     expect(result.valid).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
+    const errorFields = result.errors.map((e) => e.field);
+    expect(errorFields).toContain('id');
+    expect(errorFields).toContain('title');
+    expect(errorFields).toContain('created');
+    expect(errorFields).toContain('updated');
   });
 
   it('returns errors for orphan feature referencing non-existent epic', () => {
@@ -48,6 +52,28 @@ describe('validateFiles', () => {
 
   it('returns valid for empty file list', () => {
     const result = validateFiles([]);
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('silently skips files with unrecognized type in frontmatter', () => {
+    const unknownType: FileEntry = {
+      path: '.notickets/misc/notes.md',
+      content: '---\ntype: notes\ntitle: Just notes\n---\n# Notes\n',
+    };
+    const result = validateFiles([unknownType]);
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('silently skips files with no frontmatter', () => {
+    const noFrontmatter: FileEntry = {
+      path: '.notickets/readme.md',
+      content: '# Just a readme\n\nNo frontmatter here.\n',
+    };
+    const result = validateFiles([noFrontmatter]);
 
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);

@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T10:01:47.281Z",
+  "lastUpdated": "2026-04-22T10:41:47.623Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -423,7 +423,7 @@
       "id": "push-cli",
       "number": 4,
       "title": "Push CLI",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-4-1",
@@ -528,15 +528,42 @@
         {
           "id": "task-4-4",
           "description": "Implement CLI validate command",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T10:32:37.826Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T10:36:18.401Z",
+              "completedAt": "2026-04-22T10:38:07.903Z",
+              "reviewSha": "c8228cbaddcdb83a28bfa39c1bbe1fe28e50da07",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T10:38:07.903Z",
+              "refactorCommitSha": "d6ba0f7e07e511e47db7805c1fff088fad5a28f6",
+              "refactorCompletedAt": "2026-04-22T10:39:47.406Z",
+              "refactorCommittedAt": "2026-04-22T10:39:47.406Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T10:39:47.406Z",
+              "completedAt": "2026-04-22T10:41:47.621Z",
+              "reviewSha": "d6ba0f7e07e511e47db7805c1fff088fad5a28f6",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T10:41:47.621Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T10:41:47.621Z"
+            }
+          },
+          "greenStartedAt": "2026-04-22T10:34:01.792Z",
+          "testCommitSha": "32dfb991c2d5900cf94443edbc0934520b28084e",
+          "redCompletedAt": "2026-04-22T10:34:01.792Z",
+          "commitSha": "c8228cbaddcdb83a28bfa39c1bbe1fe28e50da07",
+          "greenCompletedAt": "2026-04-22T10:36:18.401Z",
+          "completedAt": "2026-04-22T10:41:47.623Z"
         }
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 3,
-        "remaining": 1,
-        "weightedProgress": 0.75,
-        "nextTask": "Implement CLI validate command"
+        "completed": 4,
+        "remaining": 0,
+        "weightedProgress": 1
       }
     }
   ],
@@ -547,12 +574,12 @@
     "feature": 3,
     "featureTitle": "Push Schemas",
     "overallProgress": {
-      "completedFeatures": 2,
+      "completedFeatures": 3,
       "totalFeatures": 8,
-      "completedTasks": 12,
+      "completedTasks": 13,
       "totalTasks": 27,
-      "percentComplete": 44,
-      "weightedPercentComplete": 11
+      "percentComplete": 48,
+      "weightedPercentComplete": 15
     },
     "workRemaining": {
       "pendingFeatures": [

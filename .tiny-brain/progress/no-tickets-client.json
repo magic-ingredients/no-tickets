@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T09:47:41.773Z",
+  "lastUpdated": "2026-04-22T10:01:47.281Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -494,7 +494,36 @@
         {
           "id": "task-4-3",
           "description": "Implement CLI push command",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T09:48:39.598Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T09:53:07.850Z",
+              "completedAt": "2026-04-22T09:54:48.465Z",
+              "reviewSha": "311451802b6b464e0b262e99ecd106003669e4b3",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T09:54:48.465Z",
+              "refactorCommitSha": "7f0d0d49b8e6ba52921fd3570ffbb60a13636102",
+              "refactorCompletedAt": "2026-04-22T09:56:42.838Z",
+              "refactorCommittedAt": "2026-04-22T09:56:42.838Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T09:56:42.838Z",
+              "completedAt": "2026-04-22T10:00:21.890Z",
+              "reviewSha": "7f0d0d49b8e6ba52921fd3570ffbb60a13636102",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T10:00:21.890Z",
+              "refactorCommitSha": "b728f11c7e4eb91688bed99b3603b3f757b2b42a",
+              "refactorCompletedAt": "2026-04-22T10:01:47.279Z",
+              "refactorCommittedAt": "2026-04-22T10:01:47.279Z"
+            }
+          },
+          "greenStartedAt": "2026-04-22T09:51:14.497Z",
+          "testCommitSha": "307e0220f394668eb9a5e23728ab3d2e3c0da039",
+          "redCompletedAt": "2026-04-22T09:51:14.497Z",
+          "commitSha": "311451802b6b464e0b262e99ecd106003669e4b3",
+          "greenCompletedAt": "2026-04-22T09:53:07.850Z",
+          "completedAt": "2026-04-22T10:01:47.281Z"
         },
         {
           "id": "task-4-4",
@@ -504,10 +533,10 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 2,
-        "remaining": 2,
-        "weightedProgress": 0.5,
-        "nextTask": "Implement CLI push command"
+        "completed": 3,
+        "remaining": 1,
+        "weightedProgress": 0.75,
+        "nextTask": "Implement CLI validate command"
       }
     }
   ],
@@ -520,10 +549,10 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 8,
-      "completedTasks": 11,
+      "completedTasks": 12,
       "totalTasks": 27,
-      "percentComplete": 41,
-      "weightedPercentComplete": 7
+      "percentComplete": 44,
+      "weightedPercentComplete": 11
     },
     "workRemaining": {
       "pendingFeatures": [

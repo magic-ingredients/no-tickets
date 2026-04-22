@@ -3,13 +3,38 @@
     {
       "id": "testing-hygiene",
       "title": "Testing hygiene fixes",
-      "status": "not_started",
+      "status": "in_progress",
       "severity": "minor",
       "tasks": [
         {
           "id": "task-1",
           "description": "Fix fake timer leak in credentials.test.ts",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "3acf00b3aa6b55cee3f29e784770cdb33508341a",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-22T15:07:58.238Z",
+          "greenStartedAt": "2026-04-22T15:07:58.238Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T15:11:00.849Z",
+              "completedAt": "2026-04-22T15:13:03.255Z",
+              "reviewSha": "3acf00b3aa6b55cee3f29e784770cdb33508341a",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T15:13:03.255Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T15:13:03.255Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T15:13:03.255Z",
+              "completedAt": "2026-04-22T15:13:28.800Z",
+              "reviewSha": "3acf00b3aa6b55cee3f29e784770cdb33508341a",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T15:13:28.800Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T15:13:28.800Z"
+            }
+          },
+          "completedAt": "2026-04-22T15:13:28.800Z"
         },
         {
           "id": "task-2",
@@ -50,7 +75,7 @@
     {
       "id": "quick-quality-fixes",
       "title": "Batch trivial/small quality fixes",
-      "status": "in_progress",
+      "status": "completed",
       "severity": "minor",
       "tasks": [
         {
@@ -87,58 +112,102 @@
         {
           "id": "task-2",
           "description": "Load version dynamically in CLI",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-3",
           "description": "Guard parseMeta against non-plain objects",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-4",
           "description": "Wrap JSON.parse in MCP push handler",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-5",
           "description": "Remove redundant `as AssigneeType` casts",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-6",
           "description": "Replace JSON.stringify meta equality with deep-equal",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "1c09314",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-7",
           "description": "Replace filter().length with reduce for task count",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-8",
           "description": "Remove unnecessary Buffer.from in readStdin",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-9",
           "description": "Add path validation to MCP validate tool",
-          "status": "not_started"
+          "status": "superseded",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-10",
           "description": "Set credentials directory permissions to 0o700",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         },
         {
           "id": "task-11",
           "description": "Sanitize CLI error output",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272",
+          "committedAt": "2026-04-22T15:05:23.093Z",
+          "completedAt": "2026-04-22T15:05:23.093Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/quick-quality-fixes.md",
       "reported": "2026-04-22",
-      "resolved": null,
-      "archived": false
+      "resolved": "2026-04-22",
+      "resolution": {
+        "rootCause": "Accumulated minor quality issues from quality analysis run",
+        "fix": [
+          "Batch of 11 fixes in one commit plus deepEqual correction"
+        ],
+        "filesModified": [
+          "src/sdk/api-client.ts",
+          "src/cli.ts",
+          "src/core/parser.ts",
+          "src/mcp/tools/push.ts",
+          "src/agent-detect.ts",
+          "src/core/diff.ts",
+          "src/core/state.ts",
+          "src/sdk/credentials.ts"
+        ]
+      },
+      "archived": true
     },
     {
       "id": "qip-security",
@@ -417,5 +486,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-22T15:04:57.062Z"
+  "lastSynced": "2026-04-22T15:13:28.800Z"
 }

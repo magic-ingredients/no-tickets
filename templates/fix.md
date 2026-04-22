@@ -28,7 +28,7 @@ resolved: null
 **Reported:** [Date]
 **Severity:** [low | medium | high | critical]
 
-### Reproduction Steps
+## Reproduction Steps
 1. Step to reproduce
 2. Step to reproduce
 3. Observe the bug
@@ -39,7 +39,7 @@ resolved: null
 ### Actual Behavior
 [What actually happens]
 
-## Root Cause Analysis
+## Root Cause
 
 [Explain why this bug occurs. Be specific about the code path and logic error.]
 

@@ -9,7 +9,7 @@ updated: 2026-01-01
 
 # Your Epic Title
 
-## Purpose and Goals
+## Goals
 
 [Describe the purpose of this epic and the high-level goals it aims to achieve. What problem are you solving? What value will this provide?]
 

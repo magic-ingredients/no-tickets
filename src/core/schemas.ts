@@ -65,15 +65,15 @@ const metaSchema = z.record(z.string(), z.unknown()).optional();
 
 // -- Enum schemas (v2 — push payload) -----------------------------------------
 
-export const projectEntityTypeSchema = z.enum(['epic', 'feature', 'task']);
+export const workEntityTypeSchema = z.enum(['epic', 'feature', 'task']);
 
-export const devPhaseSchema = z.enum(['red', 'green', 'refactor', 'review', 'complete']);
+export const engineeringPhaseSchema = z.enum(['red', 'green', 'refactor', 'review', 'complete']);
 
 export const acceptanceStatusSchema = z.enum(['unreviewed', 'accepted', 'changes_requested']);
 
 export const prioritySchema = z.enum(['critical', 'high', 'medium', 'low']);
 
-export const qualitySourceSchema = z.enum(['local', 'ci']);
+export const codeQualitySourceSchema = z.enum(['local', 'ci']);
 
 // -- Core envelope ------------------------------------------------------------
 
@@ -95,11 +95,11 @@ export const sessionSchema = z.object({
   meta: metaSchema,
 });
 
-// -- Schema: "project" --------------------------------------------------------
+// -- Schema: "work" -----------------------------------------------------------
 
-export const projectEntitySchema = z.object({
+export const workEntitySchema = z.object({
   id: z.string(),
-  type: projectEntityTypeSchema,
+  type: workEntityTypeSchema,
   parentId: z.string().optional(),
   title: z.string(),
   status: entityStatusSchema,
@@ -108,37 +108,37 @@ export const projectEntitySchema = z.object({
   meta: metaSchema,
 });
 
-export const projectDataSchema = z.object({
-  entities: z.array(projectEntitySchema),
+export const workDataSchema = z.object({
+  entities: z.array(workEntitySchema),
 });
 
-// -- Schema: "dev" ------------------------------------------------------------
+// -- Schema: "engineering" ----------------------------------------------------
 
-export const devReviewSchema = z.object({
+export const engineeringReviewSchema = z.object({
   reviewer: z.string(),
   verdict: z.string(),
   findings: z.number().optional(),
 });
 
-export const devTaskSchema = z.object({
+export const engineeringTaskSchema = z.object({
   entityId: z.string(),
-  phase: devPhaseSchema.optional(),
+  phase: engineeringPhaseSchema.optional(),
   commitSha: z.string().optional(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
   duration: z.number().nonnegative().optional(),
-  reviews: z.array(devReviewSchema).optional(),
+  reviews: z.array(engineeringReviewSchema).optional(),
   meta: metaSchema,
 });
 
-export const devDataSchema = z.object({
-  tasks: z.array(devTaskSchema).optional(),
+export const engineeringDataSchema = z.object({
+  tasks: z.array(engineeringTaskSchema).optional(),
   meta: metaSchema,
 });
 
-// -- Schema: "pm" -------------------------------------------------------------
+// -- Schema: "product" --------------------------------------------------------
 
-export const pmUpdateSchema = z.object({
+export const productUpdateSchema = z.object({
   entityId: z.string(),
   acceptance: acceptanceStatusSchema.optional(),
   priority: prioritySchema.optional(),
@@ -148,17 +148,17 @@ export const pmUpdateSchema = z.object({
   meta: metaSchema,
 });
 
-export const pmDataSchema = z.object({
-  updates: z.array(pmUpdateSchema),
+export const productDataSchema = z.object({
+  updates: z.array(productUpdateSchema),
   meta: metaSchema,
 });
 
-// -- Schema: "quality" --------------------------------------------------------
+// -- Schema: "codeQuality" ----------------------------------------------------
 
-export const qualityDataSchema = z.object({
+export const codeQualityDataSchema = z.object({
   score: z.number().finite().nonnegative(),
   grade: z.string().optional(),
-  source: qualitySourceSchema.optional(),
+  source: codeQualitySourceSchema.optional(),
   entityId: z.string().optional(),
   categories: z.record(z.string(), z.number()).optional(),
   meta: metaSchema,
@@ -170,9 +170,9 @@ export const pushSchema = z.object({
   projectId: z.string(),
   timestamp: z.string(),
   session: sessionSchema.optional(),
-  project: projectDataSchema.optional(),
-  dev: devDataSchema.optional(),
-  pm: pmDataSchema.optional(),
-  quality: qualityDataSchema.optional(),
+  work: workDataSchema.optional(),
+  engineering: engineeringDataSchema.optional(),
+  product: productDataSchema.optional(),
+  codeQuality: codeQualityDataSchema.optional(),
   custom: z.record(z.string(), z.unknown()).optional(),
 });

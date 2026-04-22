@@ -1,4 +1,4 @@
-import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase, ProjectEntity } from './types.js';
+import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase, WorkEntity } from './types.js';
 
 /**
  * Compute a state snapshot from parsed documents.
@@ -47,16 +47,16 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
 }
 
 /**
- * Convert parsed .notickets/ documents into a flat ProjectEntity array
- * for the v2 Push payload's project schema.
+ * Convert parsed .notickets/ documents into a flat WorkEntity array
+ * for the v2 Push payload's work schema.
  * Pure function — no I/O.
  */
-export function toProjectEntities(parsed: ParseResult): readonly ProjectEntity[] {
+export function toWorkEntities(parsed: ParseResult): readonly WorkEntity[] {
   const epicIds = new Set(parsed.epics.map((e) => e.frontmatter.id));
-  const entities: ProjectEntity[] = [];
+  const entities: WorkEntity[] = [];
 
   for (const epic of parsed.epics) {
-    const epicEntity: ProjectEntity = {
+    const epicEntity: WorkEntity = {
       id: epic.frontmatter.id,
       type: 'epic',
       title: epic.frontmatter.title,
@@ -69,7 +69,7 @@ export function toProjectEntities(parsed: ParseResult): readonly ProjectEntity[]
   for (const feature of parsed.features) {
     if (!epicIds.has(feature.frontmatter.epic)) continue;
 
-    const featureEntity: ProjectEntity = {
+    const featureEntity: WorkEntity = {
       id: feature.frontmatter.id,
       type: 'feature',
       parentId: feature.frontmatter.epic,
@@ -82,7 +82,7 @@ export function toProjectEntities(parsed: ParseResult): readonly ProjectEntity[]
     entities.push(featureEntity);
 
     for (const task of feature.tasks) {
-      const taskEntity: ProjectEntity = {
+      const taskEntity: WorkEntity = {
         id: `${feature.frontmatter.id}-task-${task.number}`,
         type: 'task',
         parentId: feature.frontmatter.id,

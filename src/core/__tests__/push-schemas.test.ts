@@ -3,44 +3,44 @@ import {
   pushSchema,
   sessionSchema,
   pushEnvironmentSchema,
-  projectEntityTypeSchema,
-  devPhaseSchema,
+  workEntityTypeSchema,
+  engineeringPhaseSchema,
   acceptanceStatusSchema,
   prioritySchema,
-  qualitySourceSchema,
-  projectEntitySchema,
-  projectDataSchema,
-  devReviewSchema,
-  devTaskSchema,
-  devDataSchema,
-  pmUpdateSchema,
-  pmDataSchema,
-  qualityDataSchema,
+  codeQualitySourceSchema,
+  workEntitySchema,
+  workDataSchema,
+  engineeringReviewSchema,
+  engineeringTaskSchema,
+  engineeringDataSchema,
+  productUpdateSchema,
+  productDataSchema,
+  codeQualityDataSchema,
 } from '../schemas.js';
 
 // -- Enum schemas -------------------------------------------------------------
 
-describe('projectEntityTypeSchema', () => {
+describe('workEntityTypeSchema', () => {
   it('accepts valid entity types', () => {
-    expect(projectEntityTypeSchema.parse('epic')).toBe('epic');
-    expect(projectEntityTypeSchema.parse('feature')).toBe('feature');
-    expect(projectEntityTypeSchema.parse('task')).toBe('task');
+    expect(workEntityTypeSchema.parse('epic')).toBe('epic');
+    expect(workEntityTypeSchema.parse('feature')).toBe('feature');
+    expect(workEntityTypeSchema.parse('task')).toBe('task');
   });
 
   it('rejects invalid entity type', () => {
-    expect(() => projectEntityTypeSchema.parse('story')).toThrow();
+    expect(() => workEntityTypeSchema.parse('story')).toThrow();
   });
 });
 
-describe('devPhaseSchema', () => {
+describe('engineeringPhaseSchema', () => {
   it('accepts valid phases', () => {
     for (const phase of ['red', 'green', 'refactor', 'review', 'complete']) {
-      expect(devPhaseSchema.parse(phase)).toBe(phase);
+      expect(engineeringPhaseSchema.parse(phase)).toBe(phase);
     }
   });
 
   it('rejects invalid phase', () => {
-    expect(() => devPhaseSchema.parse('testing')).toThrow();
+    expect(() => engineeringPhaseSchema.parse('testing')).toThrow();
   });
 });
 
@@ -68,14 +68,14 @@ describe('prioritySchema', () => {
   });
 });
 
-describe('qualitySourceSchema', () => {
+describe('codeQualitySourceSchema', () => {
   it('accepts valid sources', () => {
-    expect(qualitySourceSchema.parse('local')).toBe('local');
-    expect(qualitySourceSchema.parse('ci')).toBe('ci');
+    expect(codeQualitySourceSchema.parse('local')).toBe('local');
+    expect(codeQualitySourceSchema.parse('ci')).toBe('ci');
   });
 
   it('rejects invalid source', () => {
-    expect(() => qualitySourceSchema.parse('staging')).toThrow();
+    expect(() => codeQualitySourceSchema.parse('staging')).toThrow();
   });
 });
 
@@ -135,9 +135,9 @@ describe('sessionSchema', () => {
   });
 });
 
-// -- Project schema -----------------------------------------------------------
+// -- Work schema --------------------------------------------------------------
 
-describe('projectEntitySchema', () => {
+describe('workEntitySchema', () => {
   it('accepts full entity', () => {
     const entity = {
       id: 'feat-1',
@@ -149,65 +149,65 @@ describe('projectEntitySchema', () => {
       assigneeType: 'human',
       meta: { priority: 'high' },
     };
-    expect(projectEntitySchema.parse(entity)).toEqual(entity);
+    expect(workEntitySchema.parse(entity)).toEqual(entity);
   });
 
   it('accepts minimal entity (required fields only)', () => {
     const entity = { id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' };
-    expect(projectEntitySchema.parse(entity)).toEqual(entity);
+    expect(workEntitySchema.parse(entity)).toEqual(entity);
   });
 
   it('rejects missing id', () => {
-    expect(() => projectEntitySchema.parse({ type: 'epic', title: 'X', status: 'not_started' })).toThrow();
+    expect(() => workEntitySchema.parse({ type: 'epic', title: 'X', status: 'not_started' })).toThrow();
   });
 
   it('rejects invalid type', () => {
-    expect(() => projectEntitySchema.parse({ id: 'x', type: 'story', title: 'X', status: 'not_started' })).toThrow();
+    expect(() => workEntitySchema.parse({ id: 'x', type: 'story', title: 'X', status: 'not_started' })).toThrow();
   });
 
   it('rejects invalid status', () => {
-    expect(() => projectEntitySchema.parse({ id: 'x', type: 'epic', title: 'X', status: 'done' })).toThrow();
+    expect(() => workEntitySchema.parse({ id: 'x', type: 'epic', title: 'X', status: 'done' })).toThrow();
   });
 });
 
-describe('projectDataSchema', () => {
+describe('workDataSchema', () => {
   it('accepts entities array', () => {
     const data = { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] };
-    expect(projectDataSchema.parse(data)).toEqual(data);
+    expect(workDataSchema.parse(data)).toEqual(data);
   });
 
   it('accepts empty entities array', () => {
-    expect(projectDataSchema.parse({ entities: [] })).toEqual({ entities: [] });
+    expect(workDataSchema.parse({ entities: [] })).toEqual({ entities: [] });
   });
 
   it('rejects missing entities', () => {
-    expect(() => projectDataSchema.parse({})).toThrow();
+    expect(() => workDataSchema.parse({})).toThrow();
   });
 });
 
-// -- Dev schema ---------------------------------------------------------------
+// -- Engineering schema -------------------------------------------------------
 
-describe('devReviewSchema', () => {
+describe('engineeringReviewSchema', () => {
   it('accepts full review', () => {
     const review = { reviewer: 'adversarial', verdict: 'needs-refactoring', findings: 3 };
-    expect(devReviewSchema.parse(review)).toEqual(review);
+    expect(engineeringReviewSchema.parse(review)).toEqual(review);
   });
 
   it('accepts minimal review', () => {
     const review = { reviewer: 'mutation', verdict: 'clean' };
-    expect(devReviewSchema.parse(review)).toEqual(review);
+    expect(engineeringReviewSchema.parse(review)).toEqual(review);
   });
 
   it('rejects missing reviewer', () => {
-    expect(() => devReviewSchema.parse({ verdict: 'clean' })).toThrow();
+    expect(() => engineeringReviewSchema.parse({ verdict: 'clean' })).toThrow();
   });
 
   it('rejects missing verdict', () => {
-    expect(() => devReviewSchema.parse({ reviewer: 'adversarial' })).toThrow();
+    expect(() => engineeringReviewSchema.parse({ reviewer: 'adversarial' })).toThrow();
   });
 });
 
-describe('devTaskSchema', () => {
+describe('engineeringTaskSchema', () => {
   it('accepts full task', () => {
     const task = {
       entityId: 'feat-1',
@@ -219,43 +219,43 @@ describe('devTaskSchema', () => {
       reviews: [{ reviewer: 'adversarial', verdict: 'clean' }],
       meta: { model: 'claude-opus-4' },
     };
-    expect(devTaskSchema.parse(task)).toEqual(task);
+    expect(engineeringTaskSchema.parse(task)).toEqual(task);
   });
 
   it('accepts minimal task (entityId only)', () => {
-    expect(devTaskSchema.parse({ entityId: 'feat-1' })).toEqual({ entityId: 'feat-1' });
+    expect(engineeringTaskSchema.parse({ entityId: 'feat-1' })).toEqual({ entityId: 'feat-1' });
   });
 
   it('rejects missing entityId', () => {
-    expect(() => devTaskSchema.parse({ phase: 'red' })).toThrow();
+    expect(() => engineeringTaskSchema.parse({ phase: 'red' })).toThrow();
   });
 
   it('rejects invalid phase', () => {
-    expect(() => devTaskSchema.parse({ entityId: 'x', phase: 'testing' })).toThrow();
+    expect(() => engineeringTaskSchema.parse({ entityId: 'x', phase: 'testing' })).toThrow();
   });
 
   it('rejects negative duration', () => {
-    expect(() => devTaskSchema.parse({ entityId: 'x', duration: -100 })).toThrow();
+    expect(() => engineeringTaskSchema.parse({ entityId: 'x', duration: -100 })).toThrow();
   });
 });
 
-describe('devDataSchema', () => {
+describe('engineeringDataSchema', () => {
   it('accepts full dev data', () => {
     const data = {
       tasks: [{ entityId: 'feat-1', phase: 'red' }],
       meta: { sessionId: 'abc' },
     };
-    expect(devDataSchema.parse(data)).toEqual(data);
+    expect(engineeringDataSchema.parse(data)).toEqual(data);
   });
 
   it('accepts empty object (all optional)', () => {
-    expect(devDataSchema.parse({})).toEqual({});
+    expect(engineeringDataSchema.parse({})).toEqual({});
   });
 });
 
-// -- PM schema ----------------------------------------------------------------
+// -- Product schema -----------------------------------------------------------
 
-describe('pmUpdateSchema', () => {
+describe('productUpdateSchema', () => {
   it('accepts full update', () => {
     const update = {
       entityId: 'feat-1',
@@ -266,36 +266,36 @@ describe('pmUpdateSchema', () => {
       notes: 'Ready for review',
       meta: { reviewer: 'alice' },
     };
-    expect(pmUpdateSchema.parse(update)).toEqual(update);
+    expect(productUpdateSchema.parse(update)).toEqual(update);
   });
 
   it('accepts minimal update (entityId only)', () => {
-    expect(pmUpdateSchema.parse({ entityId: 'feat-1' })).toEqual({ entityId: 'feat-1' });
+    expect(productUpdateSchema.parse({ entityId: 'feat-1' })).toEqual({ entityId: 'feat-1' });
   });
 
   it('rejects invalid acceptance status', () => {
-    expect(() => pmUpdateSchema.parse({ entityId: 'x', acceptance: 'approved' })).toThrow();
+    expect(() => productUpdateSchema.parse({ entityId: 'x', acceptance: 'approved' })).toThrow();
   });
 
   it('rejects invalid priority', () => {
-    expect(() => pmUpdateSchema.parse({ entityId: 'x', priority: 'urgent' })).toThrow();
+    expect(() => productUpdateSchema.parse({ entityId: 'x', priority: 'urgent' })).toThrow();
   });
 });
 
-describe('pmDataSchema', () => {
+describe('productDataSchema', () => {
   it('accepts updates array', () => {
     const data = { updates: [{ entityId: 'feat-1', acceptance: 'unreviewed' }], meta: {} };
-    expect(pmDataSchema.parse(data)).toEqual(data);
+    expect(productDataSchema.parse(data)).toEqual(data);
   });
 
   it('rejects missing updates', () => {
-    expect(() => pmDataSchema.parse({})).toThrow();
+    expect(() => productDataSchema.parse({})).toThrow();
   });
 });
 
-// -- Quality schema -----------------------------------------------------------
+// -- Code quality schema ------------------------------------------------------
 
-describe('qualityDataSchema', () => {
+describe('codeQualityDataSchema', () => {
   it('accepts full quality data', () => {
     const data = {
       score: 85,
@@ -305,35 +305,35 @@ describe('qualityDataSchema', () => {
       categories: { security: 90, maintainability: 80 },
       meta: { tool: 'sonarqube' },
     };
-    expect(qualityDataSchema.parse(data)).toEqual(data);
+    expect(codeQualityDataSchema.parse(data)).toEqual(data);
   });
 
   it('accepts minimal quality data (score only)', () => {
-    expect(qualityDataSchema.parse({ score: 100 })).toEqual({ score: 100 });
+    expect(codeQualityDataSchema.parse({ score: 100 })).toEqual({ score: 100 });
   });
 
   it('rejects missing score', () => {
-    expect(() => qualityDataSchema.parse({ grade: 'A' })).toThrow();
+    expect(() => codeQualityDataSchema.parse({ grade: 'A' })).toThrow();
   });
 
   it('rejects invalid source', () => {
-    expect(() => qualityDataSchema.parse({ score: 50, source: 'staging' })).toThrow();
+    expect(() => codeQualityDataSchema.parse({ score: 50, source: 'staging' })).toThrow();
   });
 
   it('rejects non-numeric score', () => {
-    expect(() => qualityDataSchema.parse({ score: 'high' })).toThrow();
+    expect(() => codeQualityDataSchema.parse({ score: 'high' })).toThrow();
   });
 
   it('rejects negative score', () => {
-    expect(() => qualityDataSchema.parse({ score: -1 })).toThrow();
+    expect(() => codeQualityDataSchema.parse({ score: -1 })).toThrow();
   });
 
   it('rejects Infinity score', () => {
-    expect(() => qualityDataSchema.parse({ score: Infinity })).toThrow();
+    expect(() => codeQualityDataSchema.parse({ score: Infinity })).toThrow();
   });
 
   it('rejects NaN score', () => {
-    expect(() => qualityDataSchema.parse({ score: NaN })).toThrow();
+    expect(() => codeQualityDataSchema.parse({ score: NaN })).toThrow();
   });
 });
 
@@ -345,10 +345,10 @@ describe('pushSchema', () => {
       projectId: 'proj-1',
       timestamp: '2026-04-22T10:00:00Z',
       session: { agent: 'claude-code', agentType: 'agent' },
-      project: { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] },
-      dev: { tasks: [{ entityId: 'e-1', phase: 'red' }] },
-      pm: { updates: [{ entityId: 'e-1', acceptance: 'unreviewed' }] },
-      quality: { score: 85, source: 'local' },
+      work: { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] },
+      engineering: { tasks: [{ entityId: 'e-1', phase: 'red' }] },
+      product: { updates: [{ entityId: 'e-1', acceptance: 'unreviewed' }] },
+      codeQuality: { score: 85, source: 'local' },
       custom: { myTool: { data: 123 } },
     };
     expect(pushSchema.parse(push)).toEqual(push);
@@ -371,7 +371,7 @@ describe('pushSchema', () => {
     const push = {
       projectId: 'proj-1',
       timestamp: '2026-04-22T10:00:00Z',
-      quality: { score: 92, source: 'ci' },
+      codeQuality: { score: 92, source: 'ci' },
     };
     expect(pushSchema.parse(push)).toEqual(push);
   });
@@ -380,7 +380,7 @@ describe('pushSchema', () => {
     const push = {
       projectId: 'proj-1',
       timestamp: '2026-04-22T10:00:00Z',
-      quality: { score: 'high' },
+      codeQuality: { score: 'high' },
     };
     expect(() => pushSchema.parse(push)).toThrow();
   });

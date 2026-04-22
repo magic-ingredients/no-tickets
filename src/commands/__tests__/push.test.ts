@@ -37,8 +37,8 @@ describe('assemblePush', () => {
     expect(result.projectId).toBe('proj-1');
     expect(result.timestamp).toBe('2026-04-22T10:00:00Z');
     expect(result.session).toEqual(testSession);
-    expect(result.project?.entities).toBeDefined();
-    expect(result.project?.entities.length).toBeGreaterThan(0);
+    expect(result.work?.entities).toBeDefined();
+    expect(result.work?.entities.length).toBeGreaterThan(0);
   });
 
   it('includes epic, feature, and task entities from files', () => {
@@ -50,13 +50,13 @@ describe('assemblePush', () => {
       timestamp: '2026-04-22T10:00:00Z',
     });
 
-    const types = result.project?.entities.map((e) => e.type);
+    const types = result.work?.entities.map((e) => e.type);
     expect(types).toContain('epic');
     expect(types).toContain('feature');
     expect(types).toContain('task');
   });
 
-  it('omits project schema when no files provided', () => {
+  it('omits work schema when no files provided', () => {
     const result = assemblePush({
       files: [],
       projectId: 'p1',
@@ -64,7 +64,7 @@ describe('assemblePush', () => {
       timestamp: '2026-04-22T10:00:00Z',
     });
 
-    expect(result.project).toBeUndefined();
+    expect(result.work).toBeUndefined();
   });
 
   it('generates timestamp when not provided', () => {
@@ -96,13 +96,13 @@ describe('mergeSession', () => {
     const payload: Push = {
       projectId: 'p1',
       timestamp: '2026-04-22T10:00:00Z',
-      quality: { score: 85, source: 'ci' },
+      codeQuality: { score: 85, source: 'ci' },
     };
 
     const result = mergeSession(payload, testSession);
 
     expect(result.session).toEqual(testSession);
-    expect(result.quality).toEqual({ score: 85, source: 'ci' });
+    expect(result.codeQuality).toEqual({ score: 85, source: 'ci' });
   });
 
   it('does not overwrite existing session', () => {
@@ -126,15 +126,15 @@ describe('mergeSession', () => {
     const payload: Push = {
       projectId: 'p1',
       timestamp: '2026-04-22T10:00:00Z',
-      project: { entities: [{ id: 'e1', type: 'epic', title: 'E', status: 'not_started' }] },
-      dev: { tasks: [{ entityId: 'e1', phase: 'red' }] },
+      work: { entities: [{ id: 'e1', type: 'epic', title: 'E', status: 'not_started' }] },
+      engineering: { tasks: [{ entityId: 'e1', phase: 'red' }] },
       custom: { myData: true },
     };
 
     const result = mergeSession(payload, testSession);
 
-    expect(result.project).toEqual(payload.project);
-    expect(result.dev).toEqual(payload.dev);
+    expect(result.work).toEqual(payload.work);
+    expect(result.engineering).toEqual(payload.engineering);
     expect(result.custom).toEqual(payload.custom);
   });
 });

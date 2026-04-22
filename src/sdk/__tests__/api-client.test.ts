@@ -232,7 +232,7 @@ describe('push', () => {
     const payload: Push = {
       projectId: 'proj-1',
       timestamp: '2026-04-22T10:00:00Z',
-      project: { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] },
+      work: { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] },
     };
     await client.push(payload);
 

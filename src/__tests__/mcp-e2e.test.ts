@@ -70,7 +70,7 @@ describe('MCP server e2e', () => {
     const payload = JSON.stringify({
       projectId: 'proj-1',
       timestamp: '2026-04-22T10:00:00Z',
-      project: { entities: [{ id: 'e1', type: 'epic', title: 'E', status: 'not_started' }] },
+      work: { entities: [{ id: 'e1', type: 'epic', title: 'E', status: 'not_started' }] },
     });
 
     const result = await client.callTool({ name: 'push', arguments: { payload } });

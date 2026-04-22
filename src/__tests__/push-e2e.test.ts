@@ -86,9 +86,9 @@ describe('push command e2e', () => {
     expect(body.projectId).toBe('proj-e2e');
     expect(body.session).toBeDefined();
     expect(body.session.agentType).toBeDefined();
-    expect(body.project.entities.length).toBeGreaterThan(0);
+    expect(body.work.entities.length).toBeGreaterThan(0);
 
-    const types = body.project.entities.map((e: { type: string }) => e.type);
+    const types = body.work.entities.map((e: { type: string }) => e.type);
     expect(types).toContain('epic');
     expect(types).toContain('feature');
     expect(types).toContain('task');
@@ -118,7 +118,7 @@ describe('push command e2e', () => {
 
     const output = JSON.parse(logSpy.mock.calls[0]![0] as string);
     expect(output.projectId).toBe('proj-e2e');
-    expect(output.project.entities.length).toBeGreaterThan(0);
+    expect(output.work.entities.length).toBeGreaterThan(0);
   });
 
   it('fails with clear error when NO_TICKETS_PROJECT_ID is missing', async () => {
@@ -150,6 +150,6 @@ describe('push command e2e', () => {
 
     const output = JSON.parse(logSpy.mock.calls[0]![0] as string);
     expect(output.projectId).toBe('proj-e2e');
-    expect(output.project).toBeUndefined();
+    expect(output.work).toBeUndefined();
   });
 });

@@ -206,15 +206,15 @@ export interface NoTicketsConfig {
 
 // -- Enums as unions (v2) -----------------------------------------------------
 
-export type ProjectEntityType = 'epic' | 'feature' | 'task';
+export type WorkEntityType = 'epic' | 'feature' | 'task';
 
-export type DevPhase = 'red' | 'green' | 'refactor' | 'review' | 'complete';
+export type EngineeringPhase = 'red' | 'green' | 'refactor' | 'review' | 'complete';
 
 export type AcceptanceStatus = 'unreviewed' | 'accepted' | 'changes_requested';
 
 export type Priority = 'critical' | 'high' | 'medium' | 'low';
 
-export type QualitySource = 'local' | 'ci';
+export type CodeQualitySource = 'local' | 'ci';
 
 // -- Core envelope (Task 1) ---------------------------------------------------
 
@@ -223,10 +223,10 @@ export interface Push {
   readonly timestamp: string;
   readonly session?: Session;
 
-  readonly project?: ProjectSchema;
-  readonly dev?: DevSchema;
-  readonly pm?: PMSchema;
-  readonly quality?: QualitySchema;
+  readonly work?: WorkSchema;
+  readonly engineering?: EngineeringSchema;
+  readonly product?: ProductSchema;
+  readonly codeQuality?: CodeQualitySchema;
 
   readonly custom?: Readonly<Record<string, unknown>>;
 }
@@ -249,15 +249,15 @@ export interface PushEnvironment {
   readonly ciProvider?: string;
 }
 
-// -- Schema: "project" (Task 3) -----------------------------------------------
+// -- Schema: "work" -----------------------------------------------------------
 
-export interface ProjectSchema {
-  readonly entities: readonly ProjectEntity[];
+export interface WorkSchema {
+  readonly entities: readonly WorkEntity[];
 }
 
-export interface ProjectEntity {
+export interface WorkEntity {
   readonly id: string;
-  readonly type: ProjectEntityType;
+  readonly type: WorkEntityType;
   readonly parentId?: string;
   readonly title: string;
   readonly status: EntityStatus;
@@ -266,38 +266,38 @@ export interface ProjectEntity {
   readonly meta?: Readonly<Record<string, unknown>>;
 }
 
-// -- Schema: "dev" (Task 4) ---------------------------------------------------
+// -- Schema: "engineering" ----------------------------------------------------
 
-export interface DevSchema {
-  readonly tasks?: readonly DevTask[];
+export interface EngineeringSchema {
+  readonly tasks?: readonly EngineeringTask[];
   readonly meta?: Readonly<Record<string, unknown>>;
 }
 
-export interface DevTask {
+export interface EngineeringTask {
   readonly entityId: string;
-  readonly phase?: DevPhase;
+  readonly phase?: EngineeringPhase;
   readonly commitSha?: string;
   readonly startedAt?: string;
   readonly completedAt?: string;
   readonly duration?: number;
-  readonly reviews?: readonly DevReview[];
+  readonly reviews?: readonly EngineeringReview[];
   readonly meta?: Readonly<Record<string, unknown>>;
 }
 
-export interface DevReview {
+export interface EngineeringReview {
   readonly reviewer: string;
   readonly verdict: string;
   readonly findings?: number;
 }
 
-// -- Schema: "pm" (Task 5) ----------------------------------------------------
+// -- Schema: "product" --------------------------------------------------------
 
-export interface PMSchema {
-  readonly updates: readonly PMUpdate[];
+export interface ProductSchema {
+  readonly updates: readonly ProductUpdate[];
   readonly meta?: Readonly<Record<string, unknown>>;
 }
 
-export interface PMUpdate {
+export interface ProductUpdate {
   readonly entityId: string;
   readonly acceptance?: AcceptanceStatus;
   readonly priority?: Priority;
@@ -307,12 +307,12 @@ export interface PMUpdate {
   readonly meta?: Readonly<Record<string, unknown>>;
 }
 
-// -- Schema: "quality" (Task 6) -----------------------------------------------
+// -- Schema: "codeQuality" ----------------------------------------------------
 
-export interface QualitySchema {
+export interface CodeQualitySchema {
   readonly score: number;
   readonly grade?: string;
-  readonly source?: QualitySource;
+  readonly source?: CodeQualitySource;
   readonly entityId?: string;
   readonly categories?: Readonly<Record<string, number>>;
   readonly meta?: Readonly<Record<string, unknown>>;

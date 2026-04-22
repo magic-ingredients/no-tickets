@@ -86,7 +86,7 @@ describe('validate command e2e', () => {
 
     expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalled();
-    const errorOutput = errorSpy.mock.calls.map((c) => c[0]).join('\n');
+    const errorOutput = errorSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
     expect(errorOutput).toContain('ERROR');
   });
 
@@ -105,7 +105,7 @@ describe('validate command e2e', () => {
     await runCli(['validate']);
 
     expect(process.exitCode).toBe(1);
-    const errorOutput = errorSpy.mock.calls.map((c) => c[0]).join('\n');
+    const errorOutput = errorSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
     expect(errorOutput).toContain('ghost');
   });
 });

@@ -36,7 +36,6 @@ status: not_started
 let testDir: string;
 let fetchSpy: ReturnType<typeof vi.fn>;
 let logSpy: ReturnType<typeof vi.spyOn>;
-let errorSpy: ReturnType<typeof vi.spyOn>;
 let originalCwd: string;
 
 function jsonResponse(body: unknown, status = 200) {
@@ -56,7 +55,7 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', fetchSpy);
 
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-  errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
 
   vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_test123');
   vi.stubEnv('NO_TICKETS_PROJECT_ID', 'proj-e2e');

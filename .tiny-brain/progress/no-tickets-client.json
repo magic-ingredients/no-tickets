@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T08:03:56.421Z",
+  "lastUpdated": "2026-04-22T09:35:54.636Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -406,27 +406,56 @@
         {
           "id": "task-3-4",
           "description": "Verify sub-path exports",
-          "status": "not_started"
+          "status": "in_progress",
+          "redStartedAt": "2026-04-22T08:24:03.657Z",
+          "greenStartedAt": "2026-04-22T08:24:03.657Z",
+          "testCommitSha": "skipped",
+          "reviews": {}
         }
       ],
       "taskSummary": {
         "total": 4,
         "completed": 3,
-        "remaining": 1,
-        "weightedProgress": 0.25,
-        "nextTask": "Verify sub-path exports"
+        "remaining": 1
       }
     },
     {
       "id": "push-cli",
       "number": 4,
       "title": "Push CLI",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-4-1",
           "description": "Add push() to API client",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T09:28:08.843Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T09:31:07.036Z",
+              "completedAt": "2026-04-22T09:33:06.136Z",
+              "reviewSha": "59fe202ab0e99dc0195819e0c97b97cd9358ff7d",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T09:33:06.136Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T09:33:06.136Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T09:33:06.136Z",
+              "completedAt": "2026-04-22T09:35:54.635Z",
+              "reviewSha": "59fe202ab0e99dc0195819e0c97b97cd9358ff7d",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T09:35:54.635Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T09:35:54.635Z"
+            }
+          },
+          "greenStartedAt": "2026-04-22T09:29:17.159Z",
+          "testCommitSha": "72c7b1dcf1d6cd0bb170a7e1eec5ee8ecb9afdae",
+          "redCompletedAt": "2026-04-22T09:29:17.159Z",
+          "commitSha": "59fe202ab0e99dc0195819e0c97b97cd9358ff7d",
+          "greenCompletedAt": "2026-04-22T09:31:07.036Z",
+          "completedAt": "2026-04-22T09:35:54.636Z"
         },
         {
           "id": "task-4-2",
@@ -446,8 +475,10 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 0,
-        "remaining": 4
+        "completed": 1,
+        "remaining": 3,
+        "weightedProgress": 0.25,
+        "nextTask": "Build .notickets/ reader"
       }
     }
   ],
@@ -460,9 +491,9 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 8,
-      "completedTasks": 9,
+      "completedTasks": 10,
       "totalTasks": 27,
-      "percentComplete": 33,
+      "percentComplete": 37,
       "weightedPercentComplete": 4
     },
     "workRemaining": {
@@ -470,11 +501,10 @@
         "MCP Server",
         "Open Source Launch & npm Publish",
         "Migration Script (docs/prd/ → .notickets/)",
-        "Platform Distribution — MCP Wrappers",
-        "Push CLI"
+        "Platform Distribution — MCP Wrappers"
       ],
       "currentFeatureTasks": 1,
-      "futureFeatureTasks": 17
+      "futureFeatureTasks": 13
     },
     "nextAction": {
       "featureId": "push-schemas",

@@ -1,6 +1,330 @@
 {
   "fixes": [
     {
+      "id": "testing-hygiene",
+      "title": "Testing hygiene fixes",
+      "status": "not_started",
+      "severity": "minor",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Fix fake timer leak in credentials.test.ts",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "Remove real timing delay in auth-server.test.ts",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "Add vi.clearAllMocks() in api-client.test.ts",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "Separate integration tests from unit tests",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5",
+          "description": "Move task-update.test.ts to __tests__/ directory",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6",
+          "description": "Document real I/O dependency in templates.test.ts",
+          "status": "not_started"
+        },
+        {
+          "id": "task-7",
+          "description": "Add test category separation to vitest config",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/testing-hygiene.md",
+      "reported": "2026-04-22",
+      "resolved": null,
+      "archived": false
+    },
+    {
+      "id": "quick-quality-fixes",
+      "title": "Batch trivial/small quality fixes",
+      "status": "not_started",
+      "severity": "minor",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Remove unsafe headers cast in api-client.ts",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "Load version dynamically in CLI",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "Guard parseMeta against non-plain objects",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "Wrap JSON.parse in MCP push handler",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5",
+          "description": "Remove redundant `as AssigneeType` casts",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6",
+          "description": "Replace JSON.stringify meta equality with deep-equal",
+          "status": "not_started"
+        },
+        {
+          "id": "task-7",
+          "description": "Replace filter().length with reduce for task count",
+          "status": "not_started"
+        },
+        {
+          "id": "task-8",
+          "description": "Remove unnecessary Buffer.from in readStdin",
+          "status": "not_started"
+        },
+        {
+          "id": "task-9",
+          "description": "Add path validation to MCP validate tool",
+          "status": "not_started"
+        },
+        {
+          "id": "task-10",
+          "description": "Set credentials directory permissions to 0o700",
+          "status": "not_started"
+        },
+        {
+          "id": "task-11",
+          "description": "Sanitize CLI error output",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/quick-quality-fixes.md",
+      "reported": "2026-04-22",
+      "resolved": null,
+      "archived": false
+    },
+    {
+      "id": "qip-security",
+      "title": "Security quality issues",
+      "status": "superseded",
+      "severity": "major",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "[major] src/client.ts:66",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:30.490Z"
+        },
+        {
+          "id": "task-2",
+          "description": "[major] src/client.ts:100",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:30.490Z"
+        },
+        {
+          "id": "task-3",
+          "description": "[minor] src/client.ts:44",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:30.490Z"
+        },
+        {
+          "id": "task-4",
+          "description": "[minor] src/client.ts:112",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:30.490Z"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/qip-security.md",
+      "reported": "2026-04-15",
+      "resolved": "2026-04-22",
+      "resolution": {
+        "rootCause": "All 4 issues are in src/client.ts which is being deleted as legacy code",
+        "fix": [
+          "Superseded by fix delete-legacy-client"
+        ],
+        "filesModified": []
+      },
+      "archived": true
+    },
+    {
+      "id": "qip-code-quality",
+      "title": "Code-quality quality issues",
+      "status": "superseded",
+      "severity": "critical",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "[critical] bin/no-tickets.js:46",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:13.403Z"
+        },
+        {
+          "id": "task-2",
+          "description": "[major] src/client.ts:133",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:13.403Z"
+        },
+        {
+          "id": "task-3",
+          "description": "[major] src/commands/task-update.ts:50",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:13.403Z"
+        },
+        {
+          "id": "task-4",
+          "description": "[major] src/core/state.ts:44",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:13.403Z"
+        },
+        {
+          "id": "task-5",
+          "description": "[minor] src/core/diff.ts:103",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:13.403Z"
+        },
+        {
+          "id": "task-6",
+          "description": "[minor] src/mcp/create-server.ts:1",
+          "status": "superseded",
+          "completedAt": "2026-04-22T13:53:13.403Z"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/qip-code-quality.md",
+      "reported": "2026-04-15",
+      "resolved": "2026-04-22",
+      "resolution": {
+        "rootCause": "Legacy quality run — most issues fixed during Feature 3-6 implementation",
+        "fix": [
+          "Tasks 1, 4, 6 fixed during feature work",
+          "Tasks 2, 3, 5 superseded by new fix docs (delete-legacy-client, quick-quality-fixes)"
+        ],
+        "filesModified": []
+      },
+      "archived": true
+    },
+    {
+      "id": "extract-read-notickets-dir",
+      "title": "Extract and harden shared readNoTicketsDir",
+      "status": "not_started",
+      "severity": "major",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Extract readNoTicketsDir to shared module",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "Parallelize I/O with Promise.all",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "Add path validation",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/extract-read-notickets-dir.md",
+      "reported": "2026-04-22",
+      "resolved": null,
+      "archived": false
+    },
+    {
+      "id": "delete-legacy-client",
+      "title": "Delete legacy NoTicketsClient (client.ts)",
+      "status": "in_progress",
+      "severity": "major",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Delete src/client.ts and its test",
+          "status": "completed",
+          "commitSha": "148dd8d0e0487f3ea11b2cd24aa285622e4e9309",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-22T13:55:30.028Z",
+          "greenStartedAt": "2026-04-22T13:55:30.028Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T13:57:23.693Z",
+              "completedAt": "2026-04-22T13:59:03.825Z",
+              "reviewSha": "148dd8d0e0487f3ea11b2cd24aa285622e4e9309",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T13:59:03.825Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T13:59:03.825Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T13:59:03.825Z",
+              "completedAt": "2026-04-22T13:59:23.129Z",
+              "reviewSha": "148dd8d0e0487f3ea11b2cd24aa285622e4e9309",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T13:59:23.129Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T13:59:23.129Z"
+            }
+          },
+          "completedAt": "2026-04-22T13:59:23.130Z"
+        },
+        {
+          "id": "task-2",
+          "description": "Remove client.ts references from exports",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "Update qip-security fix as superseded",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/delete-legacy-client.md",
+      "reported": "2026-04-22",
+      "resolved": null,
+      "archived": false
+    },
+    {
+      "id": "deferred-server-coordination",
+      "title": "Deferred fixes requiring server-side coordination",
+      "status": "not_started",
+      "severity": "major",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Add CSRF state parameter to OAuth callback",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "Resolve placeholder email in init-auth",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "Encode path parameters in API client",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "Sanitize server error messages",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/deferred-server-coordination.md",
+      "reported": "2026-04-22",
+      "resolved": null,
+      "archived": false
+    },
+    {
       "id": "branch-protection",
       "title": "Add branch protection rules to main before going public",
       "status": "not_started",
@@ -13,81 +337,10 @@
         }
       ],
       "filePath": ".tiny-brain/fixes/branch-protection.md",
-      "reported": "2026-04-15T09:00:00.000Z",
-      "resolved": null
-    },
-    {
-      "id": "qip-code-quality",
-      "title": "Code-quality quality issues",
-      "status": "not_started",
-      "severity": "critical",
-      "tasks": [
-        {
-          "id": "task-1",
-          "description": "[critical] bin/no-tickets.js:46",
-          "status": "not_started"
-        },
-        {
-          "id": "task-2",
-          "description": "[major] src/client.ts:133",
-          "status": "not_started"
-        },
-        {
-          "id": "task-3",
-          "description": "[major] src/commands/task-update.ts:50",
-          "status": "not_started"
-        },
-        {
-          "id": "task-4",
-          "description": "[major] src/core/state.ts:44",
-          "status": "not_started"
-        },
-        {
-          "id": "task-5",
-          "description": "[minor] src/core/diff.ts:103",
-          "status": "not_started"
-        },
-        {
-          "id": "task-6",
-          "description": "[minor] src/mcp/create-server.ts:1",
-          "status": "not_started"
-        }
-      ],
-      "filePath": ".tiny-brain/fixes/qip-code-quality.md",
-      "reported": "2026-04-15T08:44:32.354Z",
-      "resolved": null
-    },
-    {
-      "id": "qip-security",
-      "title": "Security quality issues",
-      "status": "not_started",
-      "severity": "major",
-      "tasks": [
-        {
-          "id": "task-1",
-          "description": "[major] src/client.ts:66",
-          "status": "not_started"
-        },
-        {
-          "id": "task-2",
-          "description": "[major] src/client.ts:100",
-          "status": "not_started"
-        },
-        {
-          "id": "task-3",
-          "description": "[minor] src/client.ts:44",
-          "status": "not_started"
-        },
-        {
-          "id": "task-4",
-          "description": "[minor] src/client.ts:112",
-          "status": "not_started"
-        }
-      ],
-      "filePath": ".tiny-brain/fixes/qip-security.md",
-      "reported": "2026-04-15T11:41:19.434Z",
-      "resolved": null
+      "reported": "2026-04-15",
+      "resolved": null,
+      "archived": false
     }
   ],
-  "lastSynced": "2026-04-16T06:44:38.147Z"
+  "lastSynced": "2026-04-22T13:59:23.130Z"
 }

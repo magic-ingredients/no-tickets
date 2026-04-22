@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T12:58:37.966Z",
+  "lastUpdated": "2026-04-22T13:40:01.599Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -340,7 +340,7 @@
       "id": "platform-distribution",
       "number": 8,
       "title": "Platform Distribution — MCP Wrappers",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-8-1",
@@ -377,35 +377,48 @@
         {
           "id": "task-8-2",
           "description": "Build Claude Desktop extension",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "6deb49b",
+          "committedAt": "2026-04-22T12:59:04.151Z",
+          "completedAt": "2026-04-22T12:59:04.151Z"
         },
         {
           "id": "task-8-3",
           "description": "Build Cursor plugin wrapper",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "6deb49b",
+          "committedAt": "2026-04-22T12:59:04.151Z",
+          "completedAt": "2026-04-22T12:59:04.151Z"
         },
         {
           "id": "task-8-4",
           "description": "Build ChatGPT integration",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "6deb49b",
+          "committedAt": "2026-04-22T12:59:04.151Z",
+          "completedAt": "2026-04-22T12:59:04.151Z"
         },
         {
           "id": "task-8-5",
           "description": "Build Gemini CLI extension",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "6deb49b",
+          "committedAt": "2026-04-22T12:59:04.151Z",
+          "completedAt": "2026-04-22T12:59:04.151Z"
         },
         {
           "id": "task-8-6",
           "description": "Create config snippets for Copilot, Windsurf, Continue.dev",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "6deb49b",
+          "committedAt": "2026-04-22T12:59:04.151Z",
+          "completedAt": "2026-04-22T12:59:04.151Z"
         }
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 1,
-        "remaining": 5,
-        "weightedProgress": 0.16666666666666666,
-        "nextTask": "Build Claude Desktop extension"
+        "completed": 6,
+        "remaining": 0
       }
     },
     {
@@ -629,33 +642,74 @@
       "id": "e2e-tests",
       "number": 5,
       "title": "End-to-End Tests",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-5-1",
           "description": "Push command integration tests",
-          "status": "not_started"
+          "status": "in_progress",
+          "redStartedAt": "2026-04-22T13:34:17.846Z",
+          "reviews": {
+            "adversarial": {
+              "completedAt": "2026-04-22T13:39:39.554Z",
+              "reviewSha": "128fe08",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T13:39:39.554Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T13:39:39.554Z",
+              "startedAt": "2026-04-22T13:39:39.554Z"
+            },
+            "mutation": {
+              "completedAt": "2026-04-22T13:39:54.819Z",
+              "reviewSha": "128fe08",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T13:39:54.819Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T13:39:54.819Z",
+              "startedAt": "2026-04-22T13:39:54.819Z"
+            }
+          },
+          "greenStartedAt": "2026-04-22T13:39:32.620Z",
+          "testCommitSha": "128fe089df3e3cf1cb0f8b06f22f30e22b8d6696",
+          "redCompletedAt": "2026-04-22T13:39:32.620Z"
         },
         {
           "id": "task-5-2",
           "description": "Validate command integration tests",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "14569eb",
+          "committedAt": "2026-04-22T13:42:57.425Z",
+          "completedAt": "2026-04-22T13:42:57.425Z"
         },
         {
           "id": "task-5-3",
           "description": "Auth resolution integration tests",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "14569eb",
+          "committedAt": "2026-04-22T13:42:57.425Z",
+          "completedAt": "2026-04-22T13:42:57.425Z"
         },
         {
           "id": "task-5-4",
           "description": "Token command integration tests",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "14569eb",
+          "committedAt": "2026-04-22T13:42:57.425Z",
+          "completedAt": "2026-04-22T13:42:57.425Z"
+        },
+        {
+          "id": "task-5-5",
+          "description": "MCP protocol integration tests",
+          "status": "completed",
+          "commitSha": "14569eb",
+          "committedAt": "2026-04-22T13:42:57.425Z",
+          "completedAt": "2026-04-22T13:42:57.425Z"
         }
       ],
       "taskSummary": {
-        "total": 4,
-        "completed": 0,
-        "remaining": 4
+        "total": 5,
+        "completed": 4,
+        "remaining": 1
       }
     }
   ],
@@ -663,29 +717,27 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 8,
-    "featureTitle": "Platform Distribution — MCP Wrappers",
+    "feature": 3,
+    "featureTitle": "Push Schemas",
     "overallProgress": {
-      "completedFeatures": 4,
+      "completedFeatures": 5,
       "totalFeatures": 9,
-      "completedTasks": 16,
-      "totalTasks": 31,
-      "percentComplete": 52,
-      "weightedPercentComplete": 3
+      "completedTasks": 25,
+      "totalTasks": 32,
+      "percentComplete": 78
     },
     "workRemaining": {
       "pendingFeatures": [
         "Open Source Launch & npm Publish",
-        "Migration Script (docs/prd/ → .notickets/)",
-        "End-to-End Tests"
+        "Migration Script (docs/prd/ → .notickets/)"
       ],
-      "currentFeatureTasks": 5,
-      "futureFeatureTasks": 1
+      "currentFeatureTasks": 1,
+      "futureFeatureTasks": 5
     },
     "nextAction": {
-      "featureId": "platform-distribution",
-      "taskId": "task-8-2",
-      "description": "Build Claude Desktop extension"
+      "featureId": "push-schemas",
+      "taskId": "task-3-4",
+      "description": "Verify sub-path exports"
     },
     "blockers": []
   }

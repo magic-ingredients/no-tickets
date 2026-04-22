@@ -43,7 +43,7 @@ describe('parseArgs', () => {
 
   it('returns help for no arguments', () => {
     const result = parseArgs([]);
-    expect(result.command).toBe('help');
+    expect(result).toEqual({ command: 'help', args: [], flags: {} });
   });
 
   it('returns help for --help flag', () => {
@@ -77,8 +77,7 @@ describe('parseArgs', () => {
 
   it('returns unknown for unrecognized command', () => {
     const result = parseArgs(['foobar']);
-    expect(result.command).toBe('unknown');
-    expect(result.args[0]).toBe('foobar');
+    expect(result).toEqual({ command: 'unknown', args: ['foobar'], flags: {} });
   });
 
   it('collects positional args after command', () => {
@@ -88,7 +87,6 @@ describe('parseArgs', () => {
 
   it('collects multiple flags', () => {
     const result = parseArgs(['push', '--dry-run', '--verbose']);
-    expect(result.flags['dry-run']).toBe(true);
-    expect(result.flags['verbose']).toBe(true);
+    expect(result).toEqual({ command: 'push', args: [], flags: { 'dry-run': true, 'verbose': true } });
   });
 });

@@ -33,7 +33,7 @@
     "no-tickets": "bin/no-tickets.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:unit": "vitest run --exclude '**/auth-server.test.ts' --exclude '**/*-e2e.test.ts'",

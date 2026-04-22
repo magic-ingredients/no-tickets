@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T11:04:11.532Z",
+  "lastUpdated": "2026-04-22T12:58:37.966Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -235,7 +235,7 @@
       "id": "mcp-server",
       "number": 6,
       "title": "MCP Server",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-6-1",
@@ -273,15 +273,16 @@
         {
           "id": "task-6-2",
           "description": "Wire MCP tools to CLI core functions",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2f3b09b",
+          "committedAt": "2026-04-22T11:05:07.410Z",
+          "completedAt": "2026-04-22T11:05:07.410Z"
         }
       ],
       "taskSummary": {
         "total": 2,
-        "completed": 1,
-        "remaining": 1,
-        "weightedProgress": 0.5,
-        "nextTask": "Wire MCP tools to CLI core functions"
+        "completed": 2,
+        "remaining": 0
       }
     },
     {
@@ -339,12 +340,39 @@
       "id": "platform-distribution",
       "number": 8,
       "title": "Platform Distribution — MCP Wrappers",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-8-1",
           "description": "Build Claude Code plugin wrapper",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T11:09:17.936Z",
+          "greenStartedAt": "2026-04-22T11:09:17.936Z",
+          "testCommitSha": "skipped",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T11:12:18.514Z",
+              "completedAt": "2026-04-22T11:14:17.056Z",
+              "reviewSha": "6deb49b03167042981ae6d3e35ec0d40f88dde3f",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T11:14:17.056Z",
+              "refactorCommitSha": "ab61dc1da39e8f53753c25ef5af9a5deda99d57d",
+              "refactorCompletedAt": "2026-04-22T12:58:27.787Z",
+              "refactorCommittedAt": "2026-04-22T12:58:27.787Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T12:58:27.787Z",
+              "completedAt": "2026-04-22T12:58:37.965Z",
+              "reviewSha": "ab61dc1da39e8f53753c25ef5af9a5deda99d57d",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T12:58:37.965Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T12:58:37.965Z"
+            }
+          },
+          "commitSha": "6deb49b03167042981ae6d3e35ec0d40f88dde3f",
+          "greenCompletedAt": "2026-04-22T11:12:18.514Z",
+          "completedAt": "2026-04-22T12:58:37.966Z"
         },
         {
           "id": "task-8-2",
@@ -374,8 +402,10 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 0,
-        "remaining": 6
+        "completed": 1,
+        "remaining": 5,
+        "weightedProgress": 0.16666666666666666,
+        "nextTask": "Build Claude Desktop extension"
       }
     },
     {
@@ -633,30 +663,29 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 6,
-    "featureTitle": "MCP Server",
+    "feature": 8,
+    "featureTitle": "Platform Distribution — MCP Wrappers",
     "overallProgress": {
-      "completedFeatures": 3,
+      "completedFeatures": 4,
       "totalFeatures": 9,
-      "completedTasks": 14,
+      "completedTasks": 16,
       "totalTasks": 31,
-      "percentComplete": 45,
+      "percentComplete": 52,
       "weightedPercentComplete": 3
     },
     "workRemaining": {
       "pendingFeatures": [
         "Open Source Launch & npm Publish",
         "Migration Script (docs/prd/ → .notickets/)",
-        "Platform Distribution — MCP Wrappers",
         "End-to-End Tests"
       ],
-      "currentFeatureTasks": 1,
-      "futureFeatureTasks": 11
+      "currentFeatureTasks": 5,
+      "futureFeatureTasks": 1
     },
     "nextAction": {
-      "featureId": "mcp-server",
-      "taskId": "task-6-2",
-      "description": "Wire MCP tools to CLI core functions"
+      "featureId": "platform-distribution",
+      "taskId": "task-8-2",
+      "description": "Build Claude Desktop extension"
     },
     "blockers": []
   }

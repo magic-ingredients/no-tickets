@@ -64,6 +64,10 @@ interface ApiClient {
   breakDown(params: BreakDownParams): Promise<unknown>;
 }
 
+function truncate(s: string, max = 200): string {
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
 function hasErrorField(value: unknown): value is { error: unknown } {
   return typeof value === 'object' && value !== null && 'error' in value;
 }
@@ -88,17 +92,15 @@ async function request(apiUrl: string, token: string, path: string, options?: Re
     body = JSON.parse(text);
   } catch {
     if (!response.ok) {
-      const errText = text || 'Request failed';
-      throw new Error(`${response.status}: ${errText.length > 200 ? errText.slice(0, 200) + '...' : errText}`);
+      throw new Error(`${response.status}: ${truncate(text || 'Request failed')}`);
     }
     return text;
   }
 
   if (!response.ok) {
-    const raw = hasErrorField(body)
-      ? String(body.error)
+    const message = hasErrorField(body)
+      ? truncate(String(body.error))
       : 'Request failed';
-    const message = raw.length > 200 ? raw.slice(0, 200) + '...' : raw;
     throw new Error(`${response.status}: ${message}`);
   }
 

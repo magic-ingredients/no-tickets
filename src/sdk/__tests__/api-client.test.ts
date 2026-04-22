@@ -300,6 +300,26 @@ describe('path parameter encoding', () => {
     const { url } = lastFetchCall();
     expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fspecial');
   });
+
+  it('encodes featureId in moveToPhase URL', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ id: 'f1' }));
+
+    await client.moveToPhase({ projectId: 'p1', featureId: 'feat/move', phase: 'done' });
+
+    const { url } = lastFetchCall();
+    expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fmove/move');
+  });
+
+  it('encodes featureId in assignFeature URL', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ id: 'f1' }));
+
+    await client.assignFeature({ projectId: 'p1', featureId: 'feat/assign', assignee: 'alice', assigneeType: 'human' });
+
+    const { url } = lastFetchCall();
+    expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fassign/assign');
+  });
 });
 
 describe('error handling', () => {
@@ -358,5 +378,29 @@ describe('error handling', () => {
     fetchSpy.mockReturnValue(textResponse('', 503));
 
     await expect(client.getBoard('p1')).rejects.toThrow('503: Request failed');
+  });
+
+  it('truncates JSON error messages longer than 200 chars', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    const longError = 'x'.repeat(300);
+    fetchSpy.mockReturnValue(jsonResponse({ error: longError }, 500));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('x'.repeat(200) + '...');
+  });
+
+  it('truncates non-JSON error text longer than 200 chars', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    const longText = 'y'.repeat(300);
+    fetchSpy.mockReturnValue(textResponse(longText, 500));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('y'.repeat(200) + '...');
+  });
+
+  it('does not truncate error messages at exactly 200 chars', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    const exact200 = 'z'.repeat(200);
+    fetchSpy.mockReturnValue(jsonResponse({ error: exact200 }, 500));
+
+    await expect(client.getBoard('p1')).rejects.toThrow(`500: ${exact200}`);
   });
 });

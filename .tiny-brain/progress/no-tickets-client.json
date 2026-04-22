@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T09:35:54.636Z",
+  "lastUpdated": "2026-04-22T09:47:41.773Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -460,7 +460,36 @@
         {
           "id": "task-4-2",
           "description": "Build .notickets/ reader",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T09:36:34.183Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T09:39:47.987Z",
+              "completedAt": "2026-04-22T09:41:10.365Z",
+              "reviewSha": "922724e93d8219ca1cb6545952562a4670895fda",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T09:41:10.365Z",
+              "refactorCommitSha": "81885ec552e75e518c18f982fd8b8f095f2c1e73",
+              "refactorCompletedAt": "2026-04-22T09:42:49.364Z",
+              "refactorCommittedAt": "2026-04-22T09:42:49.364Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T09:42:49.364Z",
+              "completedAt": "2026-04-22T09:45:45.449Z",
+              "reviewSha": "81885ec552e75e518c18f982fd8b8f095f2c1e73",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T09:45:45.449Z",
+              "refactorCommitSha": "69d6b406cac08b20ac192e9c8731b6256e057421",
+              "refactorCompletedAt": "2026-04-22T09:47:41.771Z",
+              "refactorCommittedAt": "2026-04-22T09:47:41.771Z"
+            }
+          },
+          "greenStartedAt": "2026-04-22T09:38:07.845Z",
+          "testCommitSha": "2c6cebdf824e7639ce1092ac9ff85e646aff564a",
+          "redCompletedAt": "2026-04-22T09:38:07.845Z",
+          "commitSha": "922724e93d8219ca1cb6545952562a4670895fda",
+          "greenCompletedAt": "2026-04-22T09:39:47.987Z",
+          "completedAt": "2026-04-22T09:47:41.773Z"
         },
         {
           "id": "task-4-3",
@@ -475,10 +504,10 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 1,
-        "remaining": 3,
-        "weightedProgress": 0.25,
-        "nextTask": "Build .notickets/ reader"
+        "completed": 2,
+        "remaining": 2,
+        "weightedProgress": 0.5,
+        "nextTask": "Implement CLI push command"
       }
     }
   ],
@@ -491,10 +520,10 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 8,
-      "completedTasks": 10,
+      "completedTasks": 11,
       "totalTasks": 27,
-      "percentComplete": 37,
-      "weightedPercentComplete": 4
+      "percentComplete": 41,
+      "weightedPercentComplete": 7
     },
     "workRemaining": {
       "pendingFeatures": [

@@ -216,13 +216,39 @@
     {
       "id": "extract-read-notickets-dir",
       "title": "Extract and harden shared readNoTicketsDir",
-      "status": "not_started",
+      "status": "in_progress",
       "severity": "major",
       "tasks": [
         {
           "id": "task-1",
           "description": "Extract readNoTicketsDir to shared module",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "f48de5e461ecb36a1f163af7b654912ac767c68d",
+          "testCommitSha": "8976209feff3957012877935fd22d1b008bd8164",
+          "redStartedAt": "2026-04-22T14:00:30.200Z",
+          "greenStartedAt": "2026-04-22T14:01:26.558Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T14:03:47.229Z",
+              "completedAt": "2026-04-22T14:05:27.245Z",
+              "reviewSha": "f48de5e461ecb36a1f163af7b654912ac767c68d",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T14:05:27.245Z",
+              "refactorCommitSha": "09de579b7bd8d701b5130e9b864346b28db69751",
+              "refactorCompletedAt": "2026-04-22T14:07:15.129Z",
+              "refactorCommittedAt": "2026-04-22T14:07:15.129Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T14:07:15.129Z",
+              "completedAt": "2026-04-22T14:11:34.731Z",
+              "reviewSha": "09de579b7bd8d701b5130e9b864346b28db69751",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T14:11:34.731Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T14:11:34.731Z"
+            }
+          },
+          "completedAt": "2026-04-22T14:11:34.731Z"
         },
         {
           "id": "task-2",
@@ -243,7 +269,7 @@
     {
       "id": "delete-legacy-client",
       "title": "Delete legacy NoTicketsClient (client.ts)",
-      "status": "in_progress",
+      "status": "completed",
       "severity": "major",
       "tasks": [
         {
@@ -279,18 +305,22 @@
         {
           "id": "task-2",
           "description": "Remove client.ts references from exports",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "148dd8d",
+          "committedAt": "2026-04-22T13:59:41.738Z",
+          "completedAt": "2026-04-22T13:59:41.738Z"
         },
         {
           "id": "task-3",
           "description": "Update qip-security fix as superseded",
-          "status": "not_started"
+          "status": "completed",
+          "completedAt": "2026-04-22T13:59:41.738Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/delete-legacy-client.md",
       "reported": "2026-04-22",
       "resolved": null,
-      "archived": false
+      "archived": true
     },
     {
       "id": "deferred-server-coordination",
@@ -342,5 +372,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-22T13:59:23.130Z"
+  "lastSynced": "2026-04-22T14:11:34.731Z"
 }

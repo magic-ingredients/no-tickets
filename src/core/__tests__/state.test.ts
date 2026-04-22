@@ -332,20 +332,53 @@ describe('toProjectEntities', () => {
     });
   });
 
-  it('returns all entity types in order: epics, features, tasks', () => {
+  it('handles in_progress task status', () => {
     const parsed: ParseResult = {
       epics: [makeEpic('e1')],
       features: [makeFeature('f1', 'e1', [
-        { number: 1, title: 'T1', status: 'not_started' },
+        { number: 1, title: 'In progress task', status: 'in_progress' },
       ])],
     };
 
     const entities = toProjectEntities(parsed);
+    const task = entities.find((e) => e.type === 'task');
 
-    expect(entities).toHaveLength(3);
-    expect(entities[0]?.type).toBe('epic');
-    expect(entities[1]?.type).toBe('feature');
-    expect(entities[2]?.type).toBe('task');
+    expect(task?.status).toBe('in_progress');
+  });
+
+  it('returns entities grouped by epic: epic, its features, their tasks', () => {
+    const parsed: ParseResult = {
+      epics: [makeEpic('e1'), makeEpic('e2')],
+      features: [
+        makeFeature('f1', 'e1', [{ number: 1, title: 'T1', status: 'not_started' }]),
+        makeFeature('f2', 'e2', [{ number: 1, title: 'T2', status: 'not_started' }]),
+      ],
+    };
+
+    const entities = toProjectEntities(parsed);
+
+    expect(entities).toHaveLength(6);
+    expect(entities.map((e) => `${e.type}:${e.id}`)).toEqual([
+      'epic:e1', 'epic:e2',
+      'feature:f1', 'task:f1-task-1',
+      'feature:f2', 'task:f2-task-1',
+    ]);
+  });
+
+  it('drops features referencing non-existent epics', () => {
+    const parsed: ParseResult = {
+      epics: [makeEpic('real')],
+      features: [
+        makeFeature('f1', 'real'),
+        makeFeature('orphan', 'ghost'),
+      ],
+    };
+
+    const entities = toProjectEntities(parsed);
+    const features = entities.filter((e) => e.type === 'feature');
+
+    expect(features).toHaveLength(1);
+    expect(features[0]?.id).toBe('f1');
   });
 
   it('returns empty array for empty parse result', () => {

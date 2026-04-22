@@ -59,6 +59,7 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
  * Pure function — no I/O.
  */
 export function toProjectEntities(parsed: ParseResult): readonly ProjectEntity[] {
+  const epicIds = new Set(parsed.epics.map((e) => e.frontmatter.id));
   const entities: ProjectEntity[] = [];
 
   for (const epic of parsed.epics) {
@@ -67,21 +68,23 @@ export function toProjectEntities(parsed: ParseResult): readonly ProjectEntity[]
       type: 'epic',
       title: epic.frontmatter.title,
       status: epic.frontmatter.status,
-      ...(epic.frontmatter.meta ? { meta: epic.frontmatter.meta } : {}),
+      ...(epic.frontmatter.meta != null ? { meta: epic.frontmatter.meta } : {}),
     };
     entities.push(epicEntity);
   }
 
   for (const feature of parsed.features) {
+    if (!epicIds.has(feature.frontmatter.epic)) continue;
+
     const featureEntity: ProjectEntity = {
       id: feature.frontmatter.id,
       type: 'feature',
       parentId: feature.frontmatter.epic,
       title: feature.frontmatter.title,
       status: feature.frontmatter.status,
-      ...(feature.frontmatter.assignee ? { assignee: feature.frontmatter.assignee } : {}),
-      ...(feature.frontmatter.assignee_type ? { assigneeType: feature.frontmatter.assignee_type } : {}),
-      ...(feature.frontmatter.meta ? { meta: feature.frontmatter.meta } : {}),
+      ...(feature.frontmatter.assignee != null ? { assignee: feature.frontmatter.assignee } : {}),
+      ...(feature.frontmatter.assignee_type != null ? { assigneeType: feature.frontmatter.assignee_type } : {}),
+      ...(feature.frontmatter.meta != null ? { meta: feature.frontmatter.meta } : {}),
     };
     entities.push(featureEntity);
 

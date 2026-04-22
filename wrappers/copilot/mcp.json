@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "no-tickets": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@magic-ingredients/no-tickets"],
+      "env": {
+        "NO_TICKETS_TOKEN": ""
+      }
+    }
+  }
+}

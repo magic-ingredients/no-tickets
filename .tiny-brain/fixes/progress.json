@@ -50,13 +50,39 @@
     {
       "id": "quick-quality-fixes",
       "title": "Batch trivial/small quality fixes",
-      "status": "not_started",
+      "status": "in_progress",
       "severity": "minor",
       "tasks": [
         {
           "id": "task-1",
           "description": "Remove unsafe headers cast in api-client.ts",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "2eb7272c2ee27f848c5cdab180195257cc178402",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-22T14:14:48.886Z",
+          "greenStartedAt": "2026-04-22T14:14:48.886Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T14:19:24.881Z",
+              "completedAt": "2026-04-22T15:03:29.989Z",
+              "reviewSha": "2eb7272c2ee27f848c5cdab180195257cc178402",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T15:03:29.989Z",
+              "refactorCommitSha": "1c09314ecc5c4a4bfb76bd97776b62f802aa5d9e",
+              "refactorCompletedAt": "2026-04-22T15:04:50.662Z",
+              "refactorCommittedAt": "2026-04-22T15:04:50.662Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T15:04:50.663Z",
+              "completedAt": "2026-04-22T15:04:57.061Z",
+              "reviewSha": "1c09314ecc5c4a4bfb76bd97776b62f802aa5d9e",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T15:04:57.061Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T15:04:57.061Z"
+            }
+          },
+          "completedAt": "2026-04-22T15:04:57.062Z"
         },
         {
           "id": "task-2",
@@ -216,7 +242,7 @@
     {
       "id": "extract-read-notickets-dir",
       "title": "Extract and harden shared readNoTicketsDir",
-      "status": "in_progress",
+      "status": "completed",
       "severity": "major",
       "tasks": [
         {
@@ -253,18 +279,37 @@
         {
           "id": "task-2",
           "description": "Parallelize I/O with Promise.all",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "f48de5e",
+          "committedAt": "2026-04-22T14:12:19.456Z",
+          "completedAt": "2026-04-22T14:12:19.456Z"
         },
         {
           "id": "task-3",
           "description": "Add path validation",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "f48de5e",
+          "committedAt": "2026-04-22T14:12:19.456Z",
+          "completedAt": "2026-04-22T14:12:19.456Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/extract-read-notickets-dir.md",
       "reported": "2026-04-22",
-      "resolved": null,
-      "archived": false
+      "resolved": "2026-04-22",
+      "resolution": {
+        "rootCause": "readNoTicketsDir duplicated in cli.ts and mcp/tools/validate.ts with sequential I/O and no path validation",
+        "fix": [
+          "Extracted to src/core/fs.ts as shared module",
+          "Parallelized I/O with Promise.all for stat and readFile",
+          "Added path validation with cwd + sep check to prevent traversal"
+        ],
+        "filesModified": [
+          "src/core/fs.ts",
+          "src/cli.ts",
+          "src/mcp/tools/validate.ts"
+        ]
+      },
+      "archived": true
     },
     {
       "id": "delete-legacy-client",
@@ -372,5 +417,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-22T14:11:34.731Z"
+  "lastSynced": "2026-04-22T15:04:57.062Z"
 }

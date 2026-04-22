@@ -56,7 +56,7 @@ describe('validateFiles', () => {
   it('includes file path in validation errors', () => {
     const badFeature: FileEntry = {
       path: '.notickets/auth/broken.md',
-      content: '---\nid: broken\ntype: feature\nepic: auth\ntitle: Broken\nphase: invalid-phase\nstatus: in_progress\ncreated: 2026-04-22\nupdated: 2026-04-22\n---\n',
+      content: '---\nid: INVALID ID\ntype: feature\nepic: auth\ntitle: Broken\nphase: development\nstatus: in_progress\ncreated: 2026-04-22\nupdated: 2026-04-22\n---\n',
     };
     const result = validateFiles([epicFile('auth'), badFeature]);
 

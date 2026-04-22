@@ -5,6 +5,7 @@ import { detectAgent } from './agent-detect.js';
 import { createApiClient } from './sdk/api-client.js';
 import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
+import { validateFiles } from './commands/validate.js';
 import type { FileEntry } from './core/types.js';
 
 type Command = 'push' | 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'help' | 'version' | 'unknown';
@@ -98,6 +99,26 @@ async function buildStdinPush(session: ReturnType<typeof detectAgent>) {
   return mergeSession(parsed, session);
 }
 
+async function handleValidate(): Promise<void> {
+  const files = await readNoTicketsDir('.notickets');
+  const result = validateFiles(files);
+
+  if (result.valid) {
+    console.log('Validation passed — no errors found.');
+    return;
+  }
+
+  for (const error of result.errors) {
+    const location = error.field ? `${error.file}:${error.field}` : error.file;
+    console.error(`ERROR ${location}: ${error.message}`);
+    if (error.suggestion) {
+      console.error(`  suggestion: ${error.suggestion}`);
+    }
+  }
+
+  process.exitCode = 1;
+}
+
 async function buildFilePush(projectId: string, session: ReturnType<typeof detectAgent>) {
   if (!projectId) {
     throw new Error('NO_TICKETS_PROJECT_ID environment variable is required for push');
@@ -123,6 +144,9 @@ export async function runCli(argv: readonly string[]): Promise<void> {
       break;
     case 'push':
       await handlePush(parsed.flags);
+      break;
+    case 'validate':
+      await handleValidate();
       break;
     case 'init':
       console.error('Command "init" is not yet implemented.');

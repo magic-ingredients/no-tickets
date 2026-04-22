@@ -270,6 +270,38 @@ describe('push', () => {
   });
 });
 
+describe('path parameter encoding', () => {
+  it('encodes projectId in getBoard URL', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ projectId: 'p', columns: [] }));
+
+    await client.getBoard('proj/with spaces');
+
+    const { url } = lastFetchCall();
+    expect(url).toBe('https://api.test.com/api/v1/board/proj%2Fwith%20spaces');
+  });
+
+  it('encodes projectId in getFeed URL', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse([]));
+
+    await client.getFeed('proj/../other');
+
+    const { url } = lastFetchCall();
+    expect(url).toBe('https://api.test.com/api/v1/feed/proj%2F..%2Fother');
+  });
+
+  it('encodes featureId in updateFeature URL', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse({ id: 'f1' }));
+
+    await client.updateFeature({ projectId: 'p1', featureId: 'feat/special', title: 'New' });
+
+    const { url } = lastFetchCall();
+    expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fspecial');
+  });
+});
+
 describe('error handling', () => {
   it('throws with status and error field from JSON response', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });

@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T10:41:47.623Z",
+  "lastUpdated": "2026-04-22T11:04:11.532Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -233,50 +233,80 @@
     },
     {
       "id": "mcp-server",
-      "number": 5,
+      "number": 6,
       "title": "MCP Server",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
-          "id": "task-5-1",
+          "id": "task-6-1",
           "description": "Rewrite MCP server with 3 tools",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T10:54:01.794Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T10:57:39.411Z",
+              "completedAt": "2026-04-22T10:59:23.405Z",
+              "reviewSha": "2f3b09ba973cdf0c11f264c7d708541cfb24c00b",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T10:59:23.405Z",
+              "refactorCommitSha": "e4891fb6b57f71c9f33f71373f7a57b5b455dc49",
+              "refactorCompletedAt": "2026-04-22T11:02:00.233Z",
+              "refactorCommittedAt": "2026-04-22T11:02:00.233Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T11:02:00.233Z",
+              "completedAt": "2026-04-22T11:04:11.531Z",
+              "reviewSha": "e4891fb6b57f71c9f33f71373f7a57b5b455dc49",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T11:04:11.531Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T11:04:11.531Z"
+            }
+          },
+          "greenStartedAt": "2026-04-22T10:55:03.300Z",
+          "testCommitSha": "8b295db66ba3db81752251dfe82a402df13fe6bd",
+          "redCompletedAt": "2026-04-22T10:55:03.300Z",
+          "commitSha": "2f3b09ba973cdf0c11f264c7d708541cfb24c00b",
+          "greenCompletedAt": "2026-04-22T10:57:39.411Z",
+          "completedAt": "2026-04-22T11:04:11.532Z"
         },
         {
-          "id": "task-5-2",
+          "id": "task-6-2",
           "description": "Wire MCP tools to CLI core functions",
           "status": "not_started"
         }
       ],
       "taskSummary": {
         "total": 2,
-        "completed": 0,
-        "remaining": 2
+        "completed": 1,
+        "remaining": 1,
+        "weightedProgress": 0.5,
+        "nextTask": "Wire MCP tools to CLI core functions"
       }
     },
     {
       "id": "oss-launch",
-      "number": 6,
+      "number": 7,
       "title": "Open Source Launch & npm Publish",
       "status": "not_started",
       "tasks": [
         {
-          "id": "task-6-1",
+          "id": "task-7-1",
           "description": "Set up CI for public repo",
           "status": "not_started"
         },
         {
-          "id": "task-6-2",
+          "id": "task-7-2",
           "description": "Publish initial npm release",
           "status": "not_started"
         },
         {
-          "id": "task-6-3",
+          "id": "task-7-3",
           "description": "Wire tiny-brain to consume npm package",
           "status": "not_started"
         },
         {
-          "id": "task-6-4",
+          "id": "task-7-4",
           "description": "Update tiny-brain for open source",
           "status": "not_started"
         }
@@ -289,12 +319,12 @@
     },
     {
       "id": "migration-script",
-      "number": 8,
+      "number": 9,
       "title": "Migration Script (docs/prd/ → .notickets/)",
       "status": "not_started",
       "tasks": [
         {
-          "id": "task-8-1",
+          "id": "task-9-1",
           "description": "Build migration command",
           "status": "not_started"
         }
@@ -307,37 +337,37 @@
     },
     {
       "id": "platform-distribution",
-      "number": 7,
+      "number": 8,
       "title": "Platform Distribution — MCP Wrappers",
       "status": "not_started",
       "tasks": [
         {
-          "id": "task-7-1",
+          "id": "task-8-1",
           "description": "Build Claude Code plugin wrapper",
           "status": "not_started"
         },
         {
-          "id": "task-7-2",
+          "id": "task-8-2",
           "description": "Build Claude Desktop extension",
           "status": "not_started"
         },
         {
-          "id": "task-7-3",
+          "id": "task-8-3",
           "description": "Build Cursor plugin wrapper",
           "status": "not_started"
         },
         {
-          "id": "task-7-4",
+          "id": "task-8-4",
           "description": "Build ChatGPT integration",
           "status": "not_started"
         },
         {
-          "id": "task-7-5",
+          "id": "task-8-5",
           "description": "Build Gemini CLI extension",
           "status": "not_started"
         },
         {
-          "id": "task-7-6",
+          "id": "task-8-6",
           "description": "Create config snippets for Copilot, Windsurf, Continue.dev",
           "status": "not_started"
         }
@@ -562,8 +592,40 @@
       "taskSummary": {
         "total": 4,
         "completed": 4,
-        "remaining": 0,
-        "weightedProgress": 1
+        "remaining": 0
+      }
+    },
+    {
+      "id": "e2e-tests",
+      "number": 5,
+      "title": "End-to-End Tests",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-5-1",
+          "description": "Push command integration tests",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-2",
+          "description": "Validate command integration tests",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-3",
+          "description": "Auth resolution integration tests",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-4",
+          "description": "Token command integration tests",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 4,
+        "completed": 0,
+        "remaining": 4
       }
     }
   ],
@@ -571,30 +633,30 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 3,
-    "featureTitle": "Push Schemas",
+    "feature": 6,
+    "featureTitle": "MCP Server",
     "overallProgress": {
       "completedFeatures": 3,
-      "totalFeatures": 8,
-      "completedTasks": 13,
-      "totalTasks": 27,
-      "percentComplete": 48,
-      "weightedPercentComplete": 15
+      "totalFeatures": 9,
+      "completedTasks": 14,
+      "totalTasks": 31,
+      "percentComplete": 45,
+      "weightedPercentComplete": 3
     },
     "workRemaining": {
       "pendingFeatures": [
-        "MCP Server",
         "Open Source Launch & npm Publish",
         "Migration Script (docs/prd/ → .notickets/)",
-        "Platform Distribution — MCP Wrappers"
+        "Platform Distribution — MCP Wrappers",
+        "End-to-End Tests"
       ],
       "currentFeatureTasks": 1,
-      "futureFeatureTasks": 13
+      "futureFeatureTasks": 11
     },
     "nextAction": {
-      "featureId": "push-schemas",
-      "taskId": "task-3-4",
-      "description": "Verify sub-path exports"
+      "featureId": "mcp-server",
+      "taskId": "task-6-2",
+      "description": "Wire MCP tools to CLI core functions"
     },
     "blockers": []
   }

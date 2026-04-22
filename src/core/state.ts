@@ -32,19 +32,12 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
   }
 
   // Build epic states — only include features that belong to a known epic
-  const epicIds = new Set(parsed.epics.map((e) => e.frontmatter.id));
   const epics: EpicState[] = parsed.epics.map((epic) => ({
     id: epic.frontmatter.id,
     title: epic.frontmatter.title,
     status: epic.frontmatter.status,
     features: epicMap.get(epic.frontmatter.id) ?? [],
   }));
-
-  // Warn about orphan features (features referencing non-existent epics)
-  const orphanFeatures = parsed.features.filter((f) => !epicIds.has(f.frontmatter.epic));
-  if (orphanFeatures.length > 0) {
-    // Orphan features are silently dropped — validation should catch this upstream
-  }
 
   return {
     version: 1,

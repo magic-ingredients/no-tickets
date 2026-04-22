@@ -257,6 +257,19 @@ describe('computeFeatureProgress', () => {
     expect(progress).toBe(93);
   });
 
+  it('uses two-way weighting when tests.total is zero', () => {
+    // ideation=0, tasks 0/0=0%, tests.total=0 → two-way: 0*0.4 + 0*0.6 = 0
+    const progress = computeFeatureProgress(makeState('ideation', { total: 0, completed: 0 }, { total: 0, passing: 0 }));
+    expect(progress).toBe(0);
+    // development=25, tasks 2/4=50%, tests.total=0 → two-way: 25*0.4 + 50*0.6 = 40
+    const progress2 = computeFeatureProgress(makeState('development', { total: 4, completed: 2 }, { total: 0, passing: 0 }));
+    expect(progress2).toBe(40);
+    // Confirm three-way gives different result with same phase/tasks but tests.total > 0
+    // development=25, tasks 2/4=50%, tests 0/1=0% → three-way: 25*0.3 + 50*0.35 + 0*0.35 = 25
+    const progress3 = computeFeatureProgress(makeState('development', { total: 4, completed: 2 }, { total: 1, passing: 0 }));
+    expect(progress3).toBe(25);
+  });
+
   it('handles zero tasks with tests', () => {
     // testing=50, tasks 0/0=0%, tests 5/10=50%
     // 50*0.3 + 0*0.35 + 50*0.35 = 15 + 0 + 17.5 = 32.5 → 33
@@ -411,6 +424,32 @@ describe('toProjectEntities', () => {
     const entities = toProjectEntities(parsed);
 
     expect(entities[0]?.meta).toEqual({ priority: 'high' });
+  });
+
+  it('omits meta when epic meta is null', () => {
+    const base = makeEpic('e1');
+    const epic: ParsedEpic = { ...base, frontmatter: { ...base.frontmatter, meta: undefined } };
+    const parsed: ParseResult = { epics: [epic], features: [] };
+
+    const entities = toProjectEntities(parsed);
+
+    expect(entities[0]).not.toHaveProperty('meta');
+  });
+
+  it('omits assignee when feature assignee is null-ish', () => {
+    const base = makeFeature('f1', 'e1');
+    const feature: ParsedFeature = {
+      ...base,
+      frontmatter: { ...base.frontmatter, assignee: undefined, assignee_type: undefined, meta: undefined },
+    };
+    const parsed: ParseResult = { epics: [makeEpic('e1')], features: [feature] };
+
+    const entities = toProjectEntities(parsed);
+    const featureEntity = entities.find((e) => e.type === 'feature');
+
+    expect(featureEntity).not.toHaveProperty('assignee');
+    expect(featureEntity).not.toHaveProperty('assigneeType');
+    expect(featureEntity).not.toHaveProperty('meta');
   });
 
   it('includes meta from feature frontmatter', () => {

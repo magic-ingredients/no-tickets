@@ -1,4 +1,4 @@
-import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase } from './types.js';
+import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase, ProjectEntity } from './types.js';
 
 /**
  * Compute a state snapshot from parsed documents.
@@ -51,6 +51,53 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
     epics,
     pushedAt: pushedAt ?? new Date().toISOString(),
   };
+}
+
+/**
+ * Convert parsed .notickets/ documents into a flat ProjectEntity array
+ * for the v2 Push payload's project schema.
+ * Pure function — no I/O.
+ */
+export function toProjectEntities(parsed: ParseResult): readonly ProjectEntity[] {
+  const entities: ProjectEntity[] = [];
+
+  for (const epic of parsed.epics) {
+    const epicEntity: ProjectEntity = {
+      id: epic.frontmatter.id,
+      type: 'epic',
+      title: epic.frontmatter.title,
+      status: epic.frontmatter.status,
+      ...(epic.frontmatter.meta ? { meta: epic.frontmatter.meta } : {}),
+    };
+    entities.push(epicEntity);
+  }
+
+  for (const feature of parsed.features) {
+    const featureEntity: ProjectEntity = {
+      id: feature.frontmatter.id,
+      type: 'feature',
+      parentId: feature.frontmatter.epic,
+      title: feature.frontmatter.title,
+      status: feature.frontmatter.status,
+      ...(feature.frontmatter.assignee ? { assignee: feature.frontmatter.assignee } : {}),
+      ...(feature.frontmatter.assignee_type ? { assigneeType: feature.frontmatter.assignee_type } : {}),
+      ...(feature.frontmatter.meta ? { meta: feature.frontmatter.meta } : {}),
+    };
+    entities.push(featureEntity);
+
+    for (const task of feature.tasks) {
+      const taskEntity: ProjectEntity = {
+        id: `${feature.frontmatter.id}-task-${task.number}`,
+        type: 'task',
+        parentId: feature.frontmatter.id,
+        title: task.title,
+        status: task.status,
+      };
+      entities.push(taskEntity);
+    }
+  }
+
+  return entities;
 }
 
 /**

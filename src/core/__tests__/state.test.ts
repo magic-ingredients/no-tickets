@@ -353,8 +353,11 @@ describe('toProjectEntities', () => {
   });
 
   it('omits assignee fields when not set', () => {
-    const feature = makeFeature('f1', 'e1');
-    feature.frontmatter = { ...feature.frontmatter, assignee: undefined, assignee_type: undefined };
+    const base = makeFeature('f1', 'e1');
+    const feature: ParsedFeature = {
+      ...base,
+      frontmatter: { ...base.frontmatter, assignee: undefined, assignee_type: undefined },
+    };
     const parsed: ParseResult = {
       epics: [makeEpic('e1')],
       features: [feature],
@@ -368,8 +371,8 @@ describe('toProjectEntities', () => {
   });
 
   it('includes meta from epic frontmatter', () => {
-    const epic = makeEpic('e1');
-    epic.frontmatter = { ...epic.frontmatter, meta: { priority: 'high' } };
+    const base = makeEpic('e1');
+    const epic: ParsedEpic = { ...base, frontmatter: { ...base.frontmatter, meta: { priority: 'high' } } };
     const parsed: ParseResult = { epics: [epic], features: [] };
 
     const entities = toProjectEntities(parsed);
@@ -378,8 +381,8 @@ describe('toProjectEntities', () => {
   });
 
   it('includes meta from feature frontmatter', () => {
-    const feature = makeFeature('f1', 'e1');
-    feature.frontmatter = { ...feature.frontmatter, meta: { score: 85 } };
+    const base = makeFeature('f1', 'e1');
+    const feature: ParsedFeature = { ...base, frontmatter: { ...base.frontmatter, meta: { score: 85 } } };
     const parsed: ParseResult = { epics: [makeEpic('e1')], features: [feature] };
 
     const entities = toProjectEntities(parsed);

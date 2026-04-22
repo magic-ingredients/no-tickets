@@ -1,12 +1,10 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
 import { assemblePush, mergeSession } from './commands/push.js';
 import { detectAgent } from './agent-detect.js';
 import { createApiClient } from './sdk/api-client.js';
 import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
-import type { FileEntry } from './core/types.js';
+import { readNoTicketsDir } from './core/fs.js';
 
 type Command = 'push' | 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'help' | 'version' | 'unknown';
 
@@ -22,39 +20,6 @@ interface ParsedArgs {
   readonly command: Command;
   readonly args: readonly string[];
   readonly flags: Readonly<Record<string, boolean>>;
-}
-
-async function readNoTicketsDir(dir: string): Promise<readonly FileEntry[]> {
-  const entries: FileEntry[] = [];
-  let items: string[];
-  try {
-    items = await readdir(dir);
-  } catch {
-    return [];
-  }
-
-  for (const item of items) {
-    const itemPath = join(dir, item);
-    const itemStat = await stat(itemPath).catch(() => null);
-    if (itemStat === null) continue;
-
-    if (itemStat.isFile() && item.endsWith('.md')) {
-      const content = await readFile(itemPath, 'utf-8');
-      entries.push({ path: itemPath, content });
-    } else if (itemStat.isDirectory()) {
-      const subItems = await readdir(itemPath).catch(() => [] as string[]);
-      for (const subItem of subItems) {
-        if (!subItem.endsWith('.md')) continue;
-        const subPath = join(itemPath, subItem);
-        const content = await readFile(subPath, 'utf-8').catch(() => null);
-        if (content !== null) {
-          entries.push({ path: subPath, content });
-        }
-      }
-    }
-  }
-
-  return entries;
 }
 
 async function readStdin(): Promise<string> {

@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T13:40:01.599Z",
+  "lastUpdated": "2026-04-22T15:52:21.907Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -289,12 +289,39 @@
       "id": "oss-launch",
       "number": 7,
       "title": "Open Source Launch & npm Publish",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-7-1",
           "description": "Set up CI for public repo",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-04-22T15:46:25.707Z",
+          "greenStartedAt": "2026-04-22T15:46:25.707Z",
+          "testCommitSha": "skipped",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T15:47:16.323Z",
+              "completedAt": "2026-04-22T15:50:00.590Z",
+              "reviewSha": "2dba7d28a3bfd2a2dbe442e8c823423a939cd603",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T15:50:00.590Z",
+              "refactorCommitSha": "5493367ac0bc96e41d59fd5a45bdb1cad0401a95",
+              "refactorCompletedAt": "2026-04-22T15:52:14.716Z",
+              "refactorCommittedAt": "2026-04-22T15:52:14.716Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T15:52:14.716Z",
+              "completedAt": "2026-04-22T15:52:21.906Z",
+              "reviewSha": "5493367ac0bc96e41d59fd5a45bdb1cad0401a95",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T15:52:21.906Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T15:52:21.906Z"
+            }
+          },
+          "commitSha": "2dba7d28a3bfd2a2dbe442e8c823423a939cd603",
+          "greenCompletedAt": "2026-04-22T15:47:16.322Z",
+          "completedAt": "2026-04-22T15:52:21.907Z"
         },
         {
           "id": "task-7-2",
@@ -304,18 +331,22 @@
         {
           "id": "task-7-3",
           "description": "Wire tiny-brain to consume npm package",
-          "status": "not_started"
+          "status": "superseded",
+          "completedAt": "2026-04-22T15:45:52.535Z"
         },
         {
           "id": "task-7-4",
           "description": "Update tiny-brain for open source",
-          "status": "not_started"
+          "status": "superseded",
+          "completedAt": "2026-04-22T15:45:52.535Z"
         }
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 0,
-        "remaining": 4
+        "completed": 1,
+        "remaining": 3,
+        "weightedProgress": 0.25,
+        "nextTask": "Publish initial npm release"
       }
     },
     {
@@ -425,7 +456,7 @@
       "id": "push-schemas",
       "number": 3,
       "title": "Push Schemas",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-3-1",
@@ -479,17 +510,19 @@
         {
           "id": "task-3-4",
           "description": "Verify sub-path exports",
-          "status": "in_progress",
+          "status": "completed",
           "redStartedAt": "2026-04-22T08:24:03.657Z",
           "greenStartedAt": "2026-04-22T08:24:03.657Z",
           "testCommitSha": "skipped",
-          "reviews": {}
+          "reviews": {},
+          "commitSha": "4bbf22b",
+          "completedAt": "2026-04-22T07:00:00.000Z"
         }
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 3,
-        "remaining": 1
+        "completed": 4,
+        "remaining": 0
       }
     },
     {
@@ -642,12 +675,12 @@
       "id": "e2e-tests",
       "number": 5,
       "title": "End-to-End Tests",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-5-1",
           "description": "Push command integration tests",
-          "status": "in_progress",
+          "status": "completed",
           "redStartedAt": "2026-04-22T13:34:17.846Z",
           "reviews": {
             "adversarial": {
@@ -671,7 +704,9 @@
           },
           "greenStartedAt": "2026-04-22T13:39:32.620Z",
           "testCommitSha": "128fe089df3e3cf1cb0f8b06f22f30e22b8d6696",
-          "redCompletedAt": "2026-04-22T13:39:32.620Z"
+          "redCompletedAt": "2026-04-22T13:39:32.620Z",
+          "commitSha": "128fe08",
+          "completedAt": "2026-04-22T14:39:00.000Z"
         },
         {
           "id": "task-5-2",
@@ -708,8 +743,8 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 4,
-        "remaining": 1
+        "completed": 5,
+        "remaining": 0
       }
     }
   ],
@@ -717,27 +752,27 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 3,
-    "featureTitle": "Push Schemas",
+    "feature": 7,
+    "featureTitle": "Open Source Launch & npm Publish",
     "overallProgress": {
-      "completedFeatures": 5,
+      "completedFeatures": 7,
       "totalFeatures": 9,
-      "completedTasks": 25,
+      "completedTasks": 30,
       "totalTasks": 32,
-      "percentComplete": 78
+      "percentComplete": 94,
+      "weightedPercentComplete": 3
     },
     "workRemaining": {
       "pendingFeatures": [
-        "Open Source Launch & npm Publish",
         "Migration Script (docs/prd/ → .notickets/)"
       ],
-      "currentFeatureTasks": 1,
-      "futureFeatureTasks": 5
+      "currentFeatureTasks": 3,
+      "futureFeatureTasks": 1
     },
     "nextAction": {
-      "featureId": "push-schemas",
-      "taskId": "task-3-4",
-      "description": "Verify sub-path exports"
+      "featureId": "oss-launch",
+      "taskId": "task-7-2",
+      "description": "Publish initial npm release"
     },
     "blockers": []
   }

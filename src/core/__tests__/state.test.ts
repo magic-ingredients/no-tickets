@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeState, computeOverallProgress, computeFeatureProgress } from '../state.js';
+import { computeState, computeOverallProgress, computeFeatureProgress, toProjectEntities } from '../state.js';
 import type { ParseResult, ParsedEpic, ParsedFeature, FeatureState, StateSnapshot } from '../types.js';
 
 function makeEpic(id = 'test-epic'): ParsedEpic {
@@ -262,5 +262,129 @@ describe('computeFeatureProgress', () => {
     // 50*0.3 + 0*0.35 + 50*0.35 = 15 + 0 + 17.5 = 32.5 → 33
     const progress = computeFeatureProgress(makeState('testing', { total: 0, completed: 0 }, { total: 10, passing: 5 }));
     expect(progress).toBe(33);
+  });
+});
+
+describe('toProjectEntities', () => {
+  it('converts epics to ProjectEntity with type epic', () => {
+    const parsed: ParseResult = {
+      epics: [makeEpic('platform')],
+      features: [],
+    };
+
+    const entities = toProjectEntities(parsed);
+
+    expect(entities).toHaveLength(1);
+    expect(entities[0]).toEqual({
+      id: 'platform',
+      type: 'epic',
+      title: 'Epic platform',
+      status: 'in_progress',
+    });
+  });
+
+  it('converts features to ProjectEntity with parentId', () => {
+    const parsed: ParseResult = {
+      epics: [makeEpic('auth')],
+      features: [makeFeature('login', 'auth')],
+    };
+
+    const entities = toProjectEntities(parsed);
+    const feature = entities.find((e) => e.type === 'feature');
+
+    expect(feature).toEqual({
+      id: 'login',
+      type: 'feature',
+      parentId: 'auth',
+      title: 'Feature login',
+      status: 'in_progress',
+      assignee: 'Claude',
+      assigneeType: 'agent',
+    });
+  });
+
+  it('converts tasks to ProjectEntity with parentId referencing feature', () => {
+    const parsed: ParseResult = {
+      epics: [makeEpic('auth')],
+      features: [makeFeature('login', 'auth', [
+        { number: 1, title: 'Build form', status: 'completed' },
+        { number: 2, title: 'Add validation', status: 'not_started' },
+      ])],
+    };
+
+    const entities = toProjectEntities(parsed);
+    const tasks = entities.filter((e) => e.type === 'task');
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]).toEqual({
+      id: 'login-task-1',
+      type: 'task',
+      parentId: 'login',
+      title: 'Build form',
+      status: 'completed',
+    });
+    expect(tasks[1]).toEqual({
+      id: 'login-task-2',
+      type: 'task',
+      parentId: 'login',
+      title: 'Add validation',
+      status: 'not_started',
+    });
+  });
+
+  it('returns all entity types in order: epics, features, tasks', () => {
+    const parsed: ParseResult = {
+      epics: [makeEpic('e1')],
+      features: [makeFeature('f1', 'e1', [
+        { number: 1, title: 'T1', status: 'not_started' },
+      ])],
+    };
+
+    const entities = toProjectEntities(parsed);
+
+    expect(entities).toHaveLength(3);
+    expect(entities[0]?.type).toBe('epic');
+    expect(entities[1]?.type).toBe('feature');
+    expect(entities[2]?.type).toBe('task');
+  });
+
+  it('returns empty array for empty parse result', () => {
+    expect(toProjectEntities({ epics: [], features: [] })).toEqual([]);
+  });
+
+  it('omits assignee fields when not set', () => {
+    const feature = makeFeature('f1', 'e1');
+    feature.frontmatter = { ...feature.frontmatter, assignee: undefined, assignee_type: undefined };
+    const parsed: ParseResult = {
+      epics: [makeEpic('e1')],
+      features: [feature],
+    };
+
+    const entities = toProjectEntities(parsed);
+    const featureEntity = entities.find((e) => e.type === 'feature');
+
+    expect(featureEntity?.assignee).toBeUndefined();
+    expect(featureEntity?.assigneeType).toBeUndefined();
+  });
+
+  it('includes meta from epic frontmatter', () => {
+    const epic = makeEpic('e1');
+    epic.frontmatter = { ...epic.frontmatter, meta: { priority: 'high' } };
+    const parsed: ParseResult = { epics: [epic], features: [] };
+
+    const entities = toProjectEntities(parsed);
+
+    expect(entities[0]?.meta).toEqual({ priority: 'high' });
+  });
+
+  it('includes meta from feature frontmatter', () => {
+    const feature = makeFeature('f1', 'e1');
+    feature.frontmatter = { ...feature.frontmatter, meta: { score: 85 } };
+    const parsed: ParseResult = { epics: [makeEpic('e1')], features: [feature] };
+
+    const entities = toProjectEntities(parsed);
+    const featureEntity = entities.find((e) => e.type === 'feature');
+
+    expect(featureEntity?.meta).toEqual({ score: 85 });
   });
 });

@@ -4,6 +4,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parseFrontmatter, parseTasks, parseGoals, parseAcceptanceCriteria, extractSection } from '../parser.js';
 
+// Real filesystem dependency: reads template files from templates/ directory.
+// These are conformance tests verifying templates match the format spec.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(__dirname, '..', '..', '..', 'templates');
 

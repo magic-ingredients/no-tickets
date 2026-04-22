@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTaskUpdateArgs } from './task-update.js';
+import { parseTaskUpdateArgs } from '../task-update.js';
 
 describe('parseTaskUpdateArgs', () => {
   it('parses minimal args: --task and --status', () => {

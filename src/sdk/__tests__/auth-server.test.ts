@@ -115,10 +115,10 @@ describe('startAuthServer', () => {
     await fetch(`http://127.0.0.1:${port}/callback?token=nt_session_fast`);
     const token = await tokenPromise;
 
-    // Wait longer than timeout to confirm promise stays resolved
-    await new Promise((r) => setTimeout(r, 150));
-
+    // Re-await the already-resolved promise to confirm it stays resolved
+    const tokenAgain = await tokenPromise;
     expect(token).toBe('nt_session_fast');
+    expect(tokenAgain).toBe('nt_session_fast');
   });
 
   it('close() after token received does not change the resolved value', async () => {

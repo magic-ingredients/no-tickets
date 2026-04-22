@@ -5,6 +5,7 @@ import type { BoardState, FeedEvent, Push } from '../../core/types.js';
 let fetchSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   fetchSpy = vi.fn();
   vi.stubGlobal('fetch', fetchSpy);
 });

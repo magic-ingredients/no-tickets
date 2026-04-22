@@ -135,21 +135,24 @@ describe('loadCredentials', () => {
   });
 
   it('returns null when token expires at exactly the current time', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
+    try {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-01T12:00:00Z'));
 
-    const stored: StoredCredentials = {
-      token: 'nt_session_abc123',
-      email: 'user@example.com',
-      expiresAt: '2026-06-01T12:00:00Z',
-    };
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(stored));
+      const stored: StoredCredentials = {
+        token: 'nt_session_abc123',
+        email: 'user@example.com',
+        expiresAt: '2026-06-01T12:00:00Z',
+      };
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(stored));
 
-    const result = loadCredentials();
+      const result = loadCredentials();
 
-    expect(result).toBeNull();
-    vi.useRealTimers();
+      expect(result).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('returns null when file is missing required fields', () => {

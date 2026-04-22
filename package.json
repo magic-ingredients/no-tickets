@@ -30,6 +30,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/auth-server.test.ts' --exclude '**/*-e2e.test.ts'",
     "lint": "eslint src/",
     "test:coverage": "vitest run --coverage",
     "test:mutate": "npx stryker run",

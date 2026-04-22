@@ -128,7 +128,7 @@ export async function listTokens(params: TokenListParams): Promise<TokenListResu
 
 export async function revokeToken(params: TokenRevokeParams): Promise<TokenRevokeResult> {
   try {
-    const response = await fetch(`${params.apiUrl}/api/v1/tokens/${params.tokenId}`, {
+    const response = await fetch(`${params.apiUrl}/api/v1/tokens/${encodeURIComponent(params.tokenId)}`, {
       method: 'DELETE',
       headers: authHeaders(params.sessionToken),
     });

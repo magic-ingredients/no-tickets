@@ -88,15 +88,17 @@ async function request(apiUrl: string, token: string, path: string, options?: Re
     body = JSON.parse(text);
   } catch {
     if (!response.ok) {
-      throw new Error(`${response.status}: ${text || 'Request failed'}`);
+      const errText = text || 'Request failed';
+      throw new Error(`${response.status}: ${errText.length > 200 ? errText.slice(0, 200) + '...' : errText}`);
     }
     return text;
   }
 
   if (!response.ok) {
-    const message = hasErrorField(body)
+    const raw = hasErrorField(body)
       ? String(body.error)
       : 'Request failed';
+    const message = raw.length > 200 ? raw.slice(0, 200) + '...' : raw;
     throw new Error(`${response.status}: ${message}`);
   }
 
@@ -115,11 +117,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     },
 
     async getBoard(projectId) {
-      return request(apiUrl, token, `/api/v1/board/${projectId}`) as Promise<BoardState>;
+      return request(apiUrl, token, `/api/v1/board/${encodeURIComponent(projectId)}`) as Promise<BoardState>;
     },
 
     async getFeed(projectId) {
-      return request(apiUrl, token, `/api/v1/feed/${projectId}`) as Promise<readonly FeedEvent[]>;
+      return request(apiUrl, token, `/api/v1/feed/${encodeURIComponent(projectId)}`) as Promise<readonly FeedEvent[]>;
     },
 
     async createEpic(params) {
@@ -145,7 +147,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     async updateFeature(params) {
       const { featureId, ...body } = params;
-      return request(apiUrl, token, `/api/v1/features/${featureId}`, {
+      return request(apiUrl, token, `/api/v1/features/${encodeURIComponent(featureId)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
       });
@@ -153,7 +155,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     async moveToPhase(params) {
       const { featureId, ...body } = params;
-      return request(apiUrl, token, `/api/v1/features/${featureId}/move`, {
+      return request(apiUrl, token, `/api/v1/features/${encodeURIComponent(featureId)}/move`, {
         method: 'POST',
         body: JSON.stringify(body),
       });
@@ -161,7 +163,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     async assignFeature(params) {
       const { featureId, ...body } = params;
-      return request(apiUrl, token, `/api/v1/features/${featureId}/assign`, {
+      return request(apiUrl, token, `/api/v1/features/${encodeURIComponent(featureId)}/assign`, {
         method: 'POST',
         body: JSON.stringify(body),
       });

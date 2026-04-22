@@ -22,7 +22,7 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
       assigneeType: feature.frontmatter.assignee_type,
       tasks: {
         total: feature.tasks.length,
-        completed: feature.tasks.filter((t) => t.status === 'completed').length,
+        completed: feature.tasks.reduce((n, t) => t.status === 'completed' ? n + 1 : n, 0),
       },
       tests: { total: 0, passing: 0 },
       meta: feature.frontmatter.meta,

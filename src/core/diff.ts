@@ -1,5 +1,18 @@
 import type { StateSnapshot, FeatureState, FeatureUpdate, SyncDelta } from './types.js';
 
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  const keysA = Object.keys(a as Record<string, unknown>);
+  const keysB = Object.keys(b as Record<string, unknown>);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (!deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
+}
+
 /**
  * Compute the delta between two state snapshots.
  * Pure function — no I/O, no side effects.
@@ -100,7 +113,7 @@ function diffFeature(
   if (prev.tests.passing !== curr.tests.passing || prev.tests.total !== curr.tests.total) {
     changes['tests'] = { from: prev.tests, to: curr.tests };
   }
-  if (JSON.stringify(prev.meta) !== JSON.stringify(curr.meta)) {
+  if (!deepEqual(prev.meta, curr.meta)) {
     changes['meta'] = { from: prev.meta, to: curr.meta };
   }
 

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { assemblePush, mergeSession } from './commands/push.js';
 import { detectAgent } from './agent-detect.js';
 import { createApiClient } from './sdk/api-client.js';
@@ -5,6 +6,9 @@ import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
 import { readNoTicketsDir } from './core/fs.js';
+
+const require = createRequire(import.meta.url);
+const { version: CLI_VERSION } = require('../package.json') as { version: string };
 
 type Command = 'push' | 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'help' | 'version' | 'unknown';
 
@@ -25,7 +29,7 @@ interface ParsedArgs {
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(Buffer.from(chunk as Uint8Array));
+    chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks).toString('utf-8');
 }
@@ -105,7 +109,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
       console.log('Usage: npx no-tickets <command> [options]\n\nCommands: init, push, status, validate, connect, disconnect');
       break;
     case 'version':
-      console.log('2.0.0');
+      console.log(CLI_VERSION);
       break;
     case 'push':
       await handlePush(parsed.flags);
@@ -118,7 +122,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
       process.exitCode = 1;
       break;
     case 'unknown':
-      console.error(`Unknown command: ${argv[0]}\nRun "npx no-tickets --help" for usage.`);
+      console.error(`Unknown command: ${String(argv[0]).replace(/[\x00-\x1f\x7f]/g, '')}\nRun "npx no-tickets --help" for usage.`);
       process.exitCode = 1;
       break;
     default:

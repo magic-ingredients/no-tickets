@@ -28,7 +28,7 @@ function isStoredCredentials(value: unknown): value is StoredCredentials {
 export function saveCredentials(token: string, email: string, expiresAt: string): void {
   const dir = credentialsDir();
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 
   const credentials: StoredCredentials = { token, email, expiresAt };

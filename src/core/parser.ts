@@ -160,7 +160,7 @@ export function parseDescription(body: string): string {
 
 function parseMeta(data: Record<string, unknown>): Readonly<Record<string, unknown>> | undefined {
   const meta = data['meta'];
-  if (typeof meta !== 'object' || meta === null) return undefined;
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined;
   return meta as Readonly<Record<string, unknown>>;
 }
 

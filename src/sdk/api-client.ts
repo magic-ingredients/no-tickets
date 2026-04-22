@@ -79,10 +79,7 @@ async function request(apiUrl: string, token: string, path: string, options?: Re
 
   const response = await fetch(url, {
     ...options,
-    headers: {
-      ...headers,
-      ...options?.headers as Record<string, string> | undefined,
-    },
+    headers,
   });
 
   const text = await response.text();

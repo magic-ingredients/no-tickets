@@ -1,4 +1,4 @@
-import type { Session, PushEnvironment, AssigneeType } from './core/types.js';
+import type { Session, PushEnvironment } from './core/types.js';
 
 interface AgentEnvCheck {
   readonly env: string;
@@ -56,7 +56,7 @@ export function detectAgent(): Session {
     if (process.env[check.env]) {
       return {
         agent: check.agent,
-        agentType: 'agent' as AssigneeType,
+        agentType: 'agent',
         vendor: check.vendor,
         environment,
       };
@@ -65,7 +65,7 @@ export function detectAgent(): Session {
 
   return {
     agent: 'unknown',
-    agentType: 'human' as AssigneeType,
+    agentType: 'human',
     environment,
   };
 }

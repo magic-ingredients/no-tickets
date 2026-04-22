@@ -34,7 +34,7 @@ describe('saveCredentials', () => {
 
     saveCredentials('nt_session_abc123', 'user@example.com', '2026-05-01T00:00:00Z');
 
-    expect(fs.mkdirSync).toHaveBeenCalledWith(CREDENTIALS_DIR, { recursive: true });
+    expect(fs.mkdirSync).toHaveBeenCalledWith(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
   });
 
   it('skips mkdir when directory already exists', () => {

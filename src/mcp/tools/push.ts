@@ -3,10 +3,16 @@ import { detectAgent } from '../../agent-detect.js';
 import { mergeSession } from '../../commands/push.js';
 import { createApiClient } from '../../sdk/api-client.js';
 import { resolveAuth } from '../../sdk/auth.js';
-import { toolSuccess, type ToolResult } from './types.js';
+import { toolSuccess, toolError, type ToolResult } from './types.js';
 
 export async function handlePush(payloadJson: string): Promise<ToolResult> {
-  const raw = JSON.parse(payloadJson) as unknown;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(payloadJson);
+  } catch {
+    return toolError(new Error('Invalid JSON in push payload'));
+  }
+
   const validated = pushSchema.parse(raw);
 
   const session = detectAgent();

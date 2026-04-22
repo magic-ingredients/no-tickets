@@ -3,6 +3,7 @@ import type { ApiClient } from '../../sdk/api-client.js';
 
 export function mockApiClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    push: vi.fn(),
     getBoard: vi.fn(),
     getFeed: vi.fn(),
     createEpic: vi.fn(),

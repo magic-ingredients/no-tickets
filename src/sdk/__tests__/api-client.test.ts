@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createApiClient } from '../api-client.js';
-import type { BoardState, FeedEvent } from '../../core/types.js';
+import type { BoardState, FeedEvent, Push } from '../../core/types.js';
 
 let fetchSpy: ReturnType<typeof vi.fn>;
 
@@ -228,7 +228,7 @@ describe('push', () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ success: true, changesApplied: 2, eventsGenerated: 1 }));
 
-    const payload = {
+    const payload: Push = {
       projectId: 'proj-1',
       timestamp: '2026-04-22T10:00:00Z',
       project: { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] },

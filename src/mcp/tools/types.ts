@@ -1,3 +1,4 @@
+// Index signature required by @modelcontextprotocol/sdk's CallToolResult type
 export interface ToolResult {
   readonly content: Array<{ readonly type: 'text'; readonly text: string }>;
   readonly isError?: boolean;

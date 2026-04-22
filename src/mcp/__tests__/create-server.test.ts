@@ -103,14 +103,14 @@ describe('createMcpServer', () => {
       expect(schema).toHaveProperty('payload');
     });
 
-    it('validate has an input schema', () => {
-      const tool = findTool('validate');
-      expect(tool.config.inputSchema).toBeDefined();
+    it('validate accepts optional directory parameter', () => {
+      const schema = findTool('validate').config.inputSchema as Record<string, unknown>;
+      expect(schema).toHaveProperty('directory');
     });
 
-    it('status has an input schema', () => {
-      const tool = findTool('status');
-      expect(tool.config.inputSchema).toBeDefined();
+    it('status has empty input schema', () => {
+      const schema = findTool('status').config.inputSchema as Record<string, unknown>;
+      expect(Object.keys(schema)).toHaveLength(0);
     });
   });
 });

@@ -24,7 +24,7 @@ export function createMcpServer(): McpServer {
       description: 'Push a v2 event payload to the no-tickets server',
       inputSchema: { payload: z.string().describe('JSON-encoded Push payload') },
     },
-    async (args: { payload: string }) => {
+    async (args: { payload: string }): Promise<ReturnType<typeof toolError>> => {
       try {
         return await handlePush(args.payload);
       } catch (err) {
@@ -39,7 +39,7 @@ export function createMcpServer(): McpServer {
       description: 'Validate .notickets/ files against the format spec',
       inputSchema: { directory: z.string().optional().describe('Path to .notickets/ directory (defaults to .notickets)') },
     },
-    async (args: { directory?: string }) => {
+    async (args: { directory?: string }): Promise<ReturnType<typeof toolError>> => {
       try {
         return await handleValidate(args.directory);
       } catch (err) {
@@ -52,9 +52,9 @@ export function createMcpServer(): McpServer {
     'status',
     {
       description: 'Check authentication and connection status',
-      inputSchema: { verbose: z.boolean().optional().describe('Include detailed connection info') },
+      inputSchema: {},
     },
-    async () => {
+    async (): Promise<ReturnType<typeof toolError>> => {
       try {
         return handleStatus();
       } catch (err) {

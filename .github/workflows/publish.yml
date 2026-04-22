@@ -9,11 +9,24 @@ permissions:
   id-token: write
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: validate
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify release tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
 
       - run: corepack enable
 
@@ -25,13 +38,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm run typecheck
-
       - run: pnpm run build
-
-      - run: pnpm run lint
-
-      - run: pnpm run test
 
       - run: pnpm publish --provenance --access public --no-git-checks
         env:

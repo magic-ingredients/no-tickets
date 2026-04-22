@@ -23,6 +23,12 @@
       "import": "./dist/core/index.js"
     }
   },
+  "files": [
+    "dist",
+    "bin",
+    "templates",
+    "wrappers"
+  ],
   "bin": {
     "no-tickets": "bin/no-tickets.js"
   },

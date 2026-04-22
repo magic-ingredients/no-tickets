@@ -1,11 +1,11 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assemblePush, mergeSession } from './commands/push.js';
 import { detectAgent } from './agent-detect.js';
 import { createApiClient } from './sdk/api-client.js';
-import { buildPushAuth, type PushLocalConfig } from './commands/push-auth.js';
+import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
-import type { FileEntry, Push } from './core/types.js';
+import type { FileEntry } from './core/types.js';
 
 type Command = 'push' | 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'help' | 'version' | 'unknown';
 
@@ -34,24 +34,21 @@ async function readNoTicketsDir(dir: string): Promise<readonly FileEntry[]> {
 
   for (const item of items) {
     const itemPath = join(dir, item);
-    const stat = await readFile(itemPath, 'utf-8').catch(() => null);
-    if (stat !== null && item.endsWith('.md')) {
-      entries.push({ path: itemPath, content: stat });
-      continue;
-    }
-    // Recurse into subdirectories
-    let subItems: string[];
-    try {
-      subItems = await readdir(itemPath);
-    } catch {
-      continue;
-    }
-    for (const subItem of subItems) {
-      if (!subItem.endsWith('.md')) continue;
-      const subPath = join(itemPath, subItem);
-      const content = await readFile(subPath, 'utf-8').catch(() => null);
-      if (content !== null) {
-        entries.push({ path: subPath, content });
+    const itemStat = await stat(itemPath).catch(() => null);
+    if (itemStat === null) continue;
+
+    if (itemStat.isFile() && item.endsWith('.md')) {
+      const content = await readFile(itemPath, 'utf-8');
+      entries.push({ path: itemPath, content });
+    } else if (itemStat.isDirectory()) {
+      const subItems = await readdir(itemPath).catch(() => [] as string[]);
+      for (const subItem of subItems) {
+        if (!subItem.endsWith('.md')) continue;
+        const subPath = join(itemPath, subItem);
+        const content = await readFile(subPath, 'utf-8').catch(() => null);
+        if (content !== null) {
+          entries.push({ path: subPath, content });
+        }
       }
     }
   }
@@ -62,51 +59,53 @@ async function readNoTicketsDir(dir: string): Promise<readonly FileEntry[]> {
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
+    chunks.push(Buffer.from(chunk as Uint8Array));
   }
   return Buffer.concat(chunks).toString('utf-8');
+}
+
+function loadPushConfig() {
+  const apiUrl = process.env['NO_TICKETS_API_URL'] ?? 'https://api.no-tickets.com';
+  const teamId = process.env['NO_TICKETS_TEAM_ID'] ?? '';
+  const projectId = process.env['NO_TICKETS_PROJECT_ID'] ?? '';
+  return { apiUrl, teamId, projectId };
 }
 
 async function handlePush(flags: Readonly<Record<string, boolean>>): Promise<void> {
   const session = detectAgent();
   const isStdin = Boolean(flags['stdin']);
   const isDryRun = Boolean(flags['dry-run']);
+  const config = loadPushConfig();
 
-  let payload: Push;
-
-  if (isStdin) {
-    const raw = await readStdin();
-    const parsed = JSON.parse(raw) as Push;
-    const validated = pushSchema.parse(parsed);
-    payload = mergeSession(validated as Push, session);
-  } else {
-    const files = await readNoTicketsDir('.notickets');
-    const localConfig: PushLocalConfig = {
-      apiUrl: process.env['NO_TICKETS_API_URL'] ?? 'https://api.no-tickets.com',
-      teamId: process.env['NO_TICKETS_TEAM_ID'] ?? '',
-      projectId: process.env['NO_TICKETS_PROJECT_ID'] ?? '',
-    };
-    payload = assemblePush({
-      files,
-      projectId: localConfig.projectId,
-      session,
-    });
-    pushSchema.parse(payload);
-  }
+  const payload = isStdin
+    ? await buildStdinPush(session)
+    : await buildFilePush(config.projectId, session);
 
   if (isDryRun) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  const authConfig = buildPushAuth({
-    apiUrl: process.env['NO_TICKETS_API_URL'] ?? 'https://api.no-tickets.com',
-    teamId: process.env['NO_TICKETS_TEAM_ID'] ?? '',
-    projectId: process.env['NO_TICKETS_PROJECT_ID'] ?? '',
-  });
+  const authConfig = buildPushAuth(config);
   const client = createApiClient({ token: authConfig.token, apiUrl: authConfig.apiUrl });
   const result = await client.push(payload);
   console.log(JSON.stringify(result));
+}
+
+async function buildStdinPush(session: ReturnType<typeof detectAgent>) {
+  const raw = await readStdin();
+  const parsed = pushSchema.parse(JSON.parse(raw));
+  return mergeSession(parsed, session);
+}
+
+async function buildFilePush(projectId: string, session: ReturnType<typeof detectAgent>) {
+  if (!projectId) {
+    throw new Error('NO_TICKETS_PROJECT_ID environment variable is required for push');
+  }
+  const files = await readNoTicketsDir('.notickets');
+  const payload = assemblePush({ files, projectId, session });
+  pushSchema.parse(payload);
+  return payload;
 }
 
 /**

@@ -1,6 +1,7 @@
 export interface ToolResult {
   readonly content: Array<{ readonly type: 'text'; readonly text: string }>;
   readonly isError?: boolean;
+  readonly [key: string]: unknown;
 }
 
 export function toolSuccess(data: unknown): ToolResult {

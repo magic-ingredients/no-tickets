@@ -124,6 +124,10 @@ describe('sessionSchema', () => {
     expect(() => sessionSchema.parse({ agent: 'x', agentType: 'bot' })).toThrow();
   });
 
+  it('rejects negative duration', () => {
+    expect(() => sessionSchema.parse({ agent: 'x', agentType: 'human', duration: -1 })).toThrow();
+  });
+
   it('preserves meta passthrough', () => {
     const session = { agent: 'x', agentType: 'agent', meta: { nested: { deep: true } } };
     const parsed = sessionSchema.parse(session);
@@ -197,6 +201,10 @@ describe('devReviewSchema', () => {
   it('rejects missing reviewer', () => {
     expect(() => devReviewSchema.parse({ verdict: 'clean' })).toThrow();
   });
+
+  it('rejects missing verdict', () => {
+    expect(() => devReviewSchema.parse({ reviewer: 'adversarial' })).toThrow();
+  });
 });
 
 describe('devTaskSchema', () => {
@@ -224,6 +232,10 @@ describe('devTaskSchema', () => {
 
   it('rejects invalid phase', () => {
     expect(() => devTaskSchema.parse({ entityId: 'x', phase: 'testing' })).toThrow();
+  });
+
+  it('rejects negative duration', () => {
+    expect(() => devTaskSchema.parse({ entityId: 'x', duration: -100 })).toThrow();
   });
 });
 
@@ -310,6 +322,18 @@ describe('qualityDataSchema', () => {
 
   it('rejects non-numeric score', () => {
     expect(() => qualityDataSchema.parse({ score: 'high' })).toThrow();
+  });
+
+  it('rejects negative score', () => {
+    expect(() => qualityDataSchema.parse({ score: -1 })).toThrow();
+  });
+
+  it('rejects Infinity score', () => {
+    expect(() => qualityDataSchema.parse({ score: Infinity })).toThrow();
+  });
+
+  it('rejects NaN score', () => {
+    expect(() => qualityDataSchema.parse({ score: NaN })).toThrow();
   });
 });
 

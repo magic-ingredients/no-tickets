@@ -82,7 +82,7 @@ export const pushEnvironmentSchema = z.object({
   runtime: z.string().optional(),
   ci: z.boolean().optional(),
   ciProvider: z.string().optional(),
-}).strict();
+});
 
 export const sessionSchema = z.object({
   agent: z.string(),
@@ -90,7 +90,7 @@ export const sessionSchema = z.object({
   model: z.string().optional(),
   vendor: z.string().optional(),
   environment: pushEnvironmentSchema.optional(),
-  duration: z.number().optional(),
+  duration: z.number().nonnegative().optional(),
   result: z.string().optional(),
   meta: metaSchema,
 });
@@ -126,7 +126,7 @@ export const devTaskSchema = z.object({
   commitSha: z.string().optional(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
-  duration: z.number().optional(),
+  duration: z.number().nonnegative().optional(),
   reviews: z.array(devReviewSchema).optional(),
   meta: metaSchema,
 });
@@ -156,7 +156,7 @@ export const pmDataSchema = z.object({
 // -- Schema: "quality" --------------------------------------------------------
 
 export const qualityDataSchema = z.object({
-  score: z.number(),
+  score: z.number().finite().nonnegative(),
   grade: z.string().optional(),
   source: qualitySourceSchema.optional(),
   entityId: z.string().optional(),

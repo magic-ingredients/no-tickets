@@ -1,0 +1,14 @@
+{
+  "name": "no-tickets",
+  "description": "Ticketless project management for AI teams",
+  "version": "2.0.0",
+  "author": "Magic Ingredients",
+  "homepage": "https://no-tickets.com",
+  "mcp": {
+    "command": "npx",
+    "args": ["-y", "@magic-ingredients/no-tickets"],
+    "env": {
+      "NO_TICKETS_TOKEN": ""
+    }
+  }
+}

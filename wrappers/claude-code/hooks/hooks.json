@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "npx no-tickets push --dry-run 2>/dev/null | grep -q '\"entities\"' && npx no-tickets push || true",
+          "command": "bash hooks/post-tool-push.sh",
           "description": "Auto-push to no-tickets when .notickets/ files change"
         }
       ]

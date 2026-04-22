@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { FileEntry } from './types.js';
 
 /**
@@ -9,7 +9,7 @@ import type { FileEntry } from './types.js';
 export async function readNoTicketsDir(dir: string): Promise<readonly FileEntry[]> {
   const resolved = resolve(dir);
   const cwd = resolve(process.cwd());
-  if (!resolved.startsWith(cwd)) {
+  if (resolved !== cwd && !resolved.startsWith(cwd + sep)) {
     throw new Error(`Path "${dir}" is outside the current working directory`);
   }
 
@@ -25,7 +25,7 @@ export async function readNoTicketsDir(dir: string): Promise<readonly FileEntry[
     itemPaths.map((p) => stat(p).catch(() => null)),
   );
 
-  const entries: FileEntry[] = [];
+  const mdPaths: string[] = [];
   const subDirReads: Promise<FileEntry[]>[] = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -36,22 +36,26 @@ export async function readNoTicketsDir(dir: string): Promise<readonly FileEntry[
     if (itemStat == null) continue;
 
     if (itemStat.isFile() && item.endsWith('.md')) {
-      entries.push({ path: itemPath, content: '' });
+      mdPaths.push(itemPath);
     } else if (itemStat.isDirectory()) {
       subDirReads.push(readSubDir(itemPath));
     }
   }
 
-  const topLevelContents = await Promise.all(
-    entries.map(async (entry) => {
-      const content = await readFile(entry.path, 'utf-8');
-      return { path: entry.path, content };
+  const topLevelFiles = await Promise.all(
+    mdPaths.map(async (filePath) => {
+      const content = await readFile(filePath, 'utf-8').catch(() => null);
+      if (content === null) return null;
+      return { path: filePath, content };
     }),
   );
 
   const subDirResults = await Promise.all(subDirReads);
 
-  return [...topLevelContents, ...subDirResults.flat()];
+  return [
+    ...topLevelFiles.filter((f): f is FileEntry => f !== null),
+    ...subDirResults.flat(),
+  ];
 }
 
 async function readSubDir(dirPath: string): Promise<FileEntry[]> {

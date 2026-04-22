@@ -76,12 +76,15 @@ describe('readNoTicketsDir', () => {
     await expect(readNoTicketsDir('.notickets/../../etc')).rejects.toThrow('outside');
   });
 
-  it('accepts relative paths within cwd', async () => {
-    await mkdir('.notickets');
-    await writeFile('.notickets/epic.md', '# Epic');
+  it('rejects sibling directory with shared prefix', async () => {
+    // If cwd is /tmp/nt-fs-test-ABC, a path like /tmp/nt-fs-test-ABC-evil
+    // shares the string prefix but is a sibling, not a child
+    const siblingDir = testDir + '-evil';
+    await mkdir(siblingDir, { recursive: true });
+    await writeFile(join(siblingDir, 'epic.md'), '# Evil');
 
-    const files = await readNoTicketsDir('.notickets');
+    await expect(readNoTicketsDir(siblingDir)).rejects.toThrow('outside');
 
-    expect(files).toHaveLength(1);
+    await rm(siblingDir, { recursive: true, force: true });
   });
 });

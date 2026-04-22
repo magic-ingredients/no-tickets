@@ -86,9 +86,8 @@
         }
       ],
       "filePath": ".tiny-brain/fixes/testing-hygiene.md",
-      "reported": "2026-04-22T13:10:00.000Z",
-      "resolved": "2026-04-22T16:10:00.000Z",
-      "archived": true,
+      "reported": "2026-04-22",
+      "resolved": "2026-04-22",
       "resolution": {
         "rootCause": "Accumulated testing issues — flaky timers, missing mock cleanup, inconsistent file placement",
         "fix": [
@@ -107,7 +106,8 @@
           "src/commands/__tests__/task-update.test.ts",
           "package.json"
         ]
-      }
+      },
+      "archived": true
     },
     {
       "id": "quick-quality-fixes",
@@ -476,28 +476,57 @@
     {
       "id": "deferred-server-coordination",
       "title": "Deferred fixes requiring server-side coordination",
-      "status": "not_started",
+      "status": "in_progress",
       "severity": "major",
       "tasks": [
         {
           "id": "task-1",
           "description": "Add CSRF state parameter to OAuth callback",
-          "status": "not_started"
+          "status": "superseded",
+          "completedAt": "2026-04-22T17:29:32.782Z"
         },
         {
           "id": "task-2",
           "description": "Resolve placeholder email in init-auth",
-          "status": "not_started"
+          "status": "superseded",
+          "completedAt": "2026-04-22T17:29:32.782Z"
         },
         {
           "id": "task-3",
           "description": "Encode path parameters in API client",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "08c43ac3f5b0b475d06a2013315fd3facb481cb5",
+          "testCommitSha": "769ec681c288dede0ddefe2cf5cf8fb54685bac4",
+          "redStartedAt": "2026-04-22T17:31:09.459Z",
+          "greenStartedAt": "2026-04-22T17:32:02.818Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-22T17:33:48.385Z",
+              "completedAt": "2026-04-22T17:35:40.871Z",
+              "reviewSha": "08c43ac3f5b0b475d06a2013315fd3facb481cb5",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-22T17:35:40.871Z",
+              "refactorCommitSha": "fbb922c6cb55b8ea8541c2f5318ac63ad4ba853c",
+              "refactorCompletedAt": "2026-04-22T17:37:08.492Z",
+              "refactorCommittedAt": "2026-04-22T17:37:08.492Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-22T17:37:08.492Z",
+              "completedAt": "2026-04-22T17:37:20.939Z",
+              "reviewSha": "fbb922c6cb55b8ea8541c2f5318ac63ad4ba853c",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-04-22T17:37:20.939Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-04-22T17:37:20.939Z"
+            }
+          },
+          "completedAt": "2026-04-22T17:37:20.939Z"
         },
         {
           "id": "task-4",
           "description": "Sanitize server error messages",
-          "status": "not_started"
+          "status": "superseded",
+          "completedAt": "2026-04-22T17:29:32.782Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/deferred-server-coordination.md",
@@ -523,5 +552,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-22T15:13:57.580Z"
+  "lastSynced": "2026-04-22T17:37:20.939Z"
 }

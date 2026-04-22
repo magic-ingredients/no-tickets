@@ -343,10 +343,8 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 1,
-        "remaining": 3,
-        "weightedProgress": 0.25,
-        "nextTask": "Publish initial npm release"
+        "completed": 3,
+        "remaining": 1
       }
     },
     {
@@ -759,8 +757,7 @@
       "totalFeatures": 9,
       "completedTasks": 30,
       "totalTasks": 32,
-      "percentComplete": 94,
-      "weightedPercentComplete": 3
+      "percentComplete": 94
     },
     "workRemaining": {
       "pendingFeatures": [

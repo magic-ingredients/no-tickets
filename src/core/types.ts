@@ -216,7 +216,7 @@ export type Priority = 'critical' | 'high' | 'medium' | 'low';
 
 export type CodeQualitySource = 'local' | 'ci';
 
-// -- Core envelope (Task 1) ---------------------------------------------------
+// -- Core envelope ------------------------------------------------------------
 
 export interface Push {
   readonly projectId: string;

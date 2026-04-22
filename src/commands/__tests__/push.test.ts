@@ -56,7 +56,7 @@ describe('assemblePush', () => {
     expect(types).toContain('task');
   });
 
-  it('omits work schema when no files provided', () => {
+  it('omits work field when no files provided', () => {
     const result = assemblePush({
       files: [],
       projectId: 'p1',

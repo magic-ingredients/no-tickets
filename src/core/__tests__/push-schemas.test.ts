@@ -240,7 +240,7 @@ describe('engineeringTaskSchema', () => {
 });
 
 describe('engineeringDataSchema', () => {
-  it('accepts full dev data', () => {
+  it('accepts full engineering data', () => {
     const data = {
       tasks: [{ entityId: 'feat-1', phase: 'red' }],
       meta: { sessionId: 'abc' },
@@ -296,7 +296,7 @@ describe('productDataSchema', () => {
 // -- Code quality schema ------------------------------------------------------
 
 describe('codeQualityDataSchema', () => {
-  it('accepts full quality data', () => {
+  it('accepts full code quality data', () => {
     const data = {
       score: 85,
       grade: 'B+',
@@ -308,7 +308,7 @@ describe('codeQualityDataSchema', () => {
     expect(codeQualityDataSchema.parse(data)).toEqual(data);
   });
 
-  it('accepts minimal quality data (score only)', () => {
+  it('accepts minimal code quality data (score only)', () => {
     expect(codeQualityDataSchema.parse({ score: 100 })).toEqual({ score: 100 });
   });
 

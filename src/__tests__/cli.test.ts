@@ -170,11 +170,7 @@ describe('runCli dispatch', () => {
     expect(logSpy.mock.calls[0]![0] as string).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('init reports not-yet-implemented and exits 1', async () => {
-    await runCli(['init']);
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('init'));
-    expect(process.exitCode).toBe(1);
-  });
+  // init has its own e2e coverage in src/__tests__/init-cli-e2e.test.ts.
 
   it('connect, disconnect fall through to not-implemented', async () => {
     await runCli(['connect']);

@@ -6,8 +6,13 @@ import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
 import { readNoTicketsDir } from './core/fs.js';
+import { spawn } from 'node:child_process';
 import { describeAuthStatus, resolveAuth, DEFAULT_API_URL, NOT_AUTHENTICATED_MESSAGE } from './sdk/auth.js';
 import { createToken, listTokens, revokeToken } from './commands/token.js';
+import { resolveInitAuth } from './commands/init-auth.js';
+import { loadCredentials } from './sdk/credentials.js';
+
+const DEFAULT_AUTH_URL = 'https://app.no-tickets.com/auth/cli';
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require('../package.json') as { version: string };
@@ -144,6 +149,57 @@ async function handleToken(
   }
 }
 
+function platformBrowserOpener(url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const platform = process.platform;
+    const [cmd, ...args] =
+      platform === 'darwin' ? ['open', url] :
+      platform === 'win32' ? ['cmd', '/c', 'start', '""', url] :
+      ['xdg-open', url];
+    const child = spawn(cmd!, args, { stdio: 'ignore', detached: true });
+    child.on('error', reject);
+    child.unref();
+    resolve();
+  });
+}
+
+interface OpenBrowserHost {
+  readonly __NO_TICKETS_OPEN_BROWSER?: (url: string) => Promise<void>;
+}
+
+function resolveBrowserOpener(): (url: string) => Promise<void> {
+  const injected = (globalThis as OpenBrowserHost).__NO_TICKETS_OPEN_BROWSER;
+  return injected ?? platformBrowserOpener;
+}
+
+async function handleInit(): Promise<void> {
+  const existing = loadCredentials();
+  if (existing) {
+    console.log(`Already authenticated as ${existing.email}. Run \`rm ~/.notickets/credentials\` to sign out.`);
+    return;
+  }
+
+  const authUrl = process.env['NO_TICKETS_AUTH_URL'] ?? DEFAULT_AUTH_URL;
+  const opener = resolveBrowserOpener();
+
+  try {
+    const result = await resolveInitAuth({
+      authUrl,
+      openBrowser: async (url) => {
+        console.log(`Opening browser to authenticate:\n  ${url}\n(If the browser does not open, paste the URL above.)`);
+        try {
+          await opener(url);
+        } catch {
+          // Non-fatal — the URL is already printed for manual paste.
+        }
+      },
+    });
+    console.log(`Authenticated as ${result.email}.`);
+  } catch (err) {
+    fail(err instanceof Error ? err.message : 'Authentication failed');
+  }
+}
+
 function handleStatus(): void {
   try {
     console.log(JSON.stringify(describeAuthStatus()));
@@ -209,8 +265,7 @@ export async function runCli(argv: readonly string[]): Promise<void> {
       await handleToken(parsed.args, parsed.flags);
       break;
     case 'init':
-      console.error('Command "init" is not yet implemented.');
-      process.exitCode = 1;
+      await handleInit();
       break;
     case 'unknown':
       console.error(`Unknown command: ${String(argv[0]).replace(/[\x00-\x1f\x7f]/g, '')}\nRun "npx no-tickets --help" for usage.`);

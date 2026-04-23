@@ -17,6 +17,7 @@ vi.mock('../sdk/auth-server.js');
 let openedUrls: string[] = [];
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   testDir = await mkdtemp(join(tmpdir(), 'nt-init-cli-e2e-'));
   vi.stubEnv('NO_TICKETS_HOME', testDir);
   delete process.env['NO_TICKETS_TOKEN'];

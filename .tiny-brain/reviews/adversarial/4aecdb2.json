@@ -1,0 +1,54 @@
+{
+  "summary": "Clean credential storage implementation with good test coverage of happy/unhappy paths. A few type safety and test precision issues worth addressing.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "medium",
+      "category": "type-safety",
+      "file": "src/sdk/__tests__/credentials.test.ts",
+      "line": 51,
+      "description": "Type assertion `content as string` violates project guidelines",
+      "rationale": "Project CLAUDE.md states: No any types or type assertions. This `as string` cast bypasses type checking on the writeFileSync mock call argument.",
+      "suggestion": "Use a runtime check instead: `expect(typeof content).toBe(\"string\")` followed by using the value, or narrow via `String(content)`."
+    },
+    {
+      "priority": "low",
+      "category": "type-safety",
+      "file": "src/sdk/credentials.ts",
+      "line": 21,
+      "description": "Type assertion `value as Record<string, unknown>` in type guard",
+      "rationale": "While common in type guards, `as` casts are explicitly forbidden by project guidelines. This one is low-risk since the null/object check precedes it, but it still violates the stated rule.",
+      "suggestion": "Use Object.prototype.hasOwnProperty or `in` operator checks directly on `value` after the object check, e.g. `\"token\" in value && typeof (value as any).token` -- or accept this as a pragmatic exception and document it."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/sdk/__tests__/credentials.test.ts",
+      "line": 30,
+      "description": "existsSync mock returns false for ALL calls, not just the directory check",
+      "rationale": "The mock does not distinguish between paths. If saveCredentials ever adds a second existsSync call (e.g., checking if the file already exists before writing), this test would silently break or pass for the wrong reason.",
+      "suggestion": "Use mockImplementation with a function that checks the argument: `vi.mocked(fs.existsSync).mockImplementation((p) => p \\!== CREDENTIALS_DIR)` or use mockReturnValueOnce."
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/__tests__/credentials.test.ts",
+      "line": 28,
+      "description": "No test asserts mkdirSync is NOT called when directory already exists",
+      "rationale": "The writes-credentials test sets existsSync to true but never asserts mkdirSync was not called. This leaves the skip-mkdir path unverified.",
+      "suggestion": "Add `expect(fs.mkdirSync).not.toHaveBeenCalled()` to the writes-credentials test."
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/__tests__/credentials.test.ts",
+      "line": 101,
+      "description": "No boundary test for expiration at exactly the current time",
+      "rationale": "Implementation uses `<=` so credentials expiring at exactly Date.now() are treated as expired. This is a reasonable choice but the boundary is untested.",
+      "suggestion": "Add a test using vi.useFakeTimers to set a fixed Date.now(), then create credentials with expiresAt equal to that exact time, and assert null is returned."
+    }
+  ],
+  "sha": "4aecdb2",
+  "type": "adversarial",
+  "timestamp": "2026-04-16T10:18:11.232Z"
+}

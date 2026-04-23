@@ -1,0 +1,132 @@
+{
+  "version": "1.0",
+  "detectedAt": "2026-04-16T11:04:54.968Z",
+  "analysisHash": "d8769ebc4629c9110b3c592c1b47876dcf8ec0441b3a0b670eab6cac80773891",
+  "stack": {
+    "languages": [
+      "typescript",
+      "javascript"
+    ],
+    "frameworks": [],
+    "testing": [
+      "vitest"
+    ],
+    "build": []
+  },
+  "analysis": {
+    "hasTests": true,
+    "testFileCount": 17,
+    "testPatterns": [
+      ".test.ts"
+    ],
+    "isPolyglot": true,
+    "primaryLanguage": "typescript",
+    "documentationPattern": "mixed",
+    "documentationLocations": [
+      "README.md",
+      "docs/"
+    ]
+  },
+  "packageManager": "pnpm",
+  "scripts": {
+    "test": {
+      "command": "vitest run",
+      "framework": "vitest",
+      "coverage": "vitest run --coverage"
+    },
+    "lint": {
+      "command": "eslint src/",
+      "tool": "eslint"
+    },
+    "build": {
+      "command": "tsc",
+      "tool": "typescript"
+    },
+    "dev": {
+      "command": "tsc --watch",
+      "tool": null
+    }
+  },
+  "linting": {
+    "tool": "eslint",
+    "plugins": [
+      "typescript"
+    ]
+  },
+  "projectName": "@magic-ingredients/no-tickets",
+  "sourceDirectories": [
+    "src"
+  ],
+  "analyzers": [
+    {
+      "id": "typescript",
+      "name": "TypeScript",
+      "variant": null,
+      "configPaths": [
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/tsconfig.json"
+      ],
+      "commands": {
+        "quality": "npx tsc --noEmit -p /Users/andyrichardson/work/repos/no-tickets/no-tickets/tsconfig.json",
+        "pipeline": null
+      },
+      "categories": [
+        "Reliability",
+        "Maintainability"
+      ],
+      "emoji": "📝",
+      "color": "#3178c6"
+    },
+    {
+      "id": "eslint",
+      "name": "ESLint",
+      "variant": null,
+      "configPaths": [
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/eslint.config.js"
+      ],
+      "commands": {
+        "quality": "npx eslint /Users/andyrichardson/work/repos/no-tickets/no-tickets --format json",
+        "pipeline": null
+      },
+      "categories": [
+        "Maintainability",
+        "Reliability"
+      ],
+      "emoji": "🧹",
+      "color": "#4b32c3"
+    },
+    {
+      "id": "dependency-audit",
+      "name": "Dependency Audit",
+      "variant": null,
+      "configPaths": [
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/pnpm-lock.yaml"
+      ],
+      "commands": {
+        "quality": "pnpm audit --json --dir /Users/andyrichardson/work/repos/no-tickets/no-tickets",
+        "pipeline": null
+      },
+      "categories": [
+        "Security"
+      ],
+      "emoji": "📦",
+      "color": "#795548"
+    },
+    {
+      "id": "coverage",
+      "name": "Code Coverage",
+      "variant": null,
+      "configPaths": [
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/vitest.config.ts"
+      ],
+      "commands": {
+        "quality": "npx vitest run --config /Users/andyrichardson/work/repos/no-tickets/no-tickets/vitest.config.ts --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory={outputDir}",
+        "pipeline": "npx vitest run --config {config} --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory={outputDir} --changed {sha}"
+      },
+      "categories": [
+        "Testing"
+      ],
+      "emoji": "📈",
+      "color": "#4caf50"
+    }
+  ]
+}

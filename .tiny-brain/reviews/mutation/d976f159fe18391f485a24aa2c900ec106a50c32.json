@@ -1,0 +1,55 @@
+{
+  "summary": "Mutation testing results: 37 killed, 6 timeout, 41 survived, 5 no coverage. Mutation score: 48.31%.",
+  "verdict": "needs-refactoring",
+  "testQuality": "The mutation score of 48.31% is well below the 80% threshold. The tests verify the presence and names of all tools and that each has a description and inputSchema, but they do not assert on the specific content of tool descriptions, the structure of inputSchemas (which fields exist and their Zod types), or the capabilities options object passed to the McpServer constructor. This leaves a large cluster of string-literal and object-literal mutants alive.",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "missing-assertion",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 113,
+      "description": "Survived: ObjectLiteral mutant — { capabilities: { tools: {} } } → {} or { capabilities: {} } on line 113",
+      "rationale": "The test asserts on constructorArgs[0] (name/version) but never checks the second constructor argument (capabilities). Mutating the capabilities object entirely or setting it to {} still passes all tests.",
+      "suggestion": "Add assertion: const [, options] = lastInstance\\!.constructorArgs as [unknown, { capabilities: Record<string, unknown> }]; expect(options.capabilities).toHaveProperty(\"tools\");"
+    },
+    {
+      "priority": "high",
+      "category": "missing-assertion",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 86,
+      "description": "Survived: ObjectLiteral mutants — inputSchema objects can be replaced with {} for any of the 10 tools",
+      "rationale": "The test checks that config.inputSchema is defined (not undefined) but never asserts on which keys are present. Replacing any tool's full inputSchema with {} still passes the test.",
+      "suggestion": "For each tool, assert that the expected input keys are present in inputSchema. Example: const listBoard = lastInstance\\!.registerToolCalls.find(c => c.name === \"list_board\"); expect(listBoard\\!.config.inputSchema).toHaveProperty(\"projectId\");"
+    },
+    {
+      "priority": "medium",
+      "category": "missing-assertion",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 86,
+      "description": "Survived: StringLiteral mutants — all .describe() strings can be blanked to \"\" without killing any test",
+      "rationale": "The test checks that description is a non-empty string at the tool level, but does not check the .describe() labels on individual Zod schema fields. These are MCP tool documentation strings that matter for agent usability.",
+      "suggestion": "Assert that describe strings on schema fields are non-empty: for the assign tool, expect((inputSchema.assigneeType as z.ZodType)._def.description).not.toBe(\"\"). Or snapshot-test the full inputSchema structure."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 96,
+      "description": "Survived: ArrayDeclaration and StringLiteral mutants on z.enum values for templateType and assigneeType",
+      "rationale": "The enum values [\"epic\", \"feature\", \"fix\"] for get_template and [\"human\", \"agent\"] for assign can be individually blanked or the array emptied without any test catching it.",
+      "suggestion": "Add assertions on the enum values: extract the inputSchema for \"get_template\" and \"assign\" and check that the enum members contain the expected values."
+    },
+    {
+      "priority": "low",
+      "category": "missing-assertion",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 11,
+      "description": "NoCoverage: stubHandler body — the returned content array and its text field are never tested",
+      "rationale": "No test invokes a registered tool callback and checks the returned content. Mutating the handler body (returning {}, empty array, or empty text) has no coverage.",
+      "suggestion": "Add a test that invokes a callback from registerToolCalls and asserts the returned content: const callback = lastInstance\\!.registerToolCalls[0].callback as () => Promise<unknown>; const result = await callback(); expect(result).toEqual({ content: [{ type: \"text\", text: \"Not yet implemented\" }] });"
+    }
+  ],
+  "sha": "d976f159fe18391f485a24aa2c900ec106a50c32",
+  "type": "mutation",
+  "timestamp": "2026-04-17T01:24:12.422Z"
+}

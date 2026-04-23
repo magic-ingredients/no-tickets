@@ -1,0 +1,17 @@
+{
+  "agentId": "dependency-audit",
+  "timestamp": "2026-04-15T08:40:30.000Z",
+  "durationMs": 66139,
+  "summary": {
+    "filesAnalyzed": 29,
+    "issueCount": 0,
+    "bySeverity": {
+      "critical": 0,
+      "major": 0,
+      "minor": 0,
+      "info": 0
+    }
+  },
+  "issues": [],
+  "metadata": {}
+}

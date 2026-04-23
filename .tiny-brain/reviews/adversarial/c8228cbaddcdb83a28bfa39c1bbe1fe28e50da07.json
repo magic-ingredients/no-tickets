@@ -1,0 +1,54 @@
+{
+  "summary": "validateFiles is a clean 2-line composition, but the test commit was modified during GREEN to fix a wrong assumption (invalid-phase vs INVALID ID), which is a TDD discipline issue. The CLI wiring in handleValidate() adds untested I/O, output formatting, and exit-code logic.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "test-quality",
+      "file": "src/commands/__tests__/validate.test.ts",
+      "line": 59,
+      "description": "Test was silently modified during the GREEN commit. The original test used phase: invalid-phase expecting a validation error, but the parser normalizes unknown phases to ideation (valid). The GREEN commit changed it to id: INVALID ID to make it pass with different semantics.",
+      "rationale": "TDD discipline requires that tests written in RED should not be changed in GREEN except for import paths. Changing the test fixture during implementation masks a misunderstanding of the system behavior that existed when the test was written. The RED tests should have failed for the right reason.",
+      "suggestion": "This should have been caught in RED. The developer should understand that the parser layer normalizes invalid enum values rather than preserving them for the validator. If the intent is to test invalid phase detection, that validation would need to happen at the parser level, not the validator level. As-is, the fix is correct but the process was wrong."
+    },
+    {
+      "priority": "high",
+      "category": "missing-edge-case",
+      "file": "src/commands/__tests__/validate.test.ts",
+      "line": 19,
+      "description": "No test covers what happens when a file has completely unparseable frontmatter (no YAML delimiters, binary content, empty string). The parser will silently skip files with no recognized type field, meaning validateFiles returns valid:true for garbage input.",
+      "rationale": "A validate command that reports garbage files as valid is a correctness risk. Users will trust the output. If someone has a malformed file with no type field, it gets silently ignored rather than flagged.",
+      "suggestion": "Add a test case with a FileEntry whose content is just arbitrary text (no frontmatter delimiters). Verify whether validateFiles should report this as an error or silently skip it. If skipping is intentional, add a test that documents this behavior explicitly."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/cli.ts",
+      "line": 102,
+      "description": "handleValidate() is completely untested. It contains I/O (readNoTicketsDir), output formatting (console.log/error with specific format strings), and process control (process.exitCode = 1). None of this is exercised by any test.",
+      "rationale": "The validate command is the user-facing entry point. The formatting logic (location string construction, suggestion printing) and the exit code behavior are all untested. If someone changes the output format, no test will catch it.",
+      "suggestion": "Either test handleValidate via the runCli function with a mocked filesystem, or extract the output formatting into a pure function (e.g., formatValidationErrors) that can be tested independently."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/commands/__tests__/validate.test.ts",
+      "line": 35,
+      "description": "The missing-fields test uses a weak assertion: expect(result.errors.length).toBeGreaterThan(0). This does not verify which fields were detected as missing or what the error messages say.",
+      "rationale": "A test that only checks errors exist does not specify behavior. If the validator changes to report different errors for the same input, this test still passes. It provides no regression protection for the specific missing-field detection logic.",
+      "suggestion": "Assert on specific expected errors. The bad epic is missing id, title, status, created, and updated. At minimum, check that errors include entries with field values matching some of these (e.g., expect an error with field: id)."
+    },
+    {
+      "priority": "low",
+      "category": "over-engineering",
+      "file": "src/commands/validate.ts",
+      "line": 7,
+      "description": "The JSDoc comment says Pure function -- accepts file contents, no I/O but this is self-evident from the function signature (it takes readonly FileEntry[] and returns ValidationResult). The comment adds no information beyond what TypeScript already tells you.",
+      "rationale": "Comments that restate what the type signature already says become maintenance burden without adding value.",
+      "suggestion": "Remove the JSDoc or replace it with something that explains non-obvious behavior, such as how files with unrecognized type fields are silently skipped by the parser."
+    }
+  ],
+  "sha": "c8228cbaddcdb83a28bfa39c1bbe1fe28e50da07",
+  "type": "adversarial",
+  "timestamp": "2026-04-22T10:38:02.439Z"
+}

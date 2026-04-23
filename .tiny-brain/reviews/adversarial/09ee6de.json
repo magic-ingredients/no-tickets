@@ -1,0 +1,8 @@
+{
+  "summary": "Clean docs/config change. README Contributing section accurately reflects the pnpm/corepack setup confirmed by package.json packageManager field. Gitignore addition of package-lock.json is a reasonable defensive measure.",
+  "verdict": "clean",
+  "suggestions": [],
+  "sha": "09ee6de",
+  "type": "adversarial",
+  "timestamp": "2026-04-15T08:59:58.822Z"
+}

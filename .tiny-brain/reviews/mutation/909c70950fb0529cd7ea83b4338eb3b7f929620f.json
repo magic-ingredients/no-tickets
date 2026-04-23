@@ -1,0 +1,37 @@
+{
+  "summary": "Mutation testing infrastructure failed (Stryker vitest runner unable to find test files via related-file detection). Manual analysis performed on 73 potential mutants across src/sdk/api-client.ts. Tests cover all primary code paths. Three untested branches identified: (1) successful non-JSON response return, (2) empty body in non-JSON error fallback, (3) custom header passthrough. Overall test quality is high with good boundary condition coverage.",
+  "verdict": "clean",
+  "testQuality": "Tests are comprehensive for the primary request/response lifecycle. The refactor commit added meaningful boundary tests (non-JSON errors, fallback messages, auth header verification for both GET and POST, Content-Type presence/absence). Three minor gaps exist but do not represent significant risk.",
+  "suggestions": [
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/api-client.ts",
+      "line": 95,
+      "description": "Successful non-JSON response path not tested",
+      "rationale": "When response.ok is true but body is not valid JSON, the function returns the raw text. No test verifies this path.",
+      "suggestion": "Add test: mock a 200 response with non-JSON text body and assert the returned value equals that text string"
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/api-client.ts",
+      "line": 93,
+      "description": "Empty body in non-JSON error path uses fallback message",
+      "rationale": "The expression `text || Request failed` has two branches but only the non-empty text branch is tested via the 502 HTML test.",
+      "suggestion": "Add test: mock a 502 response with empty string body and assert error message is `502: Request failed`"
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/api-client.ts",
+      "line": 83,
+      "description": "Custom headers in options.headers are not tested for passthrough",
+      "rationale": "The spread `...options?.headers` merges caller-provided headers but no test verifies that custom headers survive the merge.",
+      "suggestion": "Add test: pass custom headers in request options and assert they appear in the fetch call alongside Authorization"
+    }
+  ],
+  "sha": "909c70950fb0529cd7ea83b4338eb3b7f929620f",
+  "type": "mutation",
+  "timestamp": "2026-04-17T02:34:03.278Z"
+}

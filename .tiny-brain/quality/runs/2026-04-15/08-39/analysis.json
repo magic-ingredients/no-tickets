@@ -1,0 +1,31 @@
+{
+  "issues": [],
+  "executions": [
+    {
+      "analyzerId": "typescript",
+      "name": "TypeScript",
+      "status": "success",
+      "issues": [],
+      "durationMs": 703,
+      "command": "npx tsc --noEmit -p /Users/andyrichardson/work/repos/no-tickets/no-tickets/tsconfig.json",
+      "outputFile": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/.tiny-brain/quality/runs/2026-04-15/08-39/analysers/typescript-0.txt"
+    },
+    {
+      "analyzerId": "eslint",
+      "name": "ESLint",
+      "status": "success",
+      "issues": [],
+      "durationMs": 750,
+      "command": "npx eslint /Users/andyrichardson/work/repos/no-tickets/no-tickets --format json",
+      "outputFile": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/.tiny-brain/quality/runs/2026-04-15/08-39/analysers/eslint-0.json"
+    }
+  ],
+  "totalDurationMs": 1453,
+  "summary": {
+    "total": 2,
+    "succeeded": 2,
+    "failed": 0,
+    "timedOut": 0,
+    "skipped": 0
+  }
+}

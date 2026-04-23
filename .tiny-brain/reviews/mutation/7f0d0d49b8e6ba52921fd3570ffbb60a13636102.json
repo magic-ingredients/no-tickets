@@ -1,0 +1,46 @@
+{
+  "summary": "Mutation testing results: 61 killed, 3 survived, 84 no coverage. Mutation score: 42% overall (96% on covered code). The 84 NoCoverage mutants span all async I/O functions (handlePush, buildFilePush, buildStdinPush, readNoTicketsDir, readStdin, loadPushConfig, runCli). The 3 surviving mutants are all in parseArgs.",
+  "verdict": "needs-refactoring",
+  "testQuality": "Tests cover parseArgs thoroughly for happy-path cases but miss three mutant-killing edge cases. The entire async I/O surface of cli.ts has zero test coverage, leaving 84 mutants alive. These functions contain the core business logic for the push command.",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "missing-integration-test",
+      "file": "src/cli.ts",
+      "line": 74,
+      "description": "NoCoverage: handlePush, buildFilePush, buildStdinPush, loadPushConfig, readNoTicketsDir, readStdin, and runCli (lines 26-140) have zero test coverage — 84 mutants are unreachable",
+      "rationale": "All async I/O logic for the push command is untested. This includes the projectId guard, dry-run branching, stdin vs file-based path selection, directory traversal logic, and the runCli dispatch switch.",
+      "suggestion": "Add unit tests for runCli and handlePush using vi.mock for node:fs/promises, detectAgent, createApiClient, buildPushAuth, assemblePush, and mergeSession. Key scenarios: (1) runCli(['push','--dry-run']) with NO_TICKETS_PROJECT_ID set asserts console.log called with JSON payload; (2) runCli(['push']) with env var missing asserts Error thrown containing 'NO_TICKETS_PROJECT_ID'; (3) runCli(['push','--stdin']) with mocked stdin asserts mergeSession called; (4) runCli(['help']) asserts usage string printed; (5) runCli(['init']) asserts process.exitCode = 1; (6) readNoTicketsDir with mixed .md and non-.md entries in both root and subdirectory asserts only .md files returned."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/cli.ts",
+      "line": 148,
+      "description": "Survived: args: [] mutated to args: ['Stryker was here'] when returning help for zero arguments",
+      "rationale": "The test 'parseArgs returns help for no arguments' only asserts result.command === 'help' but does not assert that args and flags are empty.",
+      "suggestion": "In the existing test 'returns help for no arguments', add: expect(result.args).toEqual([]); expect(result.flags).toEqual({});"
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/cli.ts",
+      "line": 165,
+      "description": "Survived: loop condition i < argv.length mutated to i <= argv.length — off-by-one goes undetected",
+      "rationale": "No test triggers an off-by-one past the end of argv. The guard on line 167 silently swallows the undefined element, so the loop boundary mutation goes undetected.",
+      "suggestion": "Add a test asserting the exact shape of parseArgs output including that args and flags have no extra entries. Example: expect(parseArgs(['push','--dry-run'])).toEqual({ command: 'push', args: [], flags: { 'dry-run': true } }). The deep equality check on the full object will fail if an extra undefined sneaks into args."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/cli.ts",
+      "line": 167,
+      "description": "Survived: if (!arg) continue mutated to if (false) continue — the falsy-arg guard is never exercised",
+      "rationale": "No test provides a falsy element in argv, so the guard is dead code under existing tests.",
+      "suggestion": "Either add a test passing a falsy element in argv — e.g. parseArgs(['push', undefined as unknown as string, '--dry-run']) — to verify the guard filters it and the result still has args: [] and flags: { 'dry-run': true }, or add a Stryker ignore comment to document the guard as intentionally defensive."
+    }
+  ],
+  "sha": "7f0d0d49b8e6ba52921fd3570ffbb60a13636102",
+  "type": "mutation",
+  "timestamp": "2026-04-22T10:00:12.844Z"
+}

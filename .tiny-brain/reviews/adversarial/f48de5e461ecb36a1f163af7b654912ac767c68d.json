@@ -1,0 +1,54 @@
+{
+  "summary": "Path traversal guard uses string prefix check that is bypassable, readFile error handling is inconsistent between top-level and subdirectory reads, and one test is redundant with another.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "type-safety",
+      "file": "src/core/fs.ts",
+      "line": 12,
+      "description": "startsWith prefix check is bypassable for sibling directories",
+      "rationale": "If cwd is /home/user, the path /home/user-evil/payload resolves and passes startsWith(\"/home/user\") because it shares the same string prefix. This is a real path traversal bypass when directory names share a common prefix.",
+      "suggestion": "Change to: if (resolved \\!== cwd && \\!resolved.startsWith(cwd + path.sep)) to ensure the match is on a full path segment boundary."
+    },
+    {
+      "priority": "high",
+      "category": "error-handling",
+      "file": "src/core/fs.ts",
+      "line": 47,
+      "description": "Top-level readFile has no error handling, but subdirectory readFile does",
+      "rationale": "Line 47 uses bare readFile with no .catch(), so a permission error or race condition on a top-level .md file will throw an unhandled error and abort the entire operation. Meanwhile readSubDir on line 69 uses .catch(() => null) and gracefully skips unreadable files. This inconsistency means the function is less resilient for top-level files than subdirectory files.",
+      "suggestion": "Add .catch(() => null) to the top-level readFile call on line 47, and filter out nulls, matching the pattern already used in readSubDir."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/core/__tests__/fs.test.ts",
+      "line": 79,
+      "description": "Test \"accepts relative paths within cwd\" is redundant with \"reads .md files from top-level directory\"",
+      "rationale": "Both tests create .notickets/epic.md as a relative path within cwd and call readNoTicketsDir(\".notickets\"). The beforeEach already chdir-s into a temp directory, so every test is already using relative paths within cwd. This test exercises no unique code path.",
+      "suggestion": "Either remove this test or make it meaningfully different, e.g., test an absolute path within cwd to verify the validation accepts it."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/fs.test.ts",
+      "line": 71,
+      "description": "No test for the startsWith prefix bypass",
+      "rationale": "The security-critical path validation is only tested with /etc and ../etc traversal. There is no test for the sibling-directory attack vector (e.g., a path that shares a string prefix with cwd but is a different directory). This is the exact bug present in the implementation.",
+      "suggestion": "Add a test that creates a sibling directory to cwd (e.g., testDir + \"-evil\") and asserts that readNoTicketsDir rejects it."
+    },
+    {
+      "priority": "low",
+      "category": "over-engineering",
+      "file": "src/core/fs.ts",
+      "line": 28,
+      "description": "Intermediate entries array with empty content is unnecessarily complex",
+      "rationale": "Lines 38-39 push FileEntry objects with content: \"\" into the entries array, then lines 45-49 map over them to read the actual content. This two-pass approach creates throwaway objects. The old sequential implementation was more straightforward.",
+      "suggestion": "Collect just the paths of top-level .md files (string[]), then Promise.all the reads directly, avoiding the intermediate FileEntry[] with placeholder content."
+    }
+  ],
+  "sha": "f48de5e461ecb36a1f163af7b654912ac767c68d",
+  "type": "adversarial",
+  "timestamp": "2026-04-22T14:05:22.473Z"
+}

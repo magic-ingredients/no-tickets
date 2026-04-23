@@ -3,7 +3,7 @@ id: github-actions-ci
 prd_id: pnpm-migration
 number: 2
 title: Add GitHub Actions CI workflow
-status: not_started
+status: completed
 created: 2026-04-15
 updated: 2026-04-15
 ---
@@ -25,7 +25,8 @@ Add a GitHub Actions workflow that validates the project on every push to main a
 ## Tasks
 
 ### 1. Add CI workflow file
-status: not_started
+status: completed
+commitSha: e98b0c9
 
 Create `.github/workflows/ci.yml` with a job that installs dependencies, runs typecheck, lint, and tests.
 

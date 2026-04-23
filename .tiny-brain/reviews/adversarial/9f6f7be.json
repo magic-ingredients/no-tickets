@@ -1,0 +1,45 @@
+{
+  "summary": "Solid TDD cycle with good behavioral test coverage. The critical issue is that close() does not settle the tokenPromise — callers who await tokenPromise after calling close() will hang forever. The timeout cleanup also has a subtle gap where the promise can leak.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "error-handling",
+      "file": "src/sdk/auth-server.ts",
+      "line": 64,
+      "description": "close() does not reject tokenPromise, causing callers to hang",
+      "rationale": "If a caller calls close() before a token arrives or timeout fires, the tokenPromise remains forever pending. Any code that awaits tokenPromise after close() will hang indefinitely. This is a real bug for the use case where a user cancels the auth flow.",
+      "suggestion": "In the close() function, check if \\!settled and if so, set settled = true and call rejectToken(new Error(\"Auth server closed\")) before closing the server. Add a test: call close() without sending any request, then expect tokenPromise to reject."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/sdk/__tests__/auth-server.test.ts",
+      "line": 34,
+      "description": "No test for empty token query param (?token=)",
+      "rationale": "The implementation treats empty string as missing (falsy check on line 40), returning 400. This is correct behavior but is not tested. An empty token= param is a realistic edge case from malformed OAuth redirects.",
+      "suggestion": "Add a test: fetch /callback?token= and assert 400 status."
+    },
+    {
+      "priority": "low",
+      "category": "test-quality",
+      "file": "src/sdk/__tests__/auth-server.test.ts",
+      "line": 26,
+      "description": "Response body text is not asserted",
+      "rationale": "The implementation returns a specific success message (line 47) but no test verifies the response body content. If someone changes or removes this text, no test catches it.",
+      "suggestion": "In the token callback test, add: const body = await response.text(); expect(body).toContain(\"successful\") or similar."
+    },
+    {
+      "priority": "low",
+      "category": "dead-code",
+      "file": "src/sdk/auth-server.ts",
+      "line": 68,
+      "description": "Comment about server.close() behavior is misleading",
+      "rationale": "The comment says the callback fires immediately if the server is already closed. In reality, server.close() passes an ERR_SERVER_NOT_RUNNING error to the callback when called on an already-closed server. The code works because it ignores the error parameter, but the comment misrepresents the mechanism.",
+      "suggestion": "Update the comment to: // If server is already closed, callback receives ERR_SERVER_NOT_RUNNING which we ignore"
+    }
+  ],
+  "sha": "9f6f7be",
+  "type": "adversarial",
+  "timestamp": "2026-04-16T10:39:50.111Z"
+}

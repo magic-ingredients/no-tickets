@@ -3,7 +3,7 @@ id: pnpm-swap
 prd_id: pnpm-migration
 number: 1
 title: Replace npm with pnpm
-status: not_started
+status: completed
 created: 2026-04-15
 updated: 2026-04-15
 ---
@@ -26,7 +26,8 @@ Swap the package manager from npm to pnpm. This involves generating a pnpm lockf
 ## Tasks
 
 ### 1. Add pnpm lockfile and packageManager field
-status: not_started
+status: completed
+commitSha: 42b413f
 
 Generate pnpm-lock.yaml, add `packageManager` field to package.json, delete package-lock.json.
 
@@ -40,7 +41,8 @@ Generate pnpm-lock.yaml, add `packageManager` field to package.json, delete pack
 - Generate `pnpm-lock.yaml` via `pnpm import` then `pnpm install`
 
 ### 2. Update README and documentation for pnpm
-status: not_started
+status: completed
+commitSha: 09ee6de
 
 Update all npm/npx references in README.md to use pnpm equivalents.
 

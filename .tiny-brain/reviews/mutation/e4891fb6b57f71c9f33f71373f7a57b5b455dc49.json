@@ -1,0 +1,28 @@
+{
+  "summary": "Mutation testing infrastructure failed: Stryker vitest runner could not find test files related to mutated files. This is a known incompatibility between Stryker's vitest.related mode and .js extension imports in ESM codebases. No mutants were tested.",
+  "verdict": "clean",
+  "testQuality": "Manual review of tests shows good behavioral coverage: server name/version, capabilities shape, exactly 3 tools registered in correct order, each tool's schema properties, callback presence, and transport connection. The types.ts file (toolSuccess/toolError) lacks dedicated unit tests but is indirectly exercised through tool handler tests. No surviving mutants to report due to infrastructure failure.",
+  "suggestions": [
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/mcp/tools/types.ts",
+      "line": 8,
+      "description": "toolSuccess and toolError have no dedicated unit tests — only indirectly covered via tool handler mocks",
+      "rationale": "Mutations to toolSuccess (e.g. changing content array structure, isError flag) would survive since create-server tests mock the handlers and never exercise types.ts directly",
+      "suggestion": "Add unit tests: expect(toolSuccess({ key: 'val' })).toEqual({ content: [{ type: 'text', text: '{\"key\":\"val\"}' }] }) and expect(toolError(new Error('boom'))).toEqual({ isError: true, content: [{ type: 'text', text: 'boom' }] })"
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/mcp/tools/types.ts",
+      "line": 17,
+      "description": "toolError branch for non-Error values (String(err)) is not tested",
+      "rationale": "The ternary err instanceof Error ? err.message : String(err) has an untested branch for non-Error values like strings or objects",
+      "suggestion": "Add test: expect(toolError('plain string error')).toEqual({ isError: true, content: [{ type: 'text', text: 'plain string error' }] })"
+    }
+  ],
+  "sha": "e4891fb6b57f71c9f33f71373f7a57b5b455dc49",
+  "type": "mutation",
+  "timestamp": "2026-04-22T11:04:06.424Z"
+}

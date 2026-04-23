@@ -1,0 +1,64 @@
+{
+  "summary": "Mutation testing results: 170 killed, 16 survived, 0 no coverage. Overall mutation score: 91.40%. commands/push.ts scored 100%, core/state.ts scored 97.73%, core/schemas.ts scored 83.53%. core/types.ts contains only type aliases and produced no mutants.",
+  "verdict": "clean",
+  "testQuality": "The schema-domain-rename work is well-covered at 91.40% overall. The push command assembly logic and state transformation logic are both solidly tested. The surviving mutants in schemas.ts are all in the pre-existing document/feature validation schemas (phaseSchema, documentTypeSchema, dateStringSchema, kebabCaseSchema, error message strings) that were not part of the rename - they existed before this fix. The 2 surviving mutants in state.ts relate to the boundary condition feature.tests.total > 0 which tests cover partially but not the exact boundary distinction. None of the surviving mutants are in code introduced by the rename itself (push payload schemas, toWorkEntities, assemblePush).",
+  "suggestions": [
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/push-schemas.test.ts",
+      "line": 5,
+      "description": "Mutants survived: phaseSchema allows empty string in place of 'testing', 'review', or 'done'",
+      "rationale": "Tests only verify the schema accepts valid values. No test asserts that individual enum members like 'testing', 'review', or 'done' are rejected when replaced with an empty string. The rejection test only checks a single unrecognised value.",
+      "suggestion": "Add parameterised tests: for each expected enum member assert z.safeParse(member).success is true AND assert z.safeParse('').success is false to pin the full enum list."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/push-schemas.test.ts",
+      "line": 13,
+      "description": "Mutants survived: documentTypeSchema array emptied or individual members replaced with empty string",
+      "rationale": "Similar gap to phaseSchema - the rejection test only passes one bad value. Replacing 'epic', 'feature', or 'fix' with empty string or emptying the array entirely keeps all existing tests passing.",
+      "suggestion": "Add tests that assert each of 'epic', 'feature', 'fix' individually passes safeParse, and that empty string is rejected."
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/push-schemas.test.ts",
+      "line": 17,
+      "description": "Mutants survived: dateStringSchema regex start and end anchors can be removed independently",
+      "rationale": "No test supplies a string with a leading prefix (e.g. 'X2024-01-01') or trailing suffix (e.g. '2024-01-01X') that would fail without the anchors.",
+      "suggestion": "Add: expect(dateStringSchema.safeParse('X2024-01-01').success).toBe(false) and expect(dateStringSchema.safeParse('2024-01-01X').success).toBe(false)."
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/push-schemas.test.ts",
+      "line": 22,
+      "description": "Mutant survived: kebabCaseSchema regex end anchor removed, allowing trailing characters",
+      "rationale": "No test checks that a string with a valid kebab prefix but a trailing non-kebab suffix is rejected (e.g. 'valid-id!').",
+      "suggestion": "Add: expect(kebabCaseSchema.safeParse('valid-id!').success).toBe(false) to assert the end-of-string anchor is load-bearing."
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/push-schemas.test.ts",
+      "line": 23,
+      "description": "Mutants survived: Zod error messages for kebab-case, title, epic reference, and task title can be replaced with empty string",
+      "rationale": "Tests never assert the specific validation error message text, only success or failure.",
+      "suggestion": "Where error messaging is part of the UX contract, add: const result = schema.safeParse(invalid); expect(result.error?.issues[0].message).toContain('expected message fragment')."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/core/__tests__/state.test.ts",
+      "line": 135,
+      "description": "Mutants survived: feature.tests.total > 0 can be changed to >= 0 or true without failing tests",
+      "rationale": "The boundary at total === 0 is not explicitly pinned. When total is exactly 0, the three-way weighting should not be used, but no test asserts this by providing total === 0 and verifying only the two-way (phase + task) weighting applies.",
+      "suggestion": "Add test: a feature with tests: { total: 0, passing: 0 } should produce the same result as a feature with no tests, confirming two-way weighting is used not three-way."
+    }
+  ],
+  "sha": "a42fe8d",
+  "type": "mutation",
+  "timestamp": "2026-04-22T18:46:22.744Z"
+}

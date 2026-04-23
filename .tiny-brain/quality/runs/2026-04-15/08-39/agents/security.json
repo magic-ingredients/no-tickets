@@ -1,0 +1,144 @@
+{
+  "agentId": "security",
+  "timestamp": "2026-04-15T08:39:30.000Z",
+  "durationMs": 45000,
+  "summary": {
+    "filesAnalyzed": 15,
+    "issueCount": 7,
+    "bySeverity": {
+      "critical": 0,
+      "major": 3,
+      "minor": 3,
+      "info": 1
+    }
+  },
+  "issues": [
+    {
+      "category": "Security",
+      "severity": "major",
+      "file": "src/client.ts",
+      "line": 134,
+      "message": "Unsafe type assertion on untrusted API response data. The parsePushResult, parseTeamResponse, parseTaskUpdateResponse, and parseErrorResponse functions cast unknown API response data to Record<string, unknown> without schema validation. A malicious or compromised API server could return unexpected data shapes that bypass these loose checks.",
+      "suggestion": "Use Zod schemas (already a dependency) to validate all API response payloads before accessing their properties. Define response schemas similar to the existing frontmatter schemas and use safeParse.",
+      "evidence": "const obj = data as Record<string, unknown>;\nreturn {\n  success: obj[\"success\"] === true,\n  changesApplied: typeof obj[\"changesApplied\"] === \"number\" ? obj[\"changesApplied\"] : 0,\n};",
+      "ruleId": "SEC-001",
+      "source": "llm",
+      "references": [
+        "CWE-502"
+      ],
+      "effort": "small",
+      "effortHours": 2,
+      "theme": "input-validation",
+      "scoreImpact": 8
+    },
+    {
+      "category": "Security",
+      "severity": "major",
+      "file": "src/client.ts",
+      "line": 119,
+      "message": "Bearer token transmitted in Authorization header without TLS enforcement. The apiUrl is configurable and could be set to an HTTP endpoint, transmitting the bearer token in cleartext over the network.",
+      "suggestion": "Add a URL validation check in the NoTicketsClient constructor or at fetch time to reject non-HTTPS apiUrl values (with an exception for localhost/127.0.0.1 for development).",
+      "evidence": "private authHeaders(): Record<string, string> {\n  return {\n    \"Authorization\": `Bearer ${this.config.token}`,\n  };\n}",
+      "ruleId": "SEC-002",
+      "source": "llm",
+      "references": [
+        "CWE-319"
+      ],
+      "effort": "trivial",
+      "effortHours": 1,
+      "theme": "auth-hardening",
+      "scoreImpact": 8
+    },
+    {
+      "category": "Security",
+      "severity": "major",
+      "file": "src/client.ts",
+      "line": 44,
+      "message": "No request timeout configured on fetch calls. All four HTTP methods (push, connect, status, taskUpdate) use fetch without an AbortController timeout. A slow or unresponsive API server could cause the client to hang indefinitely, enabling denial-of-service.",
+      "suggestion": "Create an AbortController with a reasonable timeout (e.g., 30 seconds) and pass its signal to each fetch call. Example: const controller = new AbortController(); setTimeout(() => controller.abort(), 30000); fetch(url, { signal: controller.signal }).",
+      "evidence": "const response = await fetch(`${this.config.apiUrl}/api/v1/snapshots`, {\n  method: \"POST\",\n  headers: this.jsonHeaders(),\n  body: JSON.stringify({ teamId: this.config.teamId, projectId: this.config.projectId, snapshot }),\n});",
+      "ruleId": "SEC-003",
+      "source": "llm",
+      "references": [
+        "CWE-400"
+      ],
+      "effort": "small",
+      "effortHours": 1,
+      "theme": "misconfiguration",
+      "scoreImpact": 6
+    },
+    {
+      "category": "Security",
+      "severity": "minor",
+      "file": "src/client.ts",
+      "line": 66,
+      "message": "Path traversal via teamId in URL construction. The teamId value is interpolated directly into the URL path without sanitization. A malicious teamId containing path segments (e.g., \"../admin\") could redirect the request to unintended API endpoints.",
+      "suggestion": "Validate that teamId matches an expected format (e.g., alphanumeric with hyphens) before interpolating into URLs, or use URL-safe encoding via encodeURIComponent().",
+      "evidence": "const response = await fetch(`${this.config.apiUrl}/api/v1/teams/${teamId}`, {\n  headers: this.authHeaders(),\n});",
+      "ruleId": "SEC-004",
+      "source": "llm",
+      "references": [
+        "CWE-22"
+      ],
+      "effort": "trivial",
+      "effortHours": 0.5,
+      "theme": "input-validation",
+      "scoreImpact": 4
+    },
+    {
+      "category": "Security",
+      "severity": "minor",
+      "file": "src/client.ts",
+      "line": 100,
+      "message": "Path traversal via taskId in URL construction. Similar to teamId, the taskId parameter is interpolated directly into the URL path in the taskUpdate method without encoding or validation.",
+      "suggestion": "Apply encodeURIComponent() to taskId before URL interpolation, or validate the format against an expected pattern.",
+      "evidence": "const response = await fetch(`${this.config.apiUrl}/api/v1/tasks/${taskId}`, {\n  method: \"PUT\",\n  headers: this.jsonHeaders(),\n  body: JSON.stringify(payload),\n});",
+      "ruleId": "SEC-005",
+      "source": "llm",
+      "references": [
+        "CWE-22"
+      ],
+      "effort": "trivial",
+      "effortHours": 0.5,
+      "theme": "input-validation",
+      "scoreImpact": 4
+    },
+    {
+      "category": "Security",
+      "severity": "minor",
+      "file": "src/commands/init.ts",
+      "line": 59,
+      "message": "Hardcoded API URL in example config file could lead to misconfiguration. The buildInitPlan function writes a config.example.json with a hardcoded apiUrl. While this is a template, users may copy it directly without changing the URL, and there is no validation that the actual config uses HTTPS.",
+      "suggestion": "Add a comment in the generated config file noting that HTTPS is required for production use, or add config validation at load time that warns about non-HTTPS URLs.",
+      "evidence": "content: JSON.stringify({\n  teamId: \"your-team-id\",\n  projectId: \"your-project-id\",\n  apiUrl: \"https://api.no-tickets.com\",\n  formatVersion: 1,\n}, null, 2)",
+      "ruleId": "SEC-006",
+      "source": "llm",
+      "references": [
+        "CWE-1188"
+      ],
+      "effort": "trivial",
+      "effortHours": 0.5,
+      "theme": "misconfiguration",
+      "scoreImpact": 2
+    },
+    {
+      "category": "Security",
+      "severity": "info",
+      "file": "src/mcp/create-server.ts",
+      "line": 1,
+      "message": "MCP server stub calls process.exit(1) which could mask errors in production. The stub implementation immediately exits when invoked, providing no error context to the MCP client. When the actual MCP server is implemented, ensure proper authentication and authorization for all tool handlers.",
+      "suggestion": "When implementing the MCP server, add authentication middleware, input validation on all tool parameters, and rate limiting. The current stub is safe but should not ship to production.",
+      "evidence": "export function startMcpServer(): void {\n  console.error(\"MCP server not yet implemented. Use CLI commands instead.\");\n  process.exit(1);\n}",
+      "ruleId": "SEC-007",
+      "source": "llm",
+      "references": [
+        "CWE-306"
+      ],
+      "effort": "large",
+      "effortHours": 16,
+      "theme": "auth-hardening",
+      "scoreImpact": 2
+    }
+  ],
+  "metadata": {}
+}

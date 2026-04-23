@@ -1,0 +1,9 @@
+{
+  "summary": "Mutation testing results: 6 killed, 0 survived, 0 no coverage",
+  "verdict": "clean",
+  "testQuality": "Perfect mutation score of 100%. All 6 mutants were killed across push-auth.ts. Tests cover conditional expression mutations, equality operator mutations, string literal mutations, block statement mutations, and object literal mutations. The 4 tests thoroughly exercise session token path (with teamId/projectId), push token path (without teamId/projectId), error propagation from resolveAuth, and unknown token type handling.",
+  "suggestions": [],
+  "sha": "c37cabb98d889f35a36d4e6691a2ee734a8df77e",
+  "type": "mutation",
+  "timestamp": "2026-04-16T10:59:06.323Z"
+}

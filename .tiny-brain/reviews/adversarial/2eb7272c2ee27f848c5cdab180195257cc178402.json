@@ -1,0 +1,90 @@
+{
+  "summary": "Batch of 11 small fixes is mostly sound. The deepEqual implementation has a correctness bug (does not handle arrays), the readStdin Buffer cast trades one type unsafety for another, and several changes lack dedicated unit tests. No new test code was added in this commit despite behavioral changes.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "type-safety",
+      "file": "src/core/diff.ts",
+      "line": 3,
+      "description": "deepEqual does not handle arrays — treats them as plain objects, comparing only by Object.keys indices",
+      "rationale": "Object.keys on an array returns index strings ([\"0\",\"1\",...]) so length comparison passes, but Array.isArray is never checked. Two arrays [1,2] and [1,2] will compare correctly by accident, but an array vs an object with the same numeric keys ({\"0\":1,\"1\":2}) will also incorrectly compare as equal. More critically, deepEqual([], {}) returns true because both have 0 keys. If meta ever contains arrays (which the type Record<string, unknown> permits), this is a subtle bug.",
+      "suggestion": "Add an Array.isArray check early in deepEqual: if one argument is an array and the other is not, return false. If both are arrays, compare by length and element-wise recursion. Alternatively, since this replaces JSON.stringify comparison, use a well-tested utility from a library or Node built-in (import { isDeepStrictEqual } from node:util)."
+    },
+    {
+      "priority": "high",
+      "category": "missing-edge-case",
+      "file": "src/core/diff.ts",
+      "line": 3,
+      "description": "deepEqual has no unit tests",
+      "rationale": "A hand-rolled recursive equality function is exactly the kind of code that needs dedicated test coverage. The existing diff.test.ts exercises meta comparison indirectly via computeDiff, but does not test deepEqual with arrays, nested objects, undefined values, mixed types, or edge cases like circular references. The function silently replaced JSON.stringify semantics (which handle arrays correctly) with a custom implementation that does not.",
+      "suggestion": "Add a dedicated describe block for deepEqual (export it or test it indirectly via computeDiff) covering: primitives, nested objects, arrays, mixed array/object, null vs undefined, empty object vs empty array."
+    },
+    {
+      "priority": "medium",
+      "category": "type-safety",
+      "file": "src/cli.ts",
+      "line": 32,
+      "description": "readStdin replaces Buffer.from(chunk as Uint8Array) with chunk as Buffer — still uses a type assertion",
+      "rationale": "The original code was flagged for being unsafe, but the fix replaces one unsafe cast with another. process.stdin yields Buffer in Node.js when no encoding is set, but the TypeScript type is Uint8Array|string. Casting chunk as Buffer is no safer than Buffer.from(chunk as Uint8Array) — it just skips the copy. If the goal was to remove unsafe casts, this still has one.",
+      "suggestion": "Use a type guard or narrow via Buffer.isBuffer(chunk), e.g.: chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)). Or simply keep the original Buffer.from which at least guarantees a Buffer regardless of input type."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/cli.ts",
+      "line": 125,
+      "description": "Sanitization regex only strips \\x00-\\x1f and \\x7f but not extended Unicode control characters or ANSI escape sequences",
+      "rationale": "The stated goal is to strip control chars for security. But ANSI escape sequences use \\x1b[ which IS in the \\x00-\\x1f range, so that is handled. However, the sanitization only applies to argv[0] in the unknown-command branch. If an attacker controls argv[0], they also likely control other argv elements which are not sanitized. The fix is narrow and only protects one specific error message.",
+      "suggestion": "Consider a shared sanitize function applied to all user-controlled strings in error output, or document that only this one path is sanitized and why."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/cli.ts",
+      "line": 125,
+      "description": "No test covers the control character sanitization behavior",
+      "rationale": "The CLI test file (src/__tests__/cli.test.ts) only tests parseArgs, not runCli. There is no test that passes a command with control characters and verifies they are stripped from the error output. Without a test, this sanitization could silently regress.",
+      "suggestion": "Add a test: call runCli with a command containing control chars (e.g., [\"foo\\x1bbar\"]) and verify console.error output has them stripped."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/cli.ts",
+      "line": 11,
+      "description": "No test covers dynamic version loading from package.json",
+      "rationale": "The hardcoded version was replaced with dynamic loading via createRequire. If package.json is missing or malformed, this will throw at module load time. There is no test verifying that the version command outputs the actual package.json version.",
+      "suggestion": "Add an integration test for runCli([\"--version\"]) that verifies console.log was called with the version from package.json."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/core/parser.ts",
+      "line": 163,
+      "description": "parseMeta array guard was added but has no dedicated test",
+      "rationale": "The commit message says this fixes CQ-008 (guard parseMeta against arrays) but the parser-mutants.test.ts file has no test case for meta being an array. The existing mutant-killer tests cover string, null, valid object, and missing — but not Array.isArray. Without a test, this guard could be removed and no test would catch it.",
+      "suggestion": "Add a test: assembleEpic with data.meta = [1, 2, 3] and verify frontmatter.meta is undefined."
+    },
+    {
+      "priority": "low",
+      "category": "over-engineering",
+      "file": "src/core/state.ts",
+      "line": 25,
+      "description": "filter().length replaced with reduce for task counting — micro-optimization with no measurable benefit",
+      "rationale": "This was flagged as PERF-004, but filter().length on a tasks array (typically single-digit length) has identical performance characteristics. The reduce version is slightly harder to read at a glance. This is a correctness-neutral change that adds cognitive overhead for no practical gain.",
+      "suggestion": "Either revert to filter().length for readability, or accept the reduce and move on. Not worth a code change — just noting the trade-off."
+    },
+    {
+      "priority": "low",
+      "category": "type-safety",
+      "file": "src/core/diff.ts",
+      "line": 7,
+      "description": "deepEqual uses as Record<string, unknown> casts four times",
+      "rationale": "The function was introduced to replace JSON.stringify (no casts needed) but itself requires four type assertions. This trades one code quality issue for another.",
+      "suggestion": "Use a typed wrapper or Node built-in isDeepStrictEqual to avoid the casts entirely."
+    }
+  ],
+  "sha": "2eb7272c2ee27f848c5cdab180195257cc178402",
+  "type": "adversarial",
+  "timestamp": "2026-04-22T15:03:24.758Z"
+}

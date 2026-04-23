@@ -1,0 +1,99 @@
+{
+  "summary": "Static config files for MCP wrappers across 8 platforms. The implementation departs significantly from the feature spec in file naming and structure, bundles all 6 tasks into a single commit scoped to Task 1, and the hooks.json auto-push command has a silent-failure pattern that will mask real errors. The configs themselves are correct JSON/YAML but several filenames contradict the spec.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "over-engineering",
+      "file": "wrappers/chatgpt/mcp.json",
+      "line": 1,
+      "description": "Commit scoped to Task 1 (Claude Code plugin wrapper) but ships all 6 tasks worth of platform wrappers",
+      "rationale": "The commit message says Task: Build Claude Code plugin wrapper but includes chatgpt, cursor, gemini, copilot, windsurf, and continue wrappers. This means Tasks 2-6 are delivered without their own pipeline tracking, review, or progress commits. Each task should be a separate TDD cycle with its own commit and pipeline entry.",
+      "suggestion": "Split into separate commits per task, each entering the pipeline independently. At minimum, the non-Claude-Code wrappers should not be in this commit."
+    },
+    {
+      "priority": "high",
+      "category": "naming",
+      "file": "wrappers/continue/config.yaml",
+      "line": 1,
+      "description": "Filename contradicts the feature spec which specifies block.yaml",
+      "rationale": "The feature spec (platform-distribution.md line 32 and 96) explicitly says the Continue.dev config should be wrappers/continue/block.yaml. The implementation uses config.yaml instead. If the spec is wrong, update it first; if the implementation is wrong, rename the file.",
+      "suggestion": "Either rename to block.yaml to match the spec, or update the spec first and document why."
+    },
+    {
+      "priority": "high",
+      "category": "naming",
+      "file": "wrappers/gemini/mcp.json",
+      "line": 1,
+      "description": "Filename contradicts the feature spec which specifies gemini-extension.json",
+      "rationale": "The feature spec (platform-distribution.md line 29 and 86) says wrappers/gemini/gemini-extension.json but the implementation creates mcp.json. The spec was written with specific platform conventions in mind.",
+      "suggestion": "Either rename to gemini-extension.json to match the spec, or update the spec and document the rationale."
+    },
+    {
+      "priority": "medium",
+      "category": "naming",
+      "file": "wrappers/claude-code/mcp.json",
+      "line": 1,
+      "description": "Spec says .mcp.json (dot-prefixed) and .claude-plugin/plugin.json but implementation uses mcp.json with no plugin.json",
+      "rationale": "The feature spec Task 1 says to create wrappers/claude-code/.claude-plugin/plugin.json and wrappers/claude-code/.mcp.json. The implementation creates mcp.json (no dot prefix) and omits plugin.json entirely. The README tells users to copy to .mcp.json, but the source file itself should match the spec or the spec should be updated.",
+      "suggestion": "Create the .claude-plugin/plugin.json as specified, or update the spec to reflect the simplified approach and document why plugin.json was dropped."
+    },
+    {
+      "priority": "medium",
+      "category": "naming",
+      "file": "wrappers/claude-code/hooks.json",
+      "line": 1,
+      "description": "Spec says hooks/hooks.json (in subdirectory) and hooks/post-tool-push.sh but implementation puts hooks.json at root and omits the shell script",
+      "rationale": "The feature spec Task 1 says to create wrappers/claude-code/hooks/hooks.json and wrappers/claude-code/hooks/post-tool-push.sh. The implementation inlines the push logic into the hooks.json command string and places hooks.json at the wrapper root rather than in a hooks/ subdirectory.",
+      "suggestion": "Either move to hooks/ subdirectory and extract the shell command to post-tool-push.sh as specified, or update the spec to reflect the simplified approach."
+    },
+    {
+      "priority": "medium",
+      "category": "error-handling",
+      "file": "wrappers/claude-code/hooks.json",
+      "line": 8,
+      "description": "Auto-push hook command silently swallows all errors including real failures",
+      "rationale": "The command npx no-tickets push --dry-run 2>/dev/null | grep -q entities && npx no-tickets push || true will: (1) hide all stderr from dry-run including auth errors, network failures, and schema violations; (2) if push fails after dry-run succeeded, the || true swallows that failure too. Users will never know their auto-push is broken.",
+      "suggestion": "At minimum, remove 2>/dev/null so auth and network errors are visible. Consider logging push failures to stderr rather than silently swallowing them with || true."
+    },
+    {
+      "priority": "medium",
+      "category": "naming",
+      "file": "wrappers/chatgpt/mcp.json",
+      "line": 1,
+      "description": "Spec requires openapi.yaml, gpt-instructions.md, and app-manifest.json for ChatGPT but only mcp.json was created",
+      "rationale": "The feature spec Task 4 says ChatGPT needs openapi.yaml (for Actions), gpt-instructions.md (Custom GPT instructions), and app-manifest.json (Apps SDK). Only a generic mcp.json was created. ChatGPT does not natively support MCP JSON config files in this format.",
+      "suggestion": "Either create the ChatGPT-specific files as specified, or update the spec to reflect that ChatGPT now supports simple MCP config and the other files are unnecessary."
+    },
+    {
+      "priority": "medium",
+      "category": "naming",
+      "file": "wrappers/cursor/mcp.json",
+      "line": 1,
+      "description": "Spec requires .cursor-plugin/plugin.json and .mcp.json for Cursor but only mcp.json was created",
+      "rationale": "The feature spec Task 3 says Cursor needs wrappers/cursor/.cursor-plugin/plugin.json and wrappers/cursor/.mcp.json. Only a generic mcp.json was created, identical to the Claude Code config. Cursor marketplace plugins have a specific structure.",
+      "suggestion": "Either create the Cursor-specific plugin structure as specified, or update the spec to reflect the simplified approach."
+    },
+    {
+      "priority": "low",
+      "category": "dead-code",
+      "file": "wrappers/claude-desktop/manifest.json",
+      "line": 5,
+      "description": "Hardcoded version 2.0.0 in manifest will drift from package.json version",
+      "rationale": "The manifest.json has version: 2.0.0 hardcoded. When the package version changes, this file will be stale. There is no build step that syncs this version.",
+      "suggestion": "Either document that this version must be manually kept in sync, or add a build step to inject the version from package.json."
+    },
+    {
+      "priority": "low",
+      "category": "dead-code",
+      "file": "wrappers/claude-desktop/build-mcpb.sh",
+      "line": 11,
+      "description": "build-mcpb.sh only zips manifest.json but spec says wrappers/claude-desktop/server/ should contain bundled MCP server",
+      "rationale": "The feature spec Task 2 says the Claude Desktop extension should include wrappers/claude-desktop/server/ with a bundled MCP server. The build script only zips manifest.json, which references npx but Desktop Extensions may need the server bundled for offline use.",
+      "suggestion": "Either bundle the server into the .mcpb as specified, or update the spec to document that npx is sufficient and no bundled server is needed."
+    }
+  ],
+  "sha": "6deb49b03167042981ae6d3e35ec0d40f88dde3f",
+  "type": "adversarial",
+  "timestamp": "2026-04-22T11:14:00.059Z"
+}

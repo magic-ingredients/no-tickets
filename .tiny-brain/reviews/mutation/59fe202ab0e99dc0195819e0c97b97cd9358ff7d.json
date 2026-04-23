@@ -1,0 +1,19 @@
+{
+  "summary": "Mutation testing results: 73 killed, 1 survived, 0 no coverage. Mutation score: 98.65%",
+  "verdict": "clean",
+  "testQuality": "Excellent coverage at 98.65%. A single ConditionalExpression mutant survives in the hasErrorField guard at line 68 of api-client.ts. The typeof value === 'object' check is not tested with a primitive JSON body (e.g., a JSON number) on an error response. All push() method mutants are fully killed.",
+  "suggestions": [
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/api-client.ts",
+      "line": 68,
+      "description": "Mutant survived: ConditionalExpression — typeof value === 'object' replaced with true. No test exercises hasErrorField with a primitive JSON body on an error response.",
+      "rationale": "All existing error-response tests pass objects (plain objects or arrays) as the response body. When the server returns a primitive JSON value like a number (e.g., 42), typeof value is 'number' not 'object', so hasErrorField should return false and the fallback message 'Request failed' should be used. No test currently verifies this path.",
+      "suggestion": "Add a test in the 'error handling' describe block: fetchSpy.mockReturnValue(jsonResponse(42, 500)); await expect(client.getBoard('p1')).rejects.toThrow('500: Request failed'); — this exercises hasErrorField with a numeric JSON body and kills the mutant."
+    }
+  ],
+  "sha": "59fe202ab0e99dc0195819e0c97b97cd9358ff7d",
+  "type": "mutation",
+  "timestamp": "2026-04-22T09:35:47.243Z"
+}

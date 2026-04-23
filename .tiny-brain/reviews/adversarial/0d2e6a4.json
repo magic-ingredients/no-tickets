@@ -1,0 +1,27 @@
+{
+  "summary": "Clean TDD cycle. Tests specify the resolution chain behavior well. Implementation is minimal and maps directly to test expectations. Two minor test hygiene issues around env var stubbing consistency and incomplete assertions.",
+  "verdict": "clean",
+  "suggestions": [
+    {
+      "priority": "low",
+      "category": "test-quality",
+      "file": "src/sdk/__tests__/auth.test.ts",
+      "line": 95,
+      "description": "Uses delete process.env instead of vi.stubEnv(key, undefined) to simulate undefined env var",
+      "rationale": "The rest of the test file uses vi.stubEnv consistently, but this test reaches directly into process.env. While functionally equivalent, it bypasses vitest env stubbing and could interact unexpectedly with the afterEach vi.unstubAllEnvs() cleanup — the deleted key would not be restored by unstubAllEnvs since it was not stubbed.",
+      "suggestion": "Replace delete process.env[NO_TICKETS_TOKEN] with vi.unstubAllEnvs() before this test or use a pattern that stays within vitest stubbing."
+    },
+    {
+      "priority": "low",
+      "category": "test-quality",
+      "file": "src/sdk/__tests__/auth.test.ts",
+      "line": 104,
+      "description": "Incomplete assertion — only checks source, not token or tokenType",
+      "rationale": "Every other test in this file asserts all three fields (or uses toEqual for the full object). This test only checks result.source, leaving token and tokenType unverified for the undefined-env-var path.",
+      "suggestion": "Add assertions for result.token and result.tokenType to match the thoroughness of the other tests."
+    }
+  ],
+  "sha": "0d2e6a4",
+  "type": "adversarial",
+  "timestamp": "2026-04-16T10:34:32.912Z"
+}

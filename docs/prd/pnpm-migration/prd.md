@@ -6,6 +6,7 @@ status: not_started
 created: 2026-04-15
 updated: 2026-04-15
 author: Claude Code
+archived: true
 ---
 
 # Migrate to pnpm and add GitHub Actions CI

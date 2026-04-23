@@ -1,0 +1,72 @@
+{
+  "summary": "Tests verify tool registration mechanics (names, descriptions, schemas, callbacks) via a fully mocked McpServer, but the mock shares a single registerTool fn instance across all test-created servers, creating subtle cross-test coupling. Multiple type-safety holes exist in tests (as unknown as Mock casts). startMcpServer is untested. Implementation is clean and data-driven but hardcodes version 2.0.0 and has a needless as const cast.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "test-quality",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 10,
+      "description": "All McpServer instances share the same registerTool vi.fn() reference. If a test creates multiple servers, calls accumulate across instances. More critically, vi.clearAllMocks in beforeEach clears the mock but every new McpServer instance in the same test reuses the exact same fn object, meaning tests for description/inputSchema/callback silently depend on the server created in that specific test being the only one.",
+      "rationale": "Shared mutable state between mock instances is a classic source of flaky tests. If someone adds a test that creates two servers, all downstream assertions break.",
+      "suggestion": "Create registerTool and connect as fresh vi.fn() instances inside the McpServer constructor (as class fields initialized per-instance), or use a factory that returns a new mock for each instantiation."
+    },
+    {
+      "priority": "high",
+      "category": "type-safety",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 45,
+      "description": "The cast server.registerTool as unknown as Mock appears four times (lines 45, 70, 85, and via constructorArgs). The test file imports Mock but then bypasses the type system to use it. This means the tests would not catch a change to the registerTool API signature.",
+      "rationale": "Type assertions defeat the purpose of TypeScript. If registerTool signature changes, these tests will still compile and potentially pass with wrong assertions.",
+      "suggestion": "Type the mock McpServer class so registerTool is already typed as Mock. Alternatively, capture calls in the mock class itself (e.g. an array field) rather than reaching into vi.fn() internals through casts."
+    },
+    {
+      "priority": "high",
+      "category": "test-quality",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 4,
+      "description": "constructorArgs is a module-level mutable array shared across tests. The beforeEach resets it by setting length=0, but this pattern is fragile and unusual compared to using vi.fn() mock.calls directly.",
+      "rationale": "Module-level mutable state in test files is error-prone. The original test commit used McpServer as vi.fn() which gave direct access to mock.calls. The implementation commit changed to a class mock but introduced this workaround.",
+      "suggestion": "Keep McpServer as a vi.fn() returning an instance, or expose the constructor mock so its .mock.calls can be inspected directly without a separate mutable array."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/mcp/__tests__/create-server.test.ts",
+      "line": 29,
+      "description": "No test for startMcpServer. The function creates a server, instantiates StdioServerTransport, and calls server.connect(transport). None of this is verified.",
+      "rationale": "startMcpServer is the actual entry point that MCP clients will invoke. It is exported, it has behavior (wiring transport to server), and it is completely untested.",
+      "suggestion": "Add a test that calls startMcpServer and verifies: (1) StdioServerTransport was instantiated, (2) server.connect was called with the transport instance."
+    },
+    {
+      "priority": "medium",
+      "category": "over-engineering",
+      "file": "src/mcp/create-server.ts",
+      "line": 8,
+      "description": "stubHandler has a verbose return type annotation and uses Promise.resolve instead of async/await. The as const cast on type: text is unnecessary since the return type already narrows it.",
+      "rationale": "The explicit type annotation on stubHandler duplicates what TypeScript would infer from the return value, and the as const on a string literal inside an object literal with an explicit type is redundant noise.",
+      "suggestion": "Simplify to: async function stubHandler() { return { content: [{ type: \"text\", text: \"Not yet implemented\" }] }; }"
+    },
+    {
+      "priority": "medium",
+      "category": "over-engineering",
+      "file": "src/mcp/create-server.ts",
+      "line": 6,
+      "description": "SERVER_VERSION is hardcoded as 2.0.0. This will drift from the actual package version. No test verifies the exact version, only that it matches a semver pattern.",
+      "rationale": "Hardcoded versions are maintenance burdens. The test only checks the pattern, so this could silently become wrong.",
+      "suggestion": "Import version from package.json or use a build-time constant, so the MCP server always reports the true package version."
+    },
+    {
+      "priority": "low",
+      "category": "naming",
+      "file": "src/mcp/create-server.ts",
+      "line": 14,
+      "description": "The ToolDef interface is only used internally to type the toolDefs array. It is not exported or reused elsewhere.",
+      "rationale": "Minor: the interface adds a small amount of indirection. The type could be inferred from the array literal with as const satisfies pattern, but this is a matter of preference and not worth changing on its own.",
+      "suggestion": "No action needed unless the interface grows or is needed elsewhere."
+    }
+  ],
+  "sha": "5d0a4f4bcbb5624c5b841956a250ca7edb431e18",
+  "type": "adversarial",
+  "timestamp": "2026-04-16T23:39:41.074Z"
+}

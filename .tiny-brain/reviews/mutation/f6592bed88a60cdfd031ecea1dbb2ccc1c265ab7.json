@@ -1,0 +1,73 @@
+{
+  "summary": "Mutation testing results: 30 killed, 9 timeout, 14 survived, 3 no coverage. Mutation score: 69.64% (below 80% threshold).",
+  "verdict": "needs-refactoring",
+  "testQuality": "Tests cover the happy path and primary error paths well, but the settled guard logic, response Content-Type header, server bind address, and server error path lack sufficient coverage to kill boundary mutants.",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "missing-edge-case",
+      "file": "src/sdk/auth-server.ts",
+      "line": 49,
+      "description": "Mutant survived: if (\\!settled) changed to if (true) on line 49 — the double-callback guard is not verified",
+      "rationale": "No test sends a second valid token callback after the first. If the guard is removed, resolveToken and server.close() would be called twice, but no test catches this.",
+      "suggestion": "Add test: send two valid /callback?token= requests and assert tokenPromise resolves only once and the second response is still 200 (server was already closed) or that the resolved token value is from the first request only."
+    },
+    {
+      "priority": "high",
+      "category": "missing-edge-case",
+      "file": "src/sdk/auth-server.ts",
+      "line": 57,
+      "description": "Mutant survived: if (\\!settled) changed to if (true) on line 57 — timeout guard not verified against already-settled server",
+      "rationale": "No test checks that if a token is received and then the timeout fires, rejectToken is not called a second time after the promise was already resolved.",
+      "suggestion": "Add test: start server with a short timeout, send valid token before timeout, await tokenPromise resolving, then await a small delay past the timeout and verify the resolved value is unchanged (no secondary rejection)."
+    },
+    {
+      "priority": "high",
+      "category": "missing-edge-case",
+      "file": "src/sdk/auth-server.ts",
+      "line": 66,
+      "description": "Mutant survived: if (\\!settled) changed to if (true) on line 66 — close() guard not verified against already-settled server via token path",
+      "rationale": "The close() test covers calling close() on an already-token-resolved server, but the settled flag mutation to false also survives, indicating the assertion does not distinguish between a no-op and an active rejection.",
+      "suggestion": "In the existing test startAuthServer close() can be called safely even after server already shut down, assert that after calling close() on an already-resolved server, tokenPromise still resolves with the original token value (not rejects)."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-assertion",
+      "file": "src/sdk/auth-server.ts",
+      "line": 46,
+      "description": "Mutant survived: Content-Type header object mutated to {} (line 46)",
+      "rationale": "No test inspects the Content-Type response header, so removing it goes undetected.",
+      "suggestion": "In the existing resolves with the token test, add: expect(response.headers.get(content-type)).toContain(text/plain)."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/sdk/auth-server.ts",
+      "line": 77,
+      "description": "Mutant survived: server.listen bind address 127.0.0.1 mutated to  (line 77)",
+      "rationale": "No test verifies that the server binds only to loopback. Mutating the address to an empty string still allows the server to start and respond, so no test fails.",
+      "suggestion": "Add test: after startAuthServer(), verify that a fetch to http://localhost:{port}/callback (if different from 127.0.0.1 in the test environment) fails, or assert addr.address === 127.0.0.1 by exposing it on the handle or via a spy on server.listen."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/sdk/auth-server.ts",
+      "line": 76,
+      "description": "Mutant survived: server.on(error, reject) event name mutated to  (line 76)",
+      "rationale": "No test simulates a server listen error, so the error handler is never exercised.",
+      "suggestion": "Add test: mock http.createServer to return a server that emits an error event immediately on listen, and assert that startAuthServer() rejects with that error."
+    },
+    {
+      "priority": "low",
+      "category": "missing-edge-case",
+      "file": "src/sdk/auth-server.ts",
+      "line": 79,
+      "description": "Multiple mutants survived on the addr guard: if (false), logical && instead of ||, typeof check degraded (lines 79-80)",
+      "rationale": "The guard that rejects when addr is null or a string (Unix socket path) is never triggered by any test — all tests use a TCP server that returns an AddressInfo object.",
+      "suggestion": "Add test: mock server.address() to return null (or a string) after listen callback fires, and assert startAuthServer() rejects with Failed to get server address."
+    }
+  ],
+  "sha": "f6592bed88a60cdfd031ecea1dbb2ccc1c265ab7",
+  "type": "mutation",
+  "timestamp": "2026-04-16T10:44:19.946Z"
+}

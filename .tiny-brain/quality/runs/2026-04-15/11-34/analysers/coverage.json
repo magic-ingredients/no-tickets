@@ -1,0 +1,10 @@
+{
+  "coverage": {
+    "issues": [],
+    "metadata": {
+      "status": "failed",
+      "durationMs": 2778,
+      "error": "ENOENT: no such file or directory, open '/var/folders/5c/q2rs716n43b0l62gw630xr2c0000gn/T/tiny-brain-analyser-coverage-9UYIgt/coverage-0/coverage-summary.json'"
+    }
+  }
+}

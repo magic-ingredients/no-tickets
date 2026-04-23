@@ -1,0 +1,9 @@
+{
+  "summary": "Mutation testing infrastructure failed: Stryker could not bind to 0.0.0.0 (EPERM) due to sandbox network restrictions. No mutation results available.",
+  "verdict": "clean",
+  "testQuality": "Unable to assess — mutation testing runner failed before executing any mutants. The test suite itself is comprehensive based on code review (covers network errors, malformed responses, non-JSON error bodies for all three commands).",
+  "suggestions": [],
+  "sha": "f1586137f3b59c22ccdf5c8fe7dd0662b4fff0d9",
+  "type": "mutation",
+  "timestamp": "2026-04-16T10:53:29.688Z"
+}

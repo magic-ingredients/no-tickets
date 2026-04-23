@@ -1,0 +1,81 @@
+{
+  "summary": "Solid structure but has type safety holes (unsafe casts in implementation), missing edge case tests (network errors, non-JSON responses, fallback error message path), and test assertions use non-null assertions and as-casts.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "type-safety",
+      "file": "src/sdk/api-client.ts",
+      "line": 94,
+      "description": "Unsafe type assertion casts unknown response to domain types",
+      "rationale": "getBoard and getFeed cast the unvalidated response body to BoardState and FeedEvent[] using as-casts. If the server returns malformed data, the client will silently pass it through, violating the type contract. The CLAUDE.md guidelines explicitly prohibit any types and type assertions.",
+      "suggestion": "Add runtime validation (e.g., a type guard or schema validator) before returning, or at minimum type the request function generically with a validator callback."
+    },
+    {
+      "priority": "high",
+      "category": "type-safety",
+      "file": "src/sdk/api-client.ts",
+      "line": 81,
+      "description": "as Record<string,unknown> cast in error extraction",
+      "rationale": "After checking body is an object with an error property via the in operator, the code still uses an as-cast to access the property. TypeScript narrowing after the in check should suffice, or use a type guard.",
+      "suggestion": "Use a narrowing type guard function: function hasError(b: unknown): b is { error: unknown } { return typeof b === \"object\" && b \\!== null && \"error\" in b; } then call String(b.error) without casting."
+    },
+    {
+      "priority": "high",
+      "category": "missing-edge-case",
+      "file": "src/sdk/__tests__/api-client.test.ts",
+      "line": 186,
+      "description": "No test for the fallback error message path",
+      "rationale": "The implementation has two branches in error handling: one when the body has an error field, one that falls back to Request failed. Only the error-field branch is tested. The fallback branch is dead code from the tests perspective.",
+      "suggestion": "Add a test where the error response body lacks an error field (e.g., { message: \"oops\" }) and assert the thrown error contains \"Request failed\"."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/sdk/__tests__/api-client.test.ts",
+      "line": 186,
+      "description": "No test for network-level failures (fetch rejection)",
+      "rationale": "If fetch itself throws (network down, DNS failure, etc.), the promise rejection propagates unhandled. Tests should verify this behavior to document whether the client wraps or passes through network errors.",
+      "suggestion": "Add a test where fetchSpy.mockRejectedValue(new TypeError(\"fetch failed\")) and verify the error propagates or is wrapped."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/sdk/__tests__/api-client.test.ts",
+      "line": 186,
+      "description": "No test for non-JSON error responses",
+      "rationale": "If the server returns a non-JSON body (e.g., HTML error page), response.json() will throw. The implementation has no handling for this case. A test should document the expected behavior.",
+      "suggestion": "Add a test where fetch returns a Response with a non-JSON body and a non-OK status, and verify the error behavior."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/sdk/__tests__/api-client.test.ts",
+      "line": 39,
+      "description": "Auth header test only checks one method despite claiming every request",
+      "rationale": "The test is named sends Bearer token on every request but only calls getBoard. If auth injection were broken for POST-based methods specifically, this test would not catch it.",
+      "suggestion": "Either rename to sends Bearer token on GET request or add a second assertion using a POST method (e.g., createEpic) to actually prove the claim."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/sdk/__tests__/api-client.test.ts",
+      "line": 46,
+      "description": "Non-null assertions and as-casts throughout test assertions",
+      "rationale": "Every test uses fetchSpy.mock.calls[0]\\! as [string, RequestInit] which is a non-null assertion plus a type cast. The CLAUDE.md guidelines prohibit type assertions. These hide potential issues if the spy was not called.",
+      "suggestion": "Assert fetchSpy.mock.calls.length before accessing elements, and use a typed helper function that validates the shape rather than casting."
+    },
+    {
+      "priority": "low",
+      "category": "over-engineering",
+      "file": "src/sdk/api-client.ts",
+      "line": 70,
+      "description": "Content-Type: application/json sent on GET requests",
+      "rationale": "GET requests (getBoard, getFeed) do not have bodies, so Content-Type is meaningless on them. Some servers or proxies may react unexpectedly to Content-Type on bodyless requests.",
+      "suggestion": "Only set Content-Type header when options.method is POST or PATCH, or when a body is present."
+    }
+  ],
+  "sha": "b9d2d02f2ad6b19897e0cad8c3e47e5c26ed8cde",
+  "type": "adversarial",
+  "timestamp": "2026-04-17T02:30:11.774Z"
+}

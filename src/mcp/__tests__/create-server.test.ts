@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createRequire } from 'node:module';
 import { createMcpServer, startMcpServer } from '../create-server.js';
+
+const pkg = createRequire(import.meta.url)('../../../package.json') as { version: string };
 
 interface MockServerInstance {
   readonly constructorArgs: unknown[];
@@ -55,7 +58,7 @@ describe('createMcpServer', () => {
     expect(lastInstance).toBeDefined();
     const [serverInfo] = lastInstance!.constructorArgs as [Record<string, string>];
     expect(serverInfo.name).toBe('no-tickets');
-    expect(serverInfo.version).toBe('2.0.0');
+    expect(serverInfo.version).toBe(pkg.version);
   });
 
   it('passes tools capability in options', () => {

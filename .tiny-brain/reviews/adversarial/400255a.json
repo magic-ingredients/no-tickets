@@ -1,0 +1,54 @@
+{
+  "summary": "Implementation bundles tests and code in a single feat: commit, violating TDD RED/GREEN separation. The hardcoded email placeholder is a correctness issue masked by weak type-only assertions. Test coverage is otherwise solid for error paths and cleanup behavior.",
+  "verdict": "needs-refactoring",
+  "suggestions": [
+    {
+      "priority": "high",
+      "category": "test-quality",
+      "file": "src/commands/__tests__/init-auth.test.ts",
+      "line": 85,
+      "description": "Weak assertion masks hardcoded placeholder email",
+      "rationale": "The test checks typeof email === string which passes for the hardcoded user@no-tickets.com in the implementation. This is not testing real behavior — it is checking that a string is a string. If the email were extracted from the token response (as it should be), the test should assert the actual expected value.",
+      "suggestion": "Assert the specific email value that the OAuth flow should produce, or if email extraction is not yet implemented, add a TODO comment and a more descriptive test name acknowledging the placeholder."
+    },
+    {
+      "priority": "high",
+      "category": "over-engineering",
+      "file": "src/commands/init-auth.ts",
+      "line": 34,
+      "description": "Email is hardcoded to user@no-tickets.com — not derived from auth flow",
+      "rationale": "The email returned to the caller is fabricated, not obtained from the authentication response. This means every user who authenticates gets the same email. The SESSION_DURATION_MS constant on line 15 similarly fabricates an expiration client-side rather than receiving it from the server. Both are placeholder implementations that should be called out explicitly.",
+      "suggestion": "If the auth server callback does not yet provide email or expiration, document this as a known limitation. At minimum, the email field should not pretend to be real — consider returning undefined or throwing until the server provides it."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/commands/__tests__/init-auth.test.ts",
+      "line": 86,
+      "description": "typeof expiresAt assertion is meaningless",
+      "rationale": "Same issue as the email assertion. expect(typeof expiresAt).toBe(string) will pass for any string. The test should verify the expiration is approximately 7 days in the future, matching the SESSION_DURATION_MS constant.",
+      "suggestion": "Assert that the expiresAt value parses to a date approximately 7 days from now, e.g. using a tolerance window."
+    },
+    {
+      "priority": "medium",
+      "category": "missing-edge-case",
+      "file": "src/commands/__tests__/init-auth.test.ts",
+      "line": 1,
+      "description": "No test for authUrl that already contains query parameters",
+      "rationale": "The implementation constructs the URL with string concatenation: authUrl + ?callback_port=PORT. If authUrl already contains a query string (e.g. https://auth.example.com/cli?mode=popup), this produces a malformed URL with two ? characters.",
+      "suggestion": "Either add a test covering authUrl with existing query params (and fix the implementation to use URL/URLSearchParams), or document that authUrl must not contain query parameters."
+    },
+    {
+      "priority": "medium",
+      "category": "test-quality",
+      "file": "src/commands/__tests__/init-auth.test.ts",
+      "line": 18,
+      "description": "Test name claims expiration check but implementation delegates to loadCredentials",
+      "rationale": "The test is named returns existing credentials when valid and not expired but resolveInitAuth does not check expiration — it trusts loadCredentials to return null for expired tokens. The test name implies behavior that lives in a different module.",
+      "suggestion": "Rename to returns existing credentials when loadCredentials returns a value or similar, to accurately reflect what this unit is actually doing."
+    }
+  ],
+  "sha": "400255a",
+  "type": "adversarial",
+  "timestamp": "2026-04-16T23:05:39.541Z"
+}

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Write(.tiny-brain/**)",
+      "Write(docs/prd/**)",
+      "Write(docs/adr/**)",
+      "Read(.tiny-brain/**)",
+      "Read(docs/prd/**)",
+      "Read(docs/adr/**)",
+      "Read(.claude/skills/**/templates/**)"
+    ]
+  }
+}

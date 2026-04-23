@@ -6,7 +6,7 @@ import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
 import { readNoTicketsDir } from './core/fs.js';
-import { resolveAuth } from './sdk/auth.js';
+import { describeAuthStatus, DEFAULT_API_URL, NOT_AUTHENTICATED_MESSAGE } from './sdk/auth.js';
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require('../package.json') as { version: string };
@@ -36,7 +36,7 @@ async function readStdin(): Promise<string> {
 }
 
 function loadPushConfig() {
-  const apiUrl = process.env['NO_TICKETS_API_URL'] ?? 'https://api.no-tickets.com';
+  const apiUrl = process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL;
   const teamId = process.env['NO_TICKETS_TEAM_ID'] ?? '';
   const projectId = process.env['NO_TICKETS_PROJECT_ID'] ?? '';
   return { apiUrl, teamId, projectId };
@@ -71,16 +71,9 @@ async function buildStdinPush(session: ReturnType<typeof detectAgent>) {
 
 function handleStatus(): void {
   try {
-    const auth = resolveAuth();
-    const apiUrl = process.env['NO_TICKETS_API_URL'] ?? 'https://api.no-tickets.com';
-    console.log(JSON.stringify({
-      authenticated: true,
-      source: auth.source,
-      tokenType: auth.tokenType,
-      apiUrl,
-    }));
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.log(JSON.stringify(describeAuthStatus()));
+  } catch {
+    console.error(NOT_AUTHENTICATED_MESSAGE);
     process.exitCode = 1;
   }
 }

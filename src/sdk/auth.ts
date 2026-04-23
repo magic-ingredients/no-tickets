@@ -9,6 +9,17 @@ export interface ResolvedAuth {
   readonly tokenType: TokenType;
 }
 
+export interface AuthStatus {
+  readonly authenticated: true;
+  readonly source: AuthSource;
+  readonly tokenType: TokenType;
+  readonly apiUrl: string;
+}
+
+export const DEFAULT_API_URL = 'https://api.no-tickets.com';
+export const NOT_AUTHENTICATED_MESSAGE =
+  'Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.';
+
 function detectTokenType(token: string): TokenType {
   if (token.startsWith('nt_push_')) return 'push';
   if (token.startsWith('nt_session_')) return 'session';
@@ -34,5 +45,19 @@ export function resolveAuth(): ResolvedAuth {
     };
   }
 
-  throw new Error('Not authenticated. Run `npx no-tickets init` to authenticate');
+  throw new Error(NOT_AUTHENTICATED_MESSAGE);
+}
+
+/**
+ * Resolve auth and shape it into a user-facing status payload.
+ * Shared by the CLI `status` command and the MCP `status` tool.
+ */
+export function describeAuthStatus(): AuthStatus {
+  const auth = resolveAuth();
+  return {
+    authenticated: true,
+    source: auth.source,
+    tokenType: auth.tokenType,
+    apiUrl: process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL,
+  };
 }

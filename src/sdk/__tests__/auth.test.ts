@@ -63,7 +63,7 @@ describe('resolveAuth', () => {
     vi.mocked(credentials.loadCredentials).mockReturnValue(null);
 
     expect(() => resolveAuth()).toThrow(
-      'Not authenticated. Run `npx no-tickets init` to authenticate'
+      'Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.'
     );
   });
 

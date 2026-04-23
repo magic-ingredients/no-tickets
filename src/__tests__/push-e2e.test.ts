@@ -79,7 +79,7 @@ describe('push command e2e', () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.test.com/api/v1/push');
+    expect(url).toBe('https://api.test.com/v1/push');
     expect(init.method).toBe('POST');
 
     const body = JSON.parse(init.body as string);

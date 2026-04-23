@@ -91,7 +91,7 @@ describe('auth header', () => {
 });
 
 describe('getBoard', () => {
-  it('calls GET /api/v1/board/:projectId and returns BoardState', async () => {
+  it('calls GET /v1/board/:projectId and returns BoardState', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     const mockBoard: BoardState = { projectId: 'proj1', columns: [] };
     fetchSpy.mockReturnValue(jsonResponse(mockBoard));
@@ -99,13 +99,13 @@ describe('getBoard', () => {
     const result = await client.getBoard('proj1');
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/board/proj1');
+    expect(url).toBe('https://api.test.com/v1/board/proj1');
     expect(result).toEqual(mockBoard);
   });
 });
 
 describe('getFeed', () => {
-  it('calls GET /api/v1/feed/:projectId and returns FeedEvent array', async () => {
+  it('calls GET /v1/feed/:projectId and returns FeedEvent array', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     const mockEvents: FeedEvent[] = [{
       id: 'e1', eventType: 'feature_created', actorName: 'bot',
@@ -116,34 +116,34 @@ describe('getFeed', () => {
     const result = await client.getFeed('proj1');
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/feed/proj1');
+    expect(url).toBe('https://api.test.com/v1/feed/proj1');
     expect(result).toEqual(mockEvents);
   });
 });
 
 describe('createEpic', () => {
-  it('calls POST /api/v1/epics with body', async () => {
+  it('calls POST /v1/epics with body', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ id: 'epic-1' }));
 
     await client.createEpic({ projectId: 'p1', title: 'My Epic', description: 'Desc' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/epics');
+    expect(url).toBe('https://api.test.com/v1/epics');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'p1', title: 'My Epic', description: 'Desc' });
   });
 });
 
 describe('createFeature', () => {
-  it('calls POST /api/v1/features with body', async () => {
+  it('calls POST /v1/features with body', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ id: 'feat-1' }));
 
     await client.createFeature({ projectId: 'p1', epicId: 'e1', title: 'Feat', description: 'Desc' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features');
+    expect(url).toBe('https://api.test.com/v1/features');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
       projectId: 'p1', epicId: 'e1', title: 'Feat', description: 'Desc',
@@ -152,55 +152,55 @@ describe('createFeature', () => {
 });
 
 describe('createFix', () => {
-  it('calls POST /api/v1/fixes with body', async () => {
+  it('calls POST /v1/fixes with body', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ id: 'fix-1' }));
 
     await client.createFix({ projectId: 'p1', epicId: 'e1', title: 'Fix', description: 'Desc' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/fixes');
+    expect(url).toBe('https://api.test.com/v1/fixes');
     expect(init.method).toBe('POST');
   });
 });
 
 describe('updateFeature', () => {
-  it('calls PATCH /api/v1/features/:featureId with body', async () => {
+  it('calls PATCH /v1/features/:featureId with body', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ id: 'feat-1' }));
 
     await client.updateFeature({ projectId: 'p1', featureId: 'f1', title: 'New Title' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features/f1');
+    expect(url).toBe('https://api.test.com/v1/features/f1');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'p1', title: 'New Title' });
   });
 });
 
 describe('moveToPhase', () => {
-  it('calls POST /api/v1/features/:featureId/move with phase', async () => {
+  it('calls POST /v1/features/:featureId/move with phase', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ id: 'feat-1' }));
 
     await client.moveToPhase({ projectId: 'p1', featureId: 'f1', phase: 'testing' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features/f1/move');
+    expect(url).toBe('https://api.test.com/v1/features/f1/move');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'p1', phase: 'testing' });
   });
 });
 
 describe('assignFeature', () => {
-  it('calls POST /api/v1/features/:featureId/assign with assignee', async () => {
+  it('calls POST /v1/features/:featureId/assign with assignee', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ id: 'feat-1' }));
 
     await client.assignFeature({ projectId: 'p1', featureId: 'f1', assignee: 'alice', assigneeType: 'human' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features/f1/assign');
+    expect(url).toBe('https://api.test.com/v1/features/f1/assign');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
       projectId: 'p1', assignee: 'alice', assigneeType: 'human',
@@ -209,14 +209,14 @@ describe('assignFeature', () => {
 });
 
 describe('breakDown', () => {
-  it('calls POST /api/v1/break-down with body', async () => {
+  it('calls POST /v1/break-down with body', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ tasks: ['task1'] }));
 
     await client.breakDown({ projectId: 'p1', featureId: 'f1', context: 'extra info' });
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/break-down');
+    expect(url).toBe('https://api.test.com/v1/break-down');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
       projectId: 'p1', featureId: 'f1', context: 'extra info',
@@ -225,7 +225,7 @@ describe('breakDown', () => {
 });
 
 describe('push', () => {
-  it('calls POST /api/v1/push with Push payload', async () => {
+  it('calls POST /v1/push with Push payload', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(jsonResponse({ success: true, changesApplied: 2, eventsGenerated: 1 }));
 
@@ -237,7 +237,7 @@ describe('push', () => {
     await client.push(payload);
 
     const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/push');
+    expect(url).toBe('https://api.test.com/v1/push');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual(payload);
   });
@@ -278,7 +278,7 @@ describe('path parameter encoding', () => {
     await client.getBoard('proj/with spaces');
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/board/proj%2Fwith%20spaces');
+    expect(url).toBe('https://api.test.com/v1/board/proj%2Fwith%20spaces');
   });
 
   it('encodes projectId in getFeed URL', async () => {
@@ -288,7 +288,7 @@ describe('path parameter encoding', () => {
     await client.getFeed('proj/../other');
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/feed/proj%2F..%2Fother');
+    expect(url).toBe('https://api.test.com/v1/feed/proj%2F..%2Fother');
   });
 
   it('encodes featureId in updateFeature URL', async () => {
@@ -298,7 +298,7 @@ describe('path parameter encoding', () => {
     await client.updateFeature({ projectId: 'p1', featureId: 'feat/special', title: 'New' });
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fspecial');
+    expect(url).toBe('https://api.test.com/v1/features/feat%2Fspecial');
   });
 
   it('encodes featureId in moveToPhase URL', async () => {
@@ -308,7 +308,7 @@ describe('path parameter encoding', () => {
     await client.moveToPhase({ projectId: 'p1', featureId: 'feat/move', phase: 'done' });
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fmove/move');
+    expect(url).toBe('https://api.test.com/v1/features/feat%2Fmove/move');
   });
 
   it('encodes featureId in assignFeature URL', async () => {
@@ -318,7 +318,7 @@ describe('path parameter encoding', () => {
     await client.assignFeature({ projectId: 'p1', featureId: 'feat/assign', assignee: 'alice', assigneeType: 'human' });
 
     const { url } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/api/v1/features/feat%2Fassign/assign');
+    expect(url).toBe('https://api.test.com/v1/features/feat%2Fassign/assign');
   });
 });
 

@@ -37,7 +37,7 @@ afterEach(async () => {
 });
 
 describe('token list command e2e', () => {
-  it('calls GET /api/v1/tokens with the session token and prints entries as JSON', async () => {
+  it('calls GET /v1/tokens with the session token and prints entries as JSON', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
     vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.com');
     fetchSpy.mockReturnValue(jsonResponse({
@@ -50,7 +50,7 @@ describe('token list command e2e', () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.test.com/api/v1/tokens');
+    expect(url).toBe('https://api.test.com/v1/tokens');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer nt_session_secret');
 
     const output = JSON.parse(logSpy.mock.calls[0]![0] as string);
@@ -77,14 +77,14 @@ describe('token list command e2e', () => {
 });
 
 describe('token create command e2e', () => {
-  it('calls POST /api/v1/tokens with projectId and label and prints the new token', async () => {
+  it('calls POST /v1/tokens with projectId and label and prints the new token', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
     fetchSpy.mockReturnValue(jsonResponse({ id: 'tok-new', token: 'nt_push_new123' }));
 
     await runCli(['token', 'create', '--project', 'proj-1', '--label', 'CI push']);
 
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.no-tickets.com/api/v1/tokens');
+    expect(url).toBe('https://api.no-tickets.com/v1/tokens');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ projectId: 'proj-1', label: 'CI push' });
 
@@ -146,14 +146,14 @@ describe('token create command e2e', () => {
 });
 
 describe('token revoke command e2e', () => {
-  it('calls DELETE /api/v1/tokens/:id with the session token and prints { success: true }', async () => {
+  it('calls DELETE /v1/tokens/:id with the session token and prints { success: true }', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
     fetchSpy.mockReturnValue(jsonResponse({}));
 
     await runCli(['token', 'revoke', 'tok-1']);
 
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.no-tickets.com/api/v1/tokens/tok-1');
+    expect(url).toBe('https://api.no-tickets.com/v1/tokens/tok-1');
     expect(init.method).toBe('DELETE');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer nt_session_secret');
 
@@ -168,7 +168,7 @@ describe('token revoke command e2e', () => {
     await runCli(['token', 'revoke', 'tok/with/slashes']);
 
     const [url] = fetchSpy.mock.calls[0] as [string];
-    expect(url).toBe('https://api.no-tickets.com/api/v1/tokens/tok%2Fwith%2Fslashes');
+    expect(url).toBe('https://api.no-tickets.com/v1/tokens/tok%2Fwith%2Fslashes');
   });
 
   it('exits 1 and mentions the missing argument when token id is absent', async () => {

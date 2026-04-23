@@ -79,7 +79,7 @@ describe('MCP server e2e', () => {
     expect(result.isError).toBeFalsy();
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url] = fetchSpy.mock.calls[0] as [string];
-    expect(url).toContain('/api/v1/push');
+    expect(url).toContain('/v1/push');
   });
 
   it('push tool returns error for invalid JSON', async () => {

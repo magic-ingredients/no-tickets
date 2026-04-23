@@ -29,7 +29,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('createToken', () => {
-  it('sends POST to /api/v1/tokens with project and label', async () => {
+  it('sends POST to /v1/tokens with project and label', async () => {
     const fetchSpy = mockFetch();
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ token: 'nt_push_newtoken123', id: 'tok_1' })
@@ -44,7 +44,7 @@ describe('createToken', () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, options] = fetchSpy.mock.calls[0]!;
-    expect(url).toBe(`${TEST_API_URL}/api/v1/tokens`);
+    expect(url).toBe(`${TEST_API_URL}/v1/tokens`);
     expect(options.method).toBe('POST');
     expect(options.headers['Authorization']).toBe(`Bearer ${TEST_SESSION_TOKEN}`);
     expect(options.headers['Content-Type']).toBe('application/json');
@@ -121,7 +121,7 @@ describe('createToken', () => {
 });
 
 describe('listTokens', () => {
-  it('sends GET to /api/v1/tokens with auth header', async () => {
+  it('sends GET to /v1/tokens with auth header', async () => {
     const fetchSpy = mockFetch();
     fetchSpy.mockResolvedValueOnce(jsonResponse({ tokens: [] }));
 
@@ -132,7 +132,7 @@ describe('listTokens', () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, options] = fetchSpy.mock.calls[0]!;
-    expect(url).toBe(`${TEST_API_URL}/api/v1/tokens`);
+    expect(url).toBe(`${TEST_API_URL}/v1/tokens`);
     expect(options.method).toBeUndefined();
     expect(options.headers['Authorization']).toBe(`Bearer ${TEST_SESSION_TOKEN}`);
   });
@@ -214,7 +214,7 @@ describe('listTokens', () => {
 });
 
 describe('revokeToken', () => {
-  it('sends DELETE to /api/v1/tokens/:id', async () => {
+  it('sends DELETE to /v1/tokens/:id', async () => {
     const fetchSpy = mockFetch();
     fetchSpy.mockResolvedValueOnce(jsonResponse({ success: true }));
 
@@ -226,7 +226,7 @@ describe('revokeToken', () => {
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, options] = fetchSpy.mock.calls[0]!;
-    expect(url).toBe(`${TEST_API_URL}/api/v1/tokens/tok_1`);
+    expect(url).toBe(`${TEST_API_URL}/v1/tokens/tok_1`);
     expect(options.method).toBe('DELETE');
     expect(options.headers['Authorization']).toBe(`Bearer ${TEST_SESSION_TOKEN}`);
   });

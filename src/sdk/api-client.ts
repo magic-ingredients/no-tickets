@@ -112,36 +112,36 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   return {
     async push(payload) {
-      return request(apiUrl, token, '/api/v1/push', {
+      return request(apiUrl, token, '/v1/push', {
         method: 'POST',
         body: JSON.stringify(payload),
       }) as Promise<PushResult>;
     },
 
     async getBoard(projectId) {
-      return request(apiUrl, token, `/api/v1/board/${encodeURIComponent(projectId)}`) as Promise<BoardState>;
+      return request(apiUrl, token, `/v1/board/${encodeURIComponent(projectId)}`) as Promise<BoardState>;
     },
 
     async getFeed(projectId) {
-      return request(apiUrl, token, `/api/v1/feed/${encodeURIComponent(projectId)}`) as Promise<readonly FeedEvent[]>;
+      return request(apiUrl, token, `/v1/feed/${encodeURIComponent(projectId)}`) as Promise<readonly FeedEvent[]>;
     },
 
     async createEpic(params) {
-      return request(apiUrl, token, '/api/v1/epics', {
+      return request(apiUrl, token, '/v1/epics', {
         method: 'POST',
         body: JSON.stringify(params),
       });
     },
 
     async createFeature(params) {
-      return request(apiUrl, token, '/api/v1/features', {
+      return request(apiUrl, token, '/v1/features', {
         method: 'POST',
         body: JSON.stringify(params),
       });
     },
 
     async createFix(params) {
-      return request(apiUrl, token, '/api/v1/fixes', {
+      return request(apiUrl, token, '/v1/fixes', {
         method: 'POST',
         body: JSON.stringify(params),
       });
@@ -149,7 +149,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     async updateFeature(params) {
       const { featureId, ...body } = params;
-      return request(apiUrl, token, `/api/v1/features/${encodeURIComponent(featureId)}`, {
+      return request(apiUrl, token, `/v1/features/${encodeURIComponent(featureId)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
       });
@@ -157,7 +157,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     async moveToPhase(params) {
       const { featureId, ...body } = params;
-      return request(apiUrl, token, `/api/v1/features/${encodeURIComponent(featureId)}/move`, {
+      return request(apiUrl, token, `/v1/features/${encodeURIComponent(featureId)}/move`, {
         method: 'POST',
         body: JSON.stringify(body),
       });
@@ -165,14 +165,14 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     async assignFeature(params) {
       const { featureId, ...body } = params;
-      return request(apiUrl, token, `/api/v1/features/${encodeURIComponent(featureId)}/assign`, {
+      return request(apiUrl, token, `/v1/features/${encodeURIComponent(featureId)}/assign`, {
         method: 'POST',
         body: JSON.stringify(body),
       });
     },
 
     async breakDown(params) {
-      return request(apiUrl, token, '/api/v1/break-down', {
+      return request(apiUrl, token, '/v1/break-down', {
         method: 'POST',
         body: JSON.stringify(params),
       });

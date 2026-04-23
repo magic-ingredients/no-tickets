@@ -73,7 +73,7 @@ async function safeParseErrorBody(response: Response): Promise<string> {
 
 export async function createToken(params: TokenCreateParams): Promise<TokenCreateResult> {
   try {
-    const response = await fetch(`${params.apiUrl}/api/v1/tokens`, {
+    const response = await fetch(`${params.apiUrl}/v1/tokens`, {
       method: 'POST',
       headers: jsonHeaders(params.sessionToken),
       body: JSON.stringify({
@@ -100,7 +100,7 @@ export async function createToken(params: TokenCreateParams): Promise<TokenCreat
 
 export async function listTokens(params: TokenListParams): Promise<TokenListResult> {
   try {
-    const response = await fetch(`${params.apiUrl}/api/v1/tokens`, {
+    const response = await fetch(`${params.apiUrl}/v1/tokens`, {
       headers: authHeaders(params.sessionToken),
     });
 
@@ -128,7 +128,7 @@ export async function listTokens(params: TokenListParams): Promise<TokenListResu
 
 export async function revokeToken(params: TokenRevokeParams): Promise<TokenRevokeResult> {
   try {
-    const response = await fetch(`${params.apiUrl}/api/v1/tokens/${encodeURIComponent(params.tokenId)}`, {
+    const response = await fetch(`${params.apiUrl}/v1/tokens/${encodeURIComponent(params.tokenId)}`, {
       method: 'DELETE',
       headers: authHeaders(params.sessionToken),
     });

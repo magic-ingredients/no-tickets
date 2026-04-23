@@ -1,10 +1,48 @@
 ---
 id: cli-wire-status-token
 title: "Wire status and token commands into CLI"
-status: in_progress
+status: completed
 severity: high
 reported: 2026-04-23T08:00:00.000Z
-resolved: null
+resolved: 2026-04-23T11:25:00.000Z
+resolution:
+  rootCause: CLI surface was incomplete — commands existed as separate modules but were never dispatched from src/cli.ts
+  fix:
+    - Wired `status` command with shared describeAuthStatus() helper reused by the MCP status tool
+    - Wired `token list | create | revoke` subcommands with allowlist-based value-flag parsing
+    - Added NO_TICKETS_HOME override to isolate e2e tests from machine-state credentials
+    - Released 2.0.2 via GitHub release (triggers npm publish workflow)
+  filesModified:
+    - src/cli.ts
+    - src/sdk/auth.ts
+    - src/sdk/credentials.ts
+    - src/mcp/tools/status.ts
+    - src/__tests__/status-e2e.test.ts
+    - src/__tests__/token-cli-e2e.test.ts
+    - src/__tests__/cli.test.ts
+    - src/__tests__/mcp-e2e.test.ts
+    - src/__tests__/auth-e2e.test.ts
+    - src/sdk/__tests__/auth.test.ts
+    - src/sdk/__tests__/credentials.test.ts
+    - package.json
+resolution:
+  rootCause: CLI surface was incomplete — commands existed as separate modules but were never dispatched from src/cli.ts
+  fix:
+    - Wired `status` command with shared describeAuthStatus() helper reused by the MCP status tool
+    - Wired `token list | create | revoke` subcommands with allowlist-based value-flag parsing
+    - Added NO_TICKETS_HOME override to isolate e2e tests from machine-state credentials
+  filesModified:
+    - src/cli.ts
+    - src/sdk/auth.ts
+    - src/sdk/credentials.ts
+    - src/mcp/tools/status.ts
+    - src/__tests__/status-e2e.test.ts
+    - src/__tests__/token-cli-e2e.test.ts
+    - src/__tests__/cli.test.ts
+    - src/__tests__/mcp-e2e.test.ts
+    - src/__tests__/auth-e2e.test.ts
+    - src/sdk/__tests__/auth.test.ts
+    - src/sdk/__tests__/credentials.test.ts
 ---
 
 # Fix: Wire status and token commands into CLI
@@ -30,11 +68,13 @@ commitSha: ec4a7cb
 Dispatch `no-tickets status` to a handler that prints auth state (authenticated, source, tokenType, apiUrl) using the existing `resolveAuth()` helper. Shared `describeAuthStatus()` helper extracted into sdk/auth.ts for reuse by the MCP status tool.
 
 ### 2. Wire token command with subcommands
-status: not_started
+status: completed
+commitSha: e07e60f
 
-Add `token` to the known commands. Dispatch subcommands `list`, `create`, `revoke` to `listTokens`/`createToken`/`revokeToken` in `src/commands/token.ts`. Honour `NO_TICKETS_TOKEN` for session auth. Print results as JSON (list) or human-readable messages (create/revoke).
+Add `token` to the known commands. Dispatch subcommands `list`, `create`, `revoke` to `listTokens`/`createToken`/`revokeToken` in `src/commands/token.ts`. Honour `NO_TICKETS_TOKEN` for session auth. Print results as JSON. parseArgs extended with an explicit VALUE_FLAGS allowlist so existing boolean flags aren't regressed.
 
 ### 3. Bump to 2.0.2 and release
-status: not_started
+status: completed
+commitSha: pending
 
 Ship as patch.

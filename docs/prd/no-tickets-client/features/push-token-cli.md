@@ -38,9 +38,9 @@ CLI commands for creating, listing, and revoking push tokens.
 - `src/commands/token.ts`
 
 **Expected changes:**
-- `npx no-tickets token create --project <id> --label <label>` — calls POST /api/v1/tokens, displays token once
-- `npx no-tickets token list` — calls GET /api/v1/tokens, shows prefix + label + created
-- `npx no-tickets token revoke <id>` — calls DELETE /api/v1/tokens/:id
+- `npx no-tickets token create --project <id> --label <label>` — calls POST /v1/tokens, displays token once
+- `npx no-tickets token list` — calls GET /v1/tokens, shows prefix + label + created
+- `npx no-tickets token revoke <id>` — calls DELETE /v1/tokens/:id
 - Requires active Kinde session for all token management commands
 - Uses auth resolution chain from Feature 1
 

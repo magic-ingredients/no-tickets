@@ -12,7 +12,7 @@ updated: 2026-04-22
 
 ## Description
 
-The CLI push command — the core action of the client. Reads `.notickets/` files, auto-enriches session, validates against Zod schemas, and sends to the server via POST /api/v1/push.
+The CLI push command — the core action of the client. Reads `.notickets/` files, auto-enriches session, validates against Zod schemas, and sends to the server via POST /v1/push.
 
 Two modes:
 - `npx no-tickets push` — reads .notickets/ directory, assembles Push payload from files
@@ -38,7 +38,7 @@ npx no-tickets status            # auth and connection check
 - [ ] `npx no-tickets validate` validates .notickets/ format locally, returns errors
 - [ ] Auto-enriches session on every push (agent, vendor, environment)
 - [ ] Validates against Zod schemas before sending — clear error messages on failure
-- [ ] API client sends to POST /api/v1/push with auth header
+- [ ] API client sends to POST /v1/push with auth header
 - [ ] Exit code 0 on success, 1 on validation/send failure
 
 ## Tasks
@@ -47,7 +47,7 @@ npx no-tickets status            # auth and connection check
 status: completed
 commitSha: 59fe202
 
-Single method that sends a validated Push payload to POST /api/v1/push. CRUD methods retained for now — cleanup deferred to MCP server rewrite.
+Single method that sends a validated Push payload to POST /v1/push. CRUD methods retained for now — cleanup deferred to MCP server rewrite.
 
 **Files modified:**
 - `src/sdk/api-client.ts`

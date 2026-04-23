@@ -322,6 +322,33 @@ describe('path parameter encoding', () => {
   });
 });
 
+describe('path contract (regression guard)', () => {
+  // The /api prefix is a Cloudflare Pages edge convention that only applies
+  // when the SPA proxies to the API. Direct API callers must never ship that
+  // prefix. 2.0.2 shipped with it and broke against live; this test keeps a
+  // flat assertion that every request URL is prefix-free.
+  it('never includes /api/ in outgoing request URLs', async () => {
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockImplementation(() => jsonResponse({ projectId: 'p', columns: [] }));
+
+    await client.getBoard('p1');
+    await client.getFeed('p1');
+    await client.push({ projectId: 'p', timestamp: '2026-04-22T10:00:00Z' });
+    await client.createEpic({ projectId: 'p', title: 'E' });
+    await client.createFeature({ projectId: 'p', epicId: 'e1', title: 'F' });
+    await client.createFix({ projectId: 'p', epicId: 'e1', title: 'Fix' });
+    await client.updateFeature({ projectId: 'p', featureId: 'f1', title: 'New' });
+    await client.moveToPhase({ projectId: 'p', featureId: 'f1', phase: 'testing' });
+    await client.assignFeature({ projectId: 'p', featureId: 'f1', assignee: 'a', assigneeType: 'human' });
+    await client.breakDown({ projectId: 'p', featureId: 'f1' });
+
+    for (const call of fetchSpy.mock.calls) {
+      const [url] = call as [string];
+      expect(url).not.toContain('/api/');
+    }
+  });
+});
+
 describe('error handling', () => {
   it('throws with status and error field from JSON response', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });

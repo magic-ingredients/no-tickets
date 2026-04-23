@@ -24,9 +24,10 @@ Commands were built ahead of CLI wiring as part of the OSS-launch feature set an
 ## Tasks
 
 ### 1. Wire status command
-status: not_started
+status: completed
+commitSha: ec4a7cb
 
-Dispatch `no-tickets status` to a handler that prints auth state (authenticated, source, tokenType, apiUrl) using the existing `resolveAuth()` helper.
+Dispatch `no-tickets status` to a handler that prints auth state (authenticated, source, tokenType, apiUrl) using the existing `resolveAuth()` helper. Shared `describeAuthStatus()` helper extracted into sdk/auth.ts for reuse by the MCP status tool.
 
 ### 2. Wire token command with subcommands
 status: not_started

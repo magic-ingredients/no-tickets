@@ -99,4 +99,31 @@ describe('parseArgs', () => {
     const result = parseArgs(['connect', 'team-abc', '']);
     expect(result).toEqual({ command: 'connect', args: ['team-abc'], flags: {} });
   });
+
+  it('leaves positional args alone when following a boolean flag', () => {
+    // Regression: parseArgs must NOT consume the next arg as a value unless the
+    // flag is in the known value-flag allowlist. `dry-run` is a boolean flag,
+    // so `somefile` stays a positional.
+    const result = parseArgs(['push', '--dry-run', 'somefile']);
+    expect(result).toEqual({ command: 'push', args: ['somefile'], flags: { 'dry-run': true } });
+  });
+
+  it('parses --project <value> as a string-valued flag', () => {
+    const result = parseArgs(['token', 'create', '--project', 'p1', '--label', 'CI']);
+    expect(result.command).toBe('token');
+    expect(result.args).toEqual(['create']);
+    expect(result.flags).toEqual({ project: 'p1', label: 'CI' });
+  });
+
+  it('treats a value-flag with no following arg as boolean', () => {
+    // `--project` at end of argv with nothing to consume leaves the flag truthy
+    // so the handler can surface a "required" error rather than a parse error.
+    const result = parseArgs(['token', 'create', '--project']);
+    expect(result.flags).toEqual({ project: true });
+  });
+
+  it('treats a value-flag followed by another flag as boolean', () => {
+    const result = parseArgs(['token', 'create', '--project', '--label', 'CI']);
+    expect(result.flags).toEqual({ project: true, label: 'CI' });
+  });
 });

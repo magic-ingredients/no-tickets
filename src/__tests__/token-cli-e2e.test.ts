@@ -112,6 +112,24 @@ describe('token create command e2e', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--label'));
   });
+
+  it('exits 1 and reports the API error when the server returns a failure', async () => {
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
+    fetchSpy.mockReturnValue(jsonResponse({ error: 'project not found' }, 404));
+
+    await runCli(['token', 'create', '--project', 'p1', '--label', 'CI']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('project not found'));
+  });
+
+  it('exits 1 when not authenticated', async () => {
+    await runCli(['token', 'create', '--project', 'p1', '--label', 'CI']);
+
+    expect(process.exitCode).toBe(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Not authenticated'));
+  });
 });
 
 describe('token revoke command e2e', () => {
@@ -145,15 +163,33 @@ describe('token revoke command e2e', () => {
     expect(process.exitCode).toBe(1);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('exits 1 and reports the API error when the server returns a failure', async () => {
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
+    fetchSpy.mockReturnValue(jsonResponse({ error: 'token not found' }, 404));
+
+    await runCli(['token', 'revoke', 'tok-missing']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('token not found'));
+  });
+
+  it('exits 1 when not authenticated', async () => {
+    await runCli(['token', 'revoke', 'tok-1']);
+
+    expect(process.exitCode).toBe(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Not authenticated'));
+  });
 });
 
 describe('token unknown subcommand', () => {
-  it('exits 1 and prints an error for an unrecognised subcommand', async () => {
+  it('exits 1 and prints a hint listing valid subcommands', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
 
     await runCli(['token', 'rotate']);
 
     expect(process.exitCode).toBe(1);
-    expect(errSpy).toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('list | create | revoke'));
   });
 });

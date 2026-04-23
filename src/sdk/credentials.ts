@@ -9,8 +9,7 @@ export interface StoredCredentials {
 }
 
 function credentialsDir(): string {
-  const override = process.env['NO_TICKETS_HOME'];
-  const home = override && override.length > 0 ? override : os.homedir();
+  const home = process.env['NO_TICKETS_HOME'] || os.homedir();
   return path.join(home, '.notickets');
 }
 

@@ -24,6 +24,11 @@ function isKnownCommand(value: string): value is Command {
 
 type FlagValue = boolean | string;
 
+/** Flags that consume the following argv entry as their value.
+ *  All other flags are parsed as booleans so positional args like
+ *  `push --dry-run some-file` are never accidentally swallowed. */
+const VALUE_FLAGS = new Set<string>(['project', 'label']);
+
 interface ParsedArgs {
   readonly command: Command;
   readonly args: readonly string[];
@@ -72,12 +77,16 @@ async function buildStdinPush(session: ReturnType<typeof detectAgent>) {
   return mergeSession(parsed, session);
 }
 
+function fail(message: string): void {
+  console.error(message);
+  process.exitCode = 1;
+}
+
 function requireSessionToken(): string | null {
   try {
     return resolveAuth().token;
   } catch {
-    console.error(NOT_AUTHENTICATED_MESSAGE);
-    process.exitCode = 1;
+    fail(NOT_AUTHENTICATED_MESSAGE);
     return null;
   }
 }
@@ -85,6 +94,14 @@ function requireSessionToken(): string | null {
 function flagString(flags: Readonly<Record<string, FlagValue>>, key: string): string | undefined {
   const value = flags[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function handleRequestResult(result: { readonly success: boolean; readonly error?: string }, onSuccess: () => void): void {
+  if (!result.success) {
+    fail(result.error ?? 'Request failed');
+    return;
+  }
+  onSuccess();
 }
 
 async function handleToken(
@@ -99,59 +116,31 @@ async function handleToken(
       const sessionToken = requireSessionToken();
       if (sessionToken === null) return;
       const result = await listTokens({ apiUrl, sessionToken });
-      if (!result.success) {
-        console.error(result.error ?? 'Request failed');
-        process.exitCode = 1;
-        return;
-      }
-      console.log(JSON.stringify({ tokens: result.tokens }));
+      handleRequestResult(result, () => console.log(JSON.stringify({ tokens: result.tokens })));
       return;
     }
     case 'create': {
       const projectId = flagString(flags, 'project');
       const label = flagString(flags, 'label');
-      if (!projectId) {
-        console.error('token create: --project <projectId> is required');
-        process.exitCode = 1;
-        return;
-      }
-      if (!label) {
-        console.error('token create: --label <label> is required');
-        process.exitCode = 1;
-        return;
-      }
+      if (!projectId) return fail('token create: --project <projectId> is required');
+      if (!label) return fail('token create: --label <label> is required');
       const sessionToken = requireSessionToken();
       if (sessionToken === null) return;
       const result = await createToken({ apiUrl, sessionToken, projectId, label });
-      if (!result.success) {
-        console.error(result.error ?? 'Request failed');
-        process.exitCode = 1;
-        return;
-      }
-      console.log(JSON.stringify({ id: result.id, token: result.token }));
+      handleRequestResult(result, () => console.log(JSON.stringify({ id: result.id, token: result.token })));
       return;
     }
     case 'revoke': {
       const tokenId = subcommandArgs[1];
-      if (!tokenId) {
-        console.error('token revoke: <tokenId> is required');
-        process.exitCode = 1;
-        return;
-      }
+      if (!tokenId) return fail('token revoke: <tokenId> is required');
       const sessionToken = requireSessionToken();
       if (sessionToken === null) return;
       const result = await revokeToken({ apiUrl, sessionToken, tokenId });
-      if (!result.success) {
-        console.error(result.error ?? 'Request failed');
-        process.exitCode = 1;
-        return;
-      }
-      console.log(JSON.stringify({ success: true }));
+      handleRequestResult(result, () => console.log(JSON.stringify({ success: true })));
       return;
     }
     default:
-      console.error(`Unknown token subcommand: ${subcommand ?? '(none)'}. Use list | create | revoke.`);
-      process.exitCode = 1;
+      fail(`Unknown token subcommand: ${subcommand ?? '(none)'}. Use list | create | revoke.`);
   }
 }
 
@@ -263,13 +252,15 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      const next = argv[i + 1];
-      if (next !== undefined && next !== '' && !next.startsWith('--')) {
-        flags[key] = next;
-        i++;
-      } else {
-        flags[key] = true;
+      if (VALUE_FLAGS.has(key)) {
+        const next = argv[i + 1];
+        if (next !== undefined && next !== '' && !next.startsWith('--')) {
+          flags[key] = next;
+          i++;
+          continue;
+        }
       }
+      flags[key] = true;
     } else {
       args.push(arg);
     }

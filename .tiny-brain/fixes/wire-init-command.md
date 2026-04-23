@@ -1,10 +1,23 @@
 ---
 id: wire-init-command
 title: "Wire init command to browser OAuth flow"
-status: in_progress
+status: completed
 severity: high
 reported: 2026-04-23T17:20:00.000Z
-resolved: null
+resolved: 2026-04-23T17:40:00.000Z
+resolution:
+  rootCause: CLI `init` case was stubbed; OAuth logic existed in init-auth.ts but was never dispatched.
+  fix:
+    - handleInit dispatches to resolveInitAuth, prints URL for manual paste, opens browser
+    - Cross-platform spawn-based opener with on('spawn') success signal (fixes silently-swallowed spawn errors)
+    - openBrowser plumbed through runCli(argv, deps?) DI (no globalThis hook)
+    - Placeholder email no longer surfaced on fresh auth
+    - Released 2.0.4
+  filesModified:
+    - src/cli.ts
+    - src/__tests__/init-cli-e2e.test.ts
+    - src/__tests__/cli.test.ts
+    - package.json
 ---
 
 # Fix: Wire init command to browser OAuth flow
@@ -20,7 +33,8 @@ CLI `init` case in src/cli.ts is a stub. Consistent with the status/token gap re
 ## Tasks
 
 ### 1. Wire init command to resolveInitAuth
-status: not_started
+status: completed
+commitSha: 989c37a
 
 Dispatch `no-tickets init` to a handler that:
 - Short-circuits if existing credentials are present (prints email + skip message)
@@ -31,6 +45,7 @@ Dispatch `no-tickets init` to a handler that:
 Cross-platform browser opener (macOS `open`, Linux `xdg-open`, Windows `start`). If the opener fails, print the URL so the user can paste it manually.
 
 ### 2. Bump to 2.0.4 and release
-status: not_started
+status: completed
+commitSha: pending
 
 Ship as patch.

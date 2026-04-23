@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { resolveAuth } from '../auth.js';
+import { resolveAuth, describeAuthStatus } from '../auth.js';
 import * as credentials from '../credentials.js';
 
 vi.mock('../credentials.js');
@@ -102,5 +102,22 @@ describe('resolveAuth', () => {
     const result = resolveAuth();
 
     expect(result.source).toBe('credentials');
+  });
+});
+
+describe('describeAuthStatus', () => {
+  it('uses NO_TICKETS_API_URL when set', () => {
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_x');
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.com');
+
+    expect(describeAuthStatus().apiUrl).toBe('https://api.test.com');
+  });
+
+  it('falls back to https://api.no-tickets.com when NO_TICKETS_API_URL is unset', () => {
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_x');
+    vi.stubEnv('NO_TICKETS_API_URL', '');
+    delete process.env['NO_TICKETS_API_URL'];
+
+    expect(describeAuthStatus().apiUrl).toBe('https://api.no-tickets.com');
   });
 });

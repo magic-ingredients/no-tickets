@@ -89,4 +89,14 @@ describe('parseArgs', () => {
     const result = parseArgs(['push', '--dry-run', '--verbose']);
     expect(result).toEqual({ command: 'push', args: [], flags: { 'dry-run': true, 'verbose': true } });
   });
+
+  it('skips empty-string args between positionals and flags', () => {
+    const result = parseArgs(['push', '', '--dry-run']);
+    expect(result).toEqual({ command: 'push', args: [], flags: { 'dry-run': true } });
+  });
+
+  it('skips a trailing empty-string arg', () => {
+    const result = parseArgs(['connect', 'team-abc', '']);
+    expect(result).toEqual({ command: 'connect', args: ['team-abc'], flags: {} });
+  });
 });

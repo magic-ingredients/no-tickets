@@ -172,18 +172,30 @@ describe('runCli dispatch', () => {
 
   // init has its own e2e coverage in src/__tests__/init-cli-e2e.test.ts.
 
-  it('connect, disconnect fall through to not-implemented', async () => {
+  it('connect, disconnect fall through to a "not yet implemented" error', async () => {
     await runCli(['connect']);
     expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('not yet implemented'));
 
+    errSpy.mockClear();
     process.exitCode = undefined;
     await runCli(['disconnect']);
     expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('not yet implemented'));
   });
 
   it('unknown command mentions --help and exits 1', async () => {
     await runCli(['foobar']);
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--help'));
     expect(process.exitCode).toBe(1);
+  });
+
+  it('strips control characters from the echoed unknown command name', async () => {
+    // The unknown-command handler sanitises argv[0] with /[\x00-\x1f\x7f]/g
+    // so a caller embedding control chars can't poison the error output.
+    await runCli(['bad\x01cmd']);
+    const firstCallArg = errSpy.mock.calls[0]?.[0] as string | undefined;
+    expect(firstCallArg).toContain('badcmd');
+    expect(firstCallArg).not.toContain('\x01');
   });
 });

@@ -62,6 +62,7 @@ describe('init command e2e', () => {
     const stored = loadCredentials();
     expect(stored?.token).toBe('nt_session_fresh');
     expect(process.exitCode).not.toBe(1);
+    expect(logSpy).toHaveBeenCalledWith('Authenticated. Credentials saved to ~/.notickets/credentials.');
   });
 
   it('prints the URL before attempting to open the browser', async () => {

@@ -6,6 +6,7 @@ import { buildPushAuth } from './commands/push-auth.js';
 import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
 import { readNoTicketsDir } from './core/fs.js';
+import { resolveAuth } from './sdk/auth.js';
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require('../package.json') as { version: string };
@@ -68,6 +69,22 @@ async function buildStdinPush(session: ReturnType<typeof detectAgent>) {
   return mergeSession(parsed, session);
 }
 
+function handleStatus(): void {
+  try {
+    const auth = resolveAuth();
+    const apiUrl = process.env['NO_TICKETS_API_URL'] ?? 'https://api.no-tickets.com';
+    console.log(JSON.stringify({
+      authenticated: true,
+      source: auth.source,
+      tokenType: auth.tokenType,
+      apiUrl,
+    }));
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  }
+}
+
 async function handleValidate(): Promise<void> {
   const files = await readNoTicketsDir('.notickets');
   const result = validateFiles(files);
@@ -116,6 +133,9 @@ export async function runCli(argv: readonly string[]): Promise<void> {
       break;
     case 'validate':
       await handleValidate();
+      break;
+    case 'status':
+      handleStatus();
       break;
     case 'init':
       console.error('Command "init" is not yet implemented.');

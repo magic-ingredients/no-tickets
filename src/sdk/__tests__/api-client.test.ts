@@ -364,6 +364,28 @@ describe('error handling', () => {
     await expect(client.getBoard('p1')).rejects.toThrow('500: Request failed');
   });
 
+  it('truncates a 201-char error string to 200 chars + "..."', async () => {
+    // Pins the `>` vs `>=` boundary in truncate() and the slice length.
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    const longError = 'a'.repeat(201);
+    fetchSpy.mockReturnValue(jsonResponse({ error: longError }, 500));
+
+    try {
+      await client.getBoard('p1');
+      throw new Error('expected rejection');
+    } catch (err) {
+      expect((err as Error).message).toMatch(/^500: a{200}\.\.\.$/);
+    }
+  });
+
+  it('uses fallback message when parsed body is a plain string', async () => {
+    // hasErrorField must reject non-object bodies.
+    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
+    fetchSpy.mockReturnValue(jsonResponse('bad', 500));
+
+    await expect(client.getBoard('p1')).rejects.toThrow('500: Request failed');
+  });
+
   it('handles non-JSON error responses', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
     fetchSpy.mockReturnValue(textResponse('<html>Server Error</html>', 502));

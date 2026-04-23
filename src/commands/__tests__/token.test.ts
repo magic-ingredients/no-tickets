@@ -286,3 +286,124 @@ describe('revokeToken', () => {
     expect(result.error).toBe('Request failed with status 500');
   });
 });
+
+describe('parseErrorMessage guards (mutation kills)', () => {
+  it('createToken returns "Request failed" when error body is null', async () => {
+    mockFetch().mockResolvedValueOnce(jsonResponse(null, 400));
+
+    const result = await createToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      projectId: 'p',
+      label: 'L',
+    });
+
+    expect(result).toEqual({ success: false, error: 'Request failed' });
+  });
+
+  it('createToken returns "Request failed" when error body lacks an error key', async () => {
+    mockFetch().mockResolvedValueOnce(jsonResponse({ message: 'oops' }, 400));
+
+    const result = await createToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      projectId: 'p',
+      label: 'L',
+    });
+
+    expect(result).toEqual({ success: false, error: 'Request failed' });
+  });
+
+  it('createToken returns "Request failed" when error body is a number', async () => {
+    mockFetch().mockResolvedValueOnce(jsonResponse(42, 400));
+
+    const result = await createToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      projectId: 'p',
+      label: 'L',
+    });
+
+    expect(result).toEqual({ success: false, error: 'Request failed' });
+  });
+});
+
+describe('createToken success-field type guards (mutation kills)', () => {
+  it('treats non-string token and id fields in 200 response as undefined', async () => {
+    mockFetch().mockResolvedValueOnce(jsonResponse({ token: 12345, id: true }));
+
+    const result = await createToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      projectId: 'p',
+      label: 'L',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.token).toBeUndefined();
+    expect(result.id).toBeUndefined();
+  });
+});
+
+describe('listTokens primitive entry handling (mutation kill)', () => {
+  it('filters out primitive entries and returns empty list when all are primitive', async () => {
+    mockFetch().mockResolvedValueOnce(jsonResponse({ tokens: [42, 'str', null, true] }));
+
+    const result = await listTokens({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tokens).toEqual([]);
+  });
+
+  it('degrades an object entry with missing fields to empty strings', async () => {
+    mockFetch().mockResolvedValueOnce(jsonResponse({ tokens: [{}] }));
+
+    const result = await listTokens({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+    });
+
+    expect(result.tokens).toEqual([{ id: '', prefix: '', label: '', createdAt: '' }]);
+  });
+});
+
+describe('network-level error fallback (mutation kill: "Unknown error")', () => {
+  it('createToken returns "Unknown error" on a raw string rejection', async () => {
+    mockFetch().mockRejectedValueOnce('raw rejection');
+
+    const result = await createToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      projectId: 'p',
+      label: 'L',
+    });
+
+    expect(result).toEqual({ success: false, error: 'Unknown error' });
+  });
+
+  it('listTokens returns "Unknown error" on a raw string rejection', async () => {
+    mockFetch().mockRejectedValueOnce('raw rejection');
+
+    const result = await listTokens({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+    });
+
+    expect(result).toEqual({ success: false, tokens: [], error: 'Unknown error' });
+  });
+
+  it('revokeToken returns "Unknown error" on a raw string rejection', async () => {
+    mockFetch().mockRejectedValueOnce('raw rejection');
+
+    const result = await revokeToken({
+      apiUrl: TEST_API_URL,
+      sessionToken: TEST_SESSION_TOKEN,
+      tokenId: 't',
+    });
+
+    expect(result).toEqual({ success: false, error: 'Unknown error' });
+  });
+});

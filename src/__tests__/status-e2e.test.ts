@@ -11,7 +11,7 @@ let errSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'nt-status-e2e-'));
-  vi.stubEnv('HOME', testDir);
+  vi.stubEnv('NO_TICKETS_HOME', testDir);
   delete process.env['NO_TICKETS_TOKEN'];
   delete process.env['NO_TICKETS_API_URL'];
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

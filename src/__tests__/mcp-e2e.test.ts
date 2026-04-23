@@ -32,6 +32,7 @@ beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'nt-mcp-e2e-'));
   fetchSpy = vi.fn().mockReturnValue(jsonResponse({ success: true, changesApplied: 1, eventsGenerated: 1 }));
   vi.stubGlobal('fetch', fetchSpy);
+  vi.stubEnv('NO_TICKETS_HOME', testDir);
   vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_mcptest');
   vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.com');
   vi.stubEnv('NO_TICKETS_PROJECT_ID', 'proj-mcp');

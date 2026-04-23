@@ -9,7 +9,9 @@ export interface StoredCredentials {
 }
 
 function credentialsDir(): string {
-  return path.join(os.homedir(), '.notickets');
+  const override = process.env['NO_TICKETS_HOME'];
+  const home = override && override.length > 0 ? override : os.homedir();
+  return path.join(home, '.notickets');
 }
 
 function credentialsPath(): string {

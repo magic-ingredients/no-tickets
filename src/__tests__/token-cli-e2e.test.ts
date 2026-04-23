@@ -18,7 +18,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'nt-token-cli-e2e-'));
-  vi.stubEnv('HOME', testDir);
+  vi.stubEnv('NO_TICKETS_HOME', testDir);
   delete process.env['NO_TICKETS_TOKEN'];
   delete process.env['NO_TICKETS_API_URL'];
 

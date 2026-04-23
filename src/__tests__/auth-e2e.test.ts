@@ -9,7 +9,7 @@ let testDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'nt-auth-e2e-'));
-  vi.stubEnv('HOME', testDir);
+  vi.stubEnv('NO_TICKETS_HOME', testDir);
   vi.stubEnv('NO_TICKETS_TOKEN', '');
   delete process.env['NO_TICKETS_TOKEN'];
 });

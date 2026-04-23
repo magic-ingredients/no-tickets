@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { parseArgs } from '../cli.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { parseArgs, runCli } from '../cli.js';
 
 describe('parseArgs', () => {
   it('parses push command with empty args and flags', () => {
@@ -125,5 +125,69 @@ describe('parseArgs', () => {
   it('treats a value-flag followed by another flag as boolean', () => {
     const result = parseArgs(['token', 'create', '--project', '--label', 'CI']);
     expect(result.flags).toEqual({ project: true, label: 'CI' });
+  });
+
+  it('produces exactly one flag entry for a trailing value-flag', () => {
+    // Guards against off-by-one iteration over argv.
+    const result = parseArgs(['token', 'create', '--project', 'p1']);
+    expect(Object.keys(result.flags)).toEqual(['project']);
+    expect(result.flags['project']).toBe('p1');
+  });
+
+  it('skips an empty-string value for a value-flag and falls back to boolean', () => {
+    const result = parseArgs(['token', 'create', '--project', '', '--label', 'CI']);
+    expect(result.flags).toEqual({ project: true, label: 'CI' });
+  });
+});
+
+describe('runCli dispatch', () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('--help prints a Usage line', async () => {
+    await runCli(['--help']);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage'));
+  });
+
+  it('empty argv prints a Usage line (default help)', async () => {
+    await runCli([]);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage'));
+  });
+
+  it('--version prints a semver string', async () => {
+    await runCli(['--version']);
+    expect(logSpy).toHaveBeenCalledOnce();
+    expect(logSpy.mock.calls[0]![0] as string).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('init reports not-yet-implemented and exits 1', async () => {
+    await runCli(['init']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('init'));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('connect, disconnect fall through to not-implemented', async () => {
+    await runCli(['connect']);
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    await runCli(['disconnect']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('unknown command mentions --help and exits 1', async () => {
+    await runCli(['foobar']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--help'));
+    expect(process.exitCode).toBe(1);
   });
 });

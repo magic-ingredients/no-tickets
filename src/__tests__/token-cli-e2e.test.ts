@@ -113,6 +113,19 @@ describe('token create command e2e', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--label'));
   });
 
+  it('exits 1 when --project is present as boolean (no value consumed)', async () => {
+    // `--project --label CI` parses --project as boolean true because the next
+    // arg is another flag. flagString() must reject it rather than send
+    // boolean garbage to the API.
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
+
+    await runCli(['token', 'create', '--project', '--label', 'CI']);
+
+    expect(process.exitCode).toBe(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--project'));
+  });
+
   it('exits 1 and reports the API error when the server returns a failure', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
     fetchSpy.mockReturnValue(jsonResponse({ error: 'project not found' }, 404));
@@ -133,7 +146,7 @@ describe('token create command e2e', () => {
 });
 
 describe('token revoke command e2e', () => {
-  it('calls DELETE /api/v1/tokens/:id with the session token', async () => {
+  it('calls DELETE /api/v1/tokens/:id with the session token and prints { success: true }', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
     fetchSpy.mockReturnValue(jsonResponse({}));
 
@@ -143,6 +156,9 @@ describe('token revoke command e2e', () => {
     expect(url).toBe('https://api.no-tickets.com/api/v1/tokens/tok-1');
     expect(init.method).toBe('DELETE');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer nt_session_secret');
+
+    expect(logSpy).toHaveBeenCalledOnce();
+    expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toEqual({ success: true });
   });
 
   it('url-encodes the token id', async () => {
@@ -155,13 +171,14 @@ describe('token revoke command e2e', () => {
     expect(url).toBe('https://api.no-tickets.com/api/v1/tokens/tok%2Fwith%2Fslashes');
   });
 
-  it('exits 1 when token id is missing', async () => {
+  it('exits 1 and mentions the missing argument when token id is absent', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
 
     await runCli(['token', 'revoke']);
 
     expect(process.exitCode).toBe(1);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('<tokenId>'));
   });
 
   it('exits 1 and reports the API error when the server returns a failure', async () => {
@@ -191,5 +208,14 @@ describe('token unknown subcommand', () => {
 
     expect(process.exitCode).toBe(1);
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('list | create | revoke'));
+  });
+
+  it('surfaces "(none)" when no subcommand is given', async () => {
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
+
+    await runCli(['token']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('(none)'));
   });
 });

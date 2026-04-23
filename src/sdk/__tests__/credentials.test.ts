@@ -204,6 +204,27 @@ describe('loadCredentials', () => {
 
     expect(loadCredentials()).toBeNull();
   });
+
+  it('returns null when required fields are non-strings even with a future expiry', () => {
+    // Guards the `typeof … === 'string'` check in hasStringProp against being
+    // replaced with `true`. Future expiry means the hasStringProp guard is the
+    // only line of defence.
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ token: 42, email: 'a@b.com', expiresAt: '2099-01-01T00:00:00Z' })
+    );
+
+    expect(loadCredentials()).toBeNull();
+  });
+
+  it('returns null when parsed JSON is literally null', () => {
+    // JSON.parse('null') -> null, and typeof null === 'object', so the
+    // explicit null guard in isStoredCredentials is load-bearing.
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('null');
+
+    expect(loadCredentials()).toBeNull();
+  });
 });
 
 describe('clearCredentials', () => {

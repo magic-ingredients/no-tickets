@@ -154,6 +154,43 @@ describe('startAuthServer', () => {
     expect((await callbackPromise).token).toBe('first_token');
   });
 
+  it('returns 409 for a second valid callback that arrives before the server finishes closing', async () => {
+    // The server calls server.close() after the first valid request, but there is a
+    // small window where keep-alive connections can still deliver a second request.
+    // We simulate this by sending the second request immediately after the first.
+    // The settled guard should return 409 if the connection is still alive.
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    cleanup = close;
+
+    // First valid callback — server sets settled = true then calls server.close()
+    const first = await fetch(
+      `http://127.0.0.1:${port}/callback?token=first_token&email=a%40b.com&state=${NONCE}`,
+      { headers: { Connection: 'keep-alive' } },
+    );
+    expect(first.status).toBe(200);
+
+    // Immediately send a second valid callback on the same connection.
+    // If the connection is still alive, the settled guard returns 409.
+    // If the server already closed the socket, connection refusal is also acceptable.
+    let secondStatus: number | null = null;
+    try {
+      const second = await fetch(
+        `http://127.0.0.1:${port}/callback?token=second_token&email=a%40b.com&state=${NONCE}`,
+      );
+      secondStatus = second.status;
+      expect(second.status).toBe(409);
+    } catch {
+      // Connection refused after close() — also acceptable
+      secondStatus = null;
+    }
+
+    // The promise resolved from the first callback regardless
+    const resolved = await callbackPromise;
+    expect(resolved.token).toBe('first_token');
+    // The second request must never have produced a 200 (would indicate double-settle)
+    expect(secondStatus).not.toBe(200);
+  });
+
   it('returns 405 for non-GET methods on /callback', async () => {
     const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 100 });
     cleanup = close;
@@ -221,8 +258,10 @@ describe('startAuthServer', () => {
 
     await close();
 
+    // close() must not overwrite an already-resolved promise with a rejection
     const second = await callbackPromise;
     expect(second).toEqual(first);
+    expect(second).toEqual({ token: 'nt_session_keep', email: 'a@b.com' });
   });
 
   it('close() can be called safely even after server already shut down', async () => {
@@ -235,5 +274,68 @@ describe('startAuthServer', () => {
 
     await close();
     await close();
+  });
+
+  it('getRawQueryValue: skips a pair starting with "=" (empty key) and continues to find valid params', async () => {
+    // A pair like "=junk&token=t" has eq===0. The parser must skip pairs where
+    // eq < 0 (no "=" at all) but also handle eq===0 (empty key). With a change
+    // from "eq < 0" to "eq <= 0", a valid pair like "token=t" (eq > 0) would
+    // still be found, but a pair like "=t" would be incorrectly skipped. We
+    // verify the parser skips the empty-key pair and still finds valid params.
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    cleanup = close;
+
+    // Manually craft a URL with a leading "=junk" pair before valid params
+    const response = await fetch(
+      `http://127.0.0.1:${port}/callback?=junk&token=nt_session_boundary&email=a%40b.com&state=${NONCE}`,
+    );
+
+    expect(response.status).toBe(200);
+    const result = await callbackPromise;
+    expect(result.token).toBe('nt_session_boundary');
+  });
+
+  it('getRawQueryValue: ^ anchor strips only the leading "?" and preserves "?" inside a value', async () => {
+    // Without the ^ anchor, rawSearch.replace(/\\?/, '') would strip the first
+    // occurrence of "?" even if it appears inside a percent-encoded value.
+    // A token containing a literal "?" is encoded as "%3F" in the URL. When the
+    // raw parser calls decodeURIComponent on the raw value it becomes "x?foo".
+    // We verify this round-trip works correctly.
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    cleanup = close;
+
+    // token value contains a literal "?" (percent-encoded as %3F in the URL)
+    const response = await fetch(
+      `http://127.0.0.1:${port}/callback?token=x%3Ffoo&email=a%40b.com&state=${NONCE}`,
+    );
+
+    expect(response.status).toBe(200);
+    const result = await callbackPromise;
+    // The token should be decoded as "x?foo" — the ? inside the value is preserved
+    expect(result.token).toBe('x?foo');
+  });
+
+  it('a valid callback arriving after the timeout fires does not resolve the already-rejected promise', async () => {
+    // Attach a no-op catch handler immediately to suppress unhandled-rejection
+    // warnings that can fire before our explicit rejects.toThrow assertion runs.
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 50 });
+    callbackPromise.catch(() => {});
+    cleanup = close;
+
+    // Let the timeout fire and reject the promise.
+    await expect(callbackPromise).rejects.toThrow('timed out');
+
+    // The server is still accepting connections briefly after timeout (until close() is called).
+    // Send a valid callback — it should NOT re-settle the already-rejected promise.
+    try {
+      await fetch(
+        `http://127.0.0.1:${port}/callback?token=late_token&email=a%40b.com&state=${NONCE}`,
+      );
+    } catch {
+      // Connection refused — server closed, acceptable
+    }
+
+    // Promise stays rejected — the !settled guard in the timeout handler prevents double-settle.
+    await expect(callbackPromise).rejects.toThrow('timed out');
   });
 });

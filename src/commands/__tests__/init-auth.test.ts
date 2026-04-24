@@ -93,6 +93,10 @@ describe('resolveInitAuth', () => {
     vi.mocked(credentials.loadCredentials).mockReturnValue(null);
     stubAuthServerSuccess('nt_session_saved', 'returned@example.com');
 
+    // Pin Date.now() to a fixed epoch so the expected expiresAt is deterministic.
+    const FIXED_NOW = 1_700_000_000_000; // arbitrary fixed timestamp
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+
     await resolveInitAuth({
       authUrl: 'https://app.no-tickets.com/api/auth/cli',
       openBrowser: vi.fn().mockResolvedValue(undefined),
@@ -101,10 +105,10 @@ describe('resolveInitAuth', () => {
     const [token, email, expiresAt] = vi.mocked(credentials.saveCredentials).mock.calls[0]!;
     expect(token).toBe('nt_session_saved');
     expect(email).toBe('returned@example.com');
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    const diff = new Date(expiresAt).getTime() - Date.now();
-    expect(diff).toBeGreaterThan(sevenDaysMs - 5000);
-    expect(diff).toBeLessThanOrEqual(sevenDaysMs);
+
+    // Session duration is exactly 7 days — any arithmetic mutation changes this value.
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    expect(expiresAt).toBe(new Date(FIXED_NOW + SEVEN_DAYS_MS).toISOString());
   });
 
   it('throws when OAuth flow times out', async () => {

@@ -52,10 +52,24 @@ describe('resolveUrls', () => {
     expect(() => resolveUrls({})).toThrow(/NO_TICKETS_AUTH_URL is not/);
   });
 
+  it('pair-validation error includes the set env var name and guidance when only API_URL set', () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api.example.com');
+
+    expect(() => resolveUrls({})).toThrow(/NO_TICKETS_API_URL/);
+    expect(() => resolveUrls({})).toThrow(/Set both \(or neither\)/);
+  });
+
   it('throws when only NO_TICKETS_AUTH_URL is set (pair validation)', () => {
     vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.example.com/api/auth/cli');
 
     expect(() => resolveUrls({})).toThrow(/NO_TICKETS_API_URL is not/);
+  });
+
+  it('pair-validation error includes the set env var name and guidance when only AUTH_URL set', () => {
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.example.com/api/auth/cli');
+
+    expect(() => resolveUrls({})).toThrow(/NO_TICKETS_AUTH_URL/);
+    expect(() => resolveUrls({})).toThrow(/Set both \(or neither\)/);
   });
 
   it('pair-validation error includes the offending value', () => {
@@ -100,8 +114,28 @@ describe('resolveUrls with --profile', () => {
     });
   });
 
+  it('accepts http:// (non-TLS) URLs in a profile', async () => {
+    await writeConfig(JSON.stringify({
+      profiles: {
+        local: {
+          apiUrl: 'http://localhost:4000',
+          authUrl: 'http://localhost:4001/api/auth/cli',
+        },
+      },
+    }));
+
+    const resolved = resolveUrls({ profile: 'local' });
+    expect(resolved.apiUrl).toBe('http://localhost:4000');
+    expect(resolved.authUrl).toBe('http://localhost:4001/api/auth/cli');
+    expect(resolved.source).toBe('profile');
+  });
+
   it('errors when the config file does not exist', () => {
     expect(() => resolveUrls({ profile: 'staging' })).toThrow(/does not exist/);
+  });
+
+  it('error message when config missing includes "Create it with:" hint', () => {
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/Create it with/);
   });
 
   it('error message when config missing includes a one-line example', () => {
@@ -118,6 +152,35 @@ describe('resolveUrls with --profile', () => {
     await writeConfig(JSON.stringify({ profiles: { production: { apiUrl: 'x', authUrl: 'y' } } }));
 
     expect(() => resolveUrls({ profile: 'staging' })).toThrow(/Available: production/);
+  });
+
+  it('available list is comma-separated when multiple profiles exist', async () => {
+    await writeConfig(JSON.stringify({
+      profiles: {
+        staging: { apiUrl: 'https://s.example.com', authUrl: 'https://s.example.com/auth' },
+        production: { apiUrl: 'https://p.example.com', authUrl: 'https://p.example.com/auth' },
+      },
+    }));
+
+    try {
+      resolveUrls({ profile: 'unknown' });
+      throw new Error('expected throw');
+    } catch (e) {
+      const msg = (e as Error).message;
+      // Both names appear with comma-space separator
+      expect(msg).toMatch(/staging,\s+production|production,\s+staging/);
+    }
+  });
+
+  it('does not include Available hint when profiles object is empty', async () => {
+    await writeConfig(JSON.stringify({ profiles: {} }));
+
+    try {
+      resolveUrls({ profile: 'staging' });
+      throw new Error('expected throw');
+    } catch (e) {
+      expect((e as Error).message).not.toContain('Available:');
+    }
   });
 
   it('errors with a distinct "invalid JSON" message when the file is malformed', async () => {
@@ -146,6 +209,23 @@ describe('resolveUrls with --profile', () => {
     }));
 
     expect(() => resolveUrls({ profile: 'staging' })).toThrow(/is invalid/);
+  });
+
+  it('errors when apiUrl is a non-string (number) — isHttpUrl rejects non-strings', async () => {
+    // apiUrl as a JSON number should fail the isHttpUrl typeof check
+    await writeConfig(JSON.stringify({
+      profiles: { staging: { apiUrl: 42, authUrl: 'https://x' } },
+    }));
+
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/is invalid/);
+  });
+
+  it('errors gracefully when config.json is a top-level non-object JSON value', async () => {
+    // A valid JSON document that is NOT an object — should be treated as no profiles
+    await writeConfig('"just a string"');
+
+    // With a primitive top-level, profiles will be absent, so profile not found
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/not found/);
   });
 
   it('--profile wins over env vars', async () => {

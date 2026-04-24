@@ -159,6 +159,30 @@ describe('runCli dispatch', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage'));
   });
 
+  it('--help output contains --profile option', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    expect(helpText).toContain('--profile');
+    expect(helpText).toContain('--timeout');
+  });
+
+  it('--help output contains environment variable names', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    expect(helpText).toContain('NO_TICKETS_API_URL');
+    expect(helpText).toContain('NO_TICKETS_AUTH_URL');
+    expect(helpText).toContain('NO_TICKETS_TOKEN');
+  });
+
+  it('--help output contains command list', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    expect(helpText).toContain('Commands:');
+    expect(helpText).toContain('init');
+    expect(helpText).toContain('push');
+    expect(helpText).toContain('status');
+  });
+
   it('empty argv prints a Usage line (default help)', async () => {
     await runCli([]);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage'));
@@ -197,5 +221,27 @@ describe('runCli dispatch', () => {
     const firstCallArg = errSpy.mock.calls[0]?.[0] as string | undefined;
     expect(firstCallArg).toContain('badcmd');
     expect(firstCallArg).not.toContain('\x01');
+  });
+
+  it('token list exits 1 with pair-validation error when only NO_TICKETS_API_URL is set', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api.example.com');
+    // NO_TICKETS_AUTH_URL is NOT set — triggers pair-validation
+
+    await runCli(['token', 'list']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('NO_TICKETS_AUTH_URL'));
+    vi.unstubAllEnvs();
+  });
+
+  it('status exits 1 with pair-validation error when only NO_TICKETS_API_URL is set', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api.example.com');
+    // NO_TICKETS_AUTH_URL is NOT set — triggers pair-validation
+
+    await runCli(['status']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('NO_TICKETS_AUTH_URL'));
+    vi.unstubAllEnvs();
   });
 });

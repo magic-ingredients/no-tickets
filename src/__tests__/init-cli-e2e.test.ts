@@ -83,6 +83,18 @@ describe('init command e2e', () => {
     expect(urlHint).toBeDefined();
   });
 
+  it('browser-open log message includes instruction text and paste fallback', async () => {
+    stubAuthServer({ token: 'nt_session_fresh' });
+
+    await runCli(['init'], { openBrowser });
+
+    const openMsg = logSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).includes('Opening browser to authenticate'),
+    );
+    expect(openMsg).toBeDefined();
+    expect(openMsg![0] as string).toContain('paste the URL above');
+  });
+
   it('honours NO_TICKETS_AUTH_URL + NO_TICKETS_API_URL pair override', async () => {
     vi.stubEnv('NO_TICKETS_API_URL', 'https://api-staging.no-tickets.com');
     vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app-staging.no-tickets.com/api/auth/cli');
@@ -229,6 +241,14 @@ describe('init command e2e', () => {
     expect(authServer.startAuthServer).not.toHaveBeenCalled();
   });
 
+  it('pair-validation error includes guidance text (set both or neither)', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api.example.com');
+
+    await runCli(['init'], { openBrowser });
+
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Set both (or neither)'));
+  });
+
   it('echoes the resolved API and Auth URLs before opening the browser', async () => {
     stubAuthServer({ token: 'nt_session_x' });
 
@@ -279,6 +299,44 @@ describe('init command e2e', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('shadowing'));
     // And the profile URL still wins.
     expect(logSpy).toHaveBeenCalledWith('Using API: https://from-profile.example.com');
+  });
+
+  it('does NOT warn about shadowing when --profile is used but no env vars are set', async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(
+      join(testDir, '.notickets', 'config.json'),
+      JSON.stringify({
+        profiles: {
+          staging: { apiUrl: 'https://from-profile.example.com', authUrl: 'https://from-profile-auth.example.com/api/auth/cli' },
+        },
+      }),
+    );
+    // Explicitly no NO_TICKETS_API_URL or NO_TICKETS_AUTH_URL
+    stubAuthServer({ token: 'nt_session_x' });
+
+    await runCli(['init', '--profile', 'staging'], { openBrowser });
+
+    const shadowWarning = errSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).includes('shadowing'),
+    );
+    expect(shadowWarning).toBeUndefined();
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it('does NOT warn about shadowing when env vars are set but --profile is not used', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://from-env.example.com');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://from-env-auth.example.com/api/auth/cli');
+    stubAuthServer({ token: 'nt_session_x' });
+
+    // No --profile flag
+    await runCli(['init'], { openBrowser });
+
+    const shadowWarning = errSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).includes('shadowing'),
+    );
+    expect(shadowWarning).toBeUndefined();
+    expect(process.exitCode).not.toBe(1);
   });
 
   it('exits 1 with a clear error when --timeout is not a positive number', async () => {

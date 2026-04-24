@@ -20,6 +20,7 @@ resolution:
     - src/__tests__/push-e2e.test.ts
     - src/__tests__/mcp-e2e.test.ts
     - package.json
+archived: true
 ---
 
 # Fix: Drop /api from client request paths

@@ -4,20 +4,7 @@ title: "Wire init command to browser OAuth flow"
 status: completed
 severity: high
 reported: 2026-04-23T17:20:00.000Z
-resolved: 2026-04-23T17:40:00.000Z
-resolution:
-  rootCause: CLI `init` case was stubbed; OAuth logic existed in init-auth.ts but was never dispatched.
-  fix:
-    - handleInit dispatches to resolveInitAuth, prints URL for manual paste, opens browser
-    - Cross-platform spawn-based opener with on('spawn') success signal (fixes silently-swallowed spawn errors)
-    - openBrowser plumbed through runCli(argv, deps?) DI (no globalThis hook)
-    - Placeholder email no longer surfaced on fresh auth
-    - Released 2.0.4
-  filesModified:
-    - src/cli.ts
-    - src/__tests__/init-cli-e2e.test.ts
-    - src/__tests__/cli.test.ts
-    - package.json
+resolved: 2026-04-24T08:10:00.000Z
 ---
 
 # Fix: Wire init command to browser OAuth flow
@@ -45,6 +32,18 @@ Dispatch `no-tickets init` to a handler that:
 Cross-platform browser opener (macOS `open`, Linux `xdg-open`, Windows `start`). If the opener fails, print the URL so the user can paste it manually.
 
 ### 2. Bump to 2.0.4 and release
+status: completed
+commitSha: 165d9cb
+
+Ship as patch.
+
+### 3. Align CLI with hardened /auth/cli protocol (port + code + email)
+status: completed
+commitSha: 301ff6b
+
+CLI now talks the new contract: app.no-tickets.com/api/auth/cli, port=PORT, code=NONCE, callback returns {token, email}; auth-server enforces timingSafeEqual state match, GET-only /callback, race-fix on close, raw-query parsing to preserve `+` in emails.
+
+### 4. Bump to 2.0.5 and release
 status: completed
 commitSha: pending
 

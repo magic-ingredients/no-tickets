@@ -156,18 +156,21 @@ describe('init command e2e', () => {
   it('emits a periodic "still waiting" hint while the callback is pending', async () => {
     vi.useFakeTimers();
     try {
-      // Never-resolving callback so the periodic timer is the only thing to fire.
-      const close = vi.fn().mockResolvedValue(undefined);
+      let resolveCallback!: (v: { token: string; email: string }) => void;
+      const callbackPromise = new Promise<{ token: string; email: string }>((resolve) => {
+        resolveCallback = resolve;
+      });
       vi.mocked(authServer.startAuthServer).mockResolvedValue({
         port: 54321,
-        callbackPromise: new Promise(() => {}),
-        close,
+        callbackPromise,
+        close: vi.fn().mockResolvedValue(undefined),
       });
 
       const cliPromise = runCli(['init', '--timeout', '60000'], { openBrowser });
 
-      // Drain microtasks so the auth-server stub resolves and the callback await begins.
+      // Drain microtasks so handleInit's setInterval is installed.
       await vi.advanceTimersByTimeAsync(0);
+      // Cross the wait-hint interval boundary.
       await vi.advanceTimersByTimeAsync(10_000);
 
       const hint = logSpy.mock.calls.find((call: unknown[]) =>
@@ -175,8 +178,9 @@ describe('init command e2e', () => {
       );
       expect(hint).toBeDefined();
 
-      // Let the configured 60s timeout fire so the awaited promise settles.
-      await vi.advanceTimersByTimeAsync(60_000);
+      // Let the auth flow complete so cliPromise settles cleanly.
+      resolveCallback({ token: 'nt_session_done', email: 'a@b.com' });
+      await vi.advanceTimersByTimeAsync(0);
       await cliPromise;
     } finally {
       vi.useRealTimers();
@@ -184,10 +188,18 @@ describe('init command e2e', () => {
   });
 
   it('SIGINT during init closes the auth server and prints "Cancelled."', async () => {
-    const close = vi.fn().mockResolvedValue(undefined);
+    let rejectCallback!: (err: Error) => void;
+    const callbackPromise = new Promise<{ token: string; email: string }>((_, reject) => {
+      rejectCallback = reject;
+    });
+    // Real auth-server contract: close() rejects callbackPromise with
+    // "Auth server closed". The mock has to honour that or the CLI hangs.
+    const close = vi.fn(async () => {
+      rejectCallback(new Error('Auth server closed'));
+    });
     vi.mocked(authServer.startAuthServer).mockResolvedValue({
       port: 54321,
-      callbackPromise: new Promise(() => {}),
+      callbackPromise,
       close,
     });
 

@@ -36,7 +36,7 @@ type FlagValue = boolean | string;
 /** Flags that consume the following argv entry as their value.
  *  All other flags are parsed as booleans so positional args like
  *  `push --dry-run some-file` are never accidentally swallowed. */
-const VALUE_FLAGS = new Set<string>(['project', 'label']);
+const VALUE_FLAGS = new Set<string>(['project', 'label', 'timeout']);
 
 interface ParsedArgs {
   readonly command: Command;
@@ -175,12 +175,59 @@ export function platformBrowserOpener(url: string): Promise<void> {
   });
 }
 
-async function handleInit(openBrowser: (url: string) => Promise<void>): Promise<void> {
+const DEFAULT_AUTH_TIMEOUT_MS = 120_000;
+const WAIT_HINT_INTERVAL_MS = 10_000;
+
+function resolveAuthTimeout(flags: Readonly<Record<string, FlagValue>>): number {
+  const flag = flagString(flags, 'timeout');
+  if (flag !== undefined) {
+    const parsed = Number(flag);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const envRaw = process.env['NO_TICKETS_AUTH_TIMEOUT_MS'];
+  if (envRaw) {
+    const parsed = Number(envRaw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_AUTH_TIMEOUT_MS;
+}
+
+async function handleInit(
+  openBrowser: (url: string) => Promise<void>,
+  flags: Readonly<Record<string, FlagValue>>,
+): Promise<void> {
   const authUrl = process.env['NO_TICKETS_AUTH_URL'] ?? DEFAULT_AUTH_URL;
+  const timeoutMs = resolveAuthTimeout(flags);
+
+  let waitHintTimer: NodeJS.Timeout | undefined;
+  let sigintHandler: (() => void) | undefined;
+  let cancelled = false;
+  let serverClose: (() => Promise<void>) | undefined;
+
+  const cleanup = (): void => {
+    if (waitHintTimer) clearInterval(waitHintTimer);
+    if (sigintHandler) process.off('SIGINT', sigintHandler);
+  };
 
   try {
     const result = await resolveInitAuth({
       authUrl,
+      timeoutMs,
+      onServerReady: ({ close }) => {
+        serverClose = close;
+        sigintHandler = () => {
+          cancelled = true;
+          void close();
+        };
+        process.once('SIGINT', sigintHandler);
+
+        const startedAt = Date.now();
+        const totalSeconds = Math.round(timeoutMs / 1000);
+        waitHintTimer = setInterval(() => {
+          const elapsed = Math.round((Date.now() - startedAt) / 1000);
+          console.log(`Still waiting for browser callback (${elapsed}s / ${totalSeconds}s)…`);
+        }, WAIT_HINT_INTERVAL_MS);
+      },
       openBrowser: async (url) => {
         console.log(`Opening browser to authenticate:\n  ${url}\n(If the browser does not open, paste the URL above.)`);
         try {
@@ -190,13 +237,23 @@ async function handleInit(openBrowser: (url: string) => Promise<void>): Promise<
         }
       },
     });
+    cleanup();
     if (result.isNewAuth) {
       console.log('Authenticated. Credentials saved to ~/.notickets/credentials.');
     } else {
       console.log(`Already authenticated as ${result.email}. Run \`rm ~/.notickets/credentials\` to sign out.`);
     }
   } catch (err) {
+    cleanup();
+    if (cancelled) {
+      console.error('Cancelled.');
+      process.exitCode = 130;
+      return;
+    }
     fail(err instanceof Error ? err.message : 'Authentication failed');
+  } finally {
+    // Best-effort: ensure the auth server is closed even if cleanup raced.
+    if (cancelled && serverClose) await serverClose().catch(() => {});
   }
 }
 
@@ -266,7 +323,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
       await handleToken(parsed.args, parsed.flags);
       break;
     case 'init':
-      await handleInit(openBrowser);
+      await handleInit(openBrowser, parsed.flags);
       break;
     case 'unknown':
       console.error(`Unknown command: ${String(argv[0]).replace(/[\x00-\x1f\x7f]/g, '')}\nRun "npx no-tickets --help" for usage.`);

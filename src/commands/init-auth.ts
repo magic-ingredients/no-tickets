@@ -5,6 +5,12 @@ import { startAuthServer } from '../sdk/auth-server.js';
 interface InitAuthOptions {
   readonly authUrl: string;
   readonly openBrowser: (url: string) => Promise<void>;
+  /** Forwarded to startAuthServer. Caller is responsible for sourcing the value. */
+  readonly timeoutMs?: number;
+  /** Optional hook invoked once the local auth server is listening. Lets the
+   *  caller install signal handlers / progress timers that need access to the
+   *  server's close() function. Must NOT throw. */
+  readonly onServerReady?: (server: { close: () => Promise<void> }) => void;
 }
 
 interface InitAuthResult {
@@ -37,7 +43,11 @@ export async function resolveInitAuth(options: InitAuthOptions): Promise<InitAut
   }
 
   const code = generateNonce();
-  const server = await startAuthServer({ expectedState: code });
+  const server = await startAuthServer({
+    expectedState: code,
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  });
+  options.onServerReady?.({ close: server.close });
 
   try {
     const callbackUrl = buildCallbackUrl(options.authUrl, server.port, code);

@@ -1,6 +1,91 @@
 {
   "fixes": [
     {
+      "id": "wire-init-command",
+      "title": "Wire init command to browser OAuth flow",
+      "status": "in_progress",
+      "severity": "high",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Wire init command to resolveInitAuth",
+          "status": "in_progress",
+          "commitSha": "6caf8ab55abd91585f0266a879dc89a5df21e427",
+          "testCommitSha": "62a85386d2999c0d817dbabb151a80869a72a657",
+          "redStartedAt": "2026-04-23T17:15:55.707Z",
+          "greenStartedAt": "2026-04-23T17:16:43.833Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-23T17:18:34.237Z",
+              "completedAt": "2026-04-23T17:24:18.287Z",
+              "reviewSha": "6caf8ab",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-23T17:24:18.287Z",
+              "refactorCommitSha": "989c37a2388162dd524b851c45023ece38382daf",
+              "refactorCompletedAt": "2026-04-23T17:27:06.524Z",
+              "refactorCommittedAt": "2026-04-23T17:27:06.524Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-23T17:27:06.524Z",
+              "completedAt": "2026-04-23T17:34:31.833Z",
+              "reviewSha": "6caf8ab",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-23T17:34:31.833Z"
+            }
+          }
+        },
+        {
+          "id": "task-2",
+          "description": "Bump to 2.0.4 and release",
+          "status": "completed",
+          "commitSha": "165d9cb",
+          "committedAt": "2026-04-24T06:43:55.990Z",
+          "completedAt": "2026-04-23T17:36:08.127Z"
+        },
+        {
+          "id": "task-3",
+          "description": "Align CLI with hardened /auth/cli protocol (port + code + email)",
+          "status": "completed",
+          "commitSha": "60bd4642615f7e0a6d2f3f87f3263c1305d0f014",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-24T06:44:05.502Z",
+          "greenStartedAt": "2026-04-24T06:47:00.611Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-24T06:49:19.704Z",
+              "completedAt": "2026-04-24T06:51:34.236Z",
+              "reviewSha": "60bd464",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-24T06:51:34.236Z",
+              "refactorCommitSha": "301ff6bbeb607d50d2aaadca59dd73b1416a6003",
+              "refactorCompletedAt": "2026-04-24T06:54:30.222Z",
+              "refactorCommittedAt": "2026-04-24T06:54:30.222Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-24T06:54:30.222Z",
+              "completedAt": "2026-04-24T07:01:11.359Z",
+              "reviewSha": "301ff6b",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-24T07:01:11.359Z",
+              "refactorCommitSha": "5db53f2c61a80c4c137b87f2f361ceace0159108",
+              "refactorCompletedAt": "2026-04-24T07:06:49.426Z",
+              "refactorCommittedAt": "2026-04-24T07:06:49.426Z"
+            }
+          },
+          "completedAt": "2026-04-24T07:06:49.426Z"
+        },
+        {
+          "id": "task-4",
+          "description": "Bump to 2.0.5 and release",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/wire-init-command.md",
+      "reported": "2026-04-23",
+      "resolved": null,
+      "archived": false
+    },
+    {
       "id": "testing-hygiene",
       "title": "Testing hygiene fixes",
       "status": "completed",
@@ -172,9 +257,8 @@
         }
       ],
       "filePath": ".tiny-brain/fixes/schema-domain-rename.md",
-      "reported": "2026-04-22T19:30:00.000Z",
-      "resolved": "2026-04-22T19:45:00.000Z",
-      "archived": true,
+      "reported": "2026-04-22",
+      "resolved": "2026-04-22",
       "resolution": {
         "rootCause": "Server renamed Push payload schemas per ADR-0004; client was still using old generic names (project/dev/pm/quality), breaking the push endpoint.",
         "fix": [
@@ -197,7 +281,8 @@
           "docs/prd/no-tickets-client/features/push-schemas.md",
           "docs/prd/no-tickets-client/features/push-cli.md"
         ]
-      }
+      },
+      "archived": true
     },
     {
       "id": "quick-quality-fixes",
@@ -639,6 +724,70 @@
       "archived": true
     },
     {
+      "id": "client-drop-api-prefix",
+      "title": "Drop /api from client request paths",
+      "status": "completed",
+      "severity": "high",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Strip /api from client request paths",
+          "status": "in_progress",
+          "commitSha": "b4acb79d9af961638983447ec0ceaebef82a69c1",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-23T15:55:47.032Z",
+          "greenStartedAt": "2026-04-23T15:55:47.032Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-23T15:56:53.045Z",
+              "completedAt": "2026-04-23T16:00:37.334Z",
+              "reviewSha": "b4acb79",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-23T16:00:37.334Z",
+              "refactorCommitSha": "89f7c4e9fc8a0051d35d57bc733ccc14086ce36f",
+              "refactorCompletedAt": "2026-04-23T16:02:51.619Z",
+              "refactorCommittedAt": "2026-04-23T16:02:51.619Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-23T16:02:51.619Z",
+              "completedAt": "2026-04-23T16:09:27.852Z",
+              "reviewSha": "b4acb79",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-23T16:09:27.852Z"
+            }
+          }
+        },
+        {
+          "id": "task-2",
+          "description": "Bump to 2.0.3 and release",
+          "status": "completed",
+          "completedAt": "2026-04-23T15:56:26.821Z"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/client-drop-api-prefix.md",
+      "reported": "2026-04-23",
+      "resolved": "2026-04-23",
+      "resolution": {
+        "rootCause": "Client baked in the CF Pages edge `/api` prefix; the API itself mounts routes at /v1/*.",
+        "fix": [
+          "Flat rename /api/v1/ → /v1/ across 8 files",
+          "Released 2.0.3 via GitHub release"
+        ],
+        "filesModified": [
+          "src/sdk/api-client.ts",
+          "src/sdk/__tests__/api-client.test.ts",
+          "src/commands/token.ts",
+          "src/commands/__tests__/token.test.ts",
+          "src/__tests__/token-cli-e2e.test.ts",
+          "src/__tests__/token-e2e.test.ts",
+          "src/__tests__/push-e2e.test.ts",
+          "src/__tests__/mcp-e2e.test.ts",
+          "package.json"
+        ]
+      },
+      "archived": true
+    },
+    {
       "id": "branch-protection",
       "title": "Add branch protection rules to main before going public",
       "status": "not_started",
@@ -656,5 +805,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-22T18:47:30.782Z"
+  "lastSynced": "2026-04-24T07:06:49.426Z"
 }

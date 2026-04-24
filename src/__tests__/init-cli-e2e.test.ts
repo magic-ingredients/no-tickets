@@ -23,6 +23,7 @@ beforeEach(async () => {
   vi.stubEnv('NO_TICKETS_HOME', testDir);
   delete process.env['NO_TICKETS_TOKEN'];
   delete process.env['NO_TICKETS_AUTH_URL'];
+  delete process.env['NO_TICKETS_AUTH_TIMEOUT_MS'];
 
   openedUrls = [];
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -121,6 +122,87 @@ describe('init command e2e', () => {
 
     expect(process.exitCode).toBe(1);
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining(SENTINEL));
+  });
+
+  it('forwards NO_TICKETS_AUTH_TIMEOUT_MS to the auth server as timeoutMs', async () => {
+    vi.stubEnv('NO_TICKETS_AUTH_TIMEOUT_MS', '7500');
+    stubAuthServer({ token: 'nt_session_t' });
+
+    await runCli(['init'], { openBrowser });
+
+    const startCall = vi.mocked(authServer.startAuthServer).mock.calls[0]?.[0];
+    expect(startCall?.timeoutMs).toBe(7500);
+  });
+
+  it('forwards --timeout flag value to the auth server as timeoutMs', async () => {
+    stubAuthServer({ token: 'nt_session_t' });
+
+    await runCli(['init', '--timeout', '4500'], { openBrowser });
+
+    const startCall = vi.mocked(authServer.startAuthServer).mock.calls[0]?.[0];
+    expect(startCall?.timeoutMs).toBe(4500);
+  });
+
+  it('--timeout flag overrides NO_TICKETS_AUTH_TIMEOUT_MS', async () => {
+    vi.stubEnv('NO_TICKETS_AUTH_TIMEOUT_MS', '7500');
+    stubAuthServer({ token: 'nt_session_t' });
+
+    await runCli(['init', '--timeout', '1000'], { openBrowser });
+
+    const startCall = vi.mocked(authServer.startAuthServer).mock.calls[0]?.[0];
+    expect(startCall?.timeoutMs).toBe(1000);
+  });
+
+  it('emits a periodic "still waiting" hint while the callback is pending', async () => {
+    vi.useFakeTimers();
+    try {
+      // Never-resolving callback so the periodic timer is the only thing to fire.
+      const close = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(authServer.startAuthServer).mockResolvedValue({
+        port: 54321,
+        callbackPromise: new Promise(() => {}),
+        close,
+      });
+
+      const cliPromise = runCli(['init', '--timeout', '60000'], { openBrowser });
+
+      // Drain microtasks so the auth-server stub resolves and the callback await begins.
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const hint = logSpy.mock.calls.find((call: unknown[]) =>
+        typeof call[0] === 'string' && (call[0] as string).toLowerCase().includes('still waiting'),
+      );
+      expect(hint).toBeDefined();
+
+      // Let the configured 60s timeout fire so the awaited promise settles.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await cliPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('SIGINT during init closes the auth server and prints "Cancelled."', async () => {
+    const close = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(authServer.startAuthServer).mockResolvedValue({
+      port: 54321,
+      callbackPromise: new Promise(() => {}),
+      close,
+    });
+
+    const cliPromise = runCli(['init'], { openBrowser });
+
+    // Wait for handleInit to install its SIGINT listener.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    process.emit('SIGINT');
+
+    await cliPromise;
+
+    expect(close).toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Cancelled'));
+    expect(process.exitCode).toBe(130);
   });
 
   it('still completes auth when the browser opener rejects (URL-paste fallback)', async () => {

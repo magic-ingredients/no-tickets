@@ -3,7 +3,7 @@
     {
       "id": "wire-init-command",
       "title": "Wire init command to browser OAuth flow",
-      "status": "in_progress",
+      "status": "completed",
       "severity": "high",
       "tasks": [
         {
@@ -77,13 +77,14 @@
         {
           "id": "task-4",
           "description": "Bump to 2.0.5 and release",
-          "status": "not_started"
+          "status": "completed",
+          "completedAt": "2026-04-24T07:08:04.031Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/wire-init-command.md",
       "reported": "2026-04-23",
-      "resolved": null,
-      "archived": false
+      "resolved": "2026-04-24",
+      "archived": true
     },
     {
       "id": "testing-hygiene",
@@ -521,6 +522,83 @@
       "archived": true
     },
     {
+      "id": "init-wait-ergonomics",
+      "title": "Make `init` wait less hostile when the server doesn't redirect",
+      "status": "completed",
+      "severity": "minor",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Timeout knob + wait indicator + SIGINT handler",
+          "status": "in_progress",
+          "commitSha": "e99bfcc2c803e0f2aa5fd6abb4a2443995bda6f8",
+          "testCommitSha": "824b6be1c20f2f2345423dffbb32f67d9c5516d8",
+          "redStartedAt": "2026-04-24T07:15:29.143Z",
+          "greenStartedAt": "2026-04-24T07:17:06.810Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-24T07:20:13.784Z",
+              "completedAt": "2026-04-24T07:22:37.985Z",
+              "reviewSha": "e99bfcc",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-24T07:22:37.985Z",
+              "refactorCommitSha": "3f1d221723f013187ab5a17ece12265429e3bb1c",
+              "refactorCompletedAt": "2026-04-24T07:25:36.454Z",
+              "refactorCommittedAt": "2026-04-24T07:25:36.454Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-24T07:25:36.456Z",
+              "completedAt": "2026-04-24T07:33:14.531Z",
+              "reviewSha": "3f1d221",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-24T07:33:14.531Z"
+            }
+          }
+        },
+        {
+          "id": "task-2",
+          "description": "--env staging|production preset (resolves both API + auth URLs)",
+          "status": "completed",
+          "commitSha": "bbc63950dbc1248bcfd4d34aad43ad4ed7a68bd5",
+          "testCommitSha": "skipped",
+          "redStartedAt": "2026-04-24T07:42:28.156Z",
+          "greenStartedAt": "2026-04-24T07:46:29.671Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-04-24T07:54:38.239Z",
+              "completedAt": "2026-04-24T07:57:37.132Z",
+              "reviewSha": "bbc6395",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-24T07:57:37.132Z",
+              "refactorCommitSha": "00123312f4d57714ba6a378ce7645818e2288bff",
+              "refactorCompletedAt": "2026-04-24T08:01:35.096Z",
+              "refactorCommittedAt": "2026-04-24T08:01:35.096Z"
+            },
+            "mutation": {
+              "startedAt": "2026-04-24T08:01:35.096Z",
+              "completedAt": "2026-04-24T08:07:21.957Z",
+              "reviewSha": "bbc6395",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-04-24T08:07:21.957Z",
+              "refactorCommitSha": "e6b4af63e53b99b918d6fccd8e3179c5a7f7a948",
+              "refactorCompletedAt": "2026-04-24T08:11:04.991Z",
+              "refactorCommittedAt": "2026-04-24T08:11:04.991Z"
+            }
+          },
+          "completedAt": "2026-04-24T08:11:04.991Z"
+        },
+        {
+          "id": "task-3",
+          "description": "Ship under v2.0.5",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/init-wait-ergonomics.md",
+      "reported": "2026-04-24",
+      "resolved": "2026-04-24",
+      "archived": true
+    },
+    {
       "id": "extract-read-notickets-dir",
       "title": "Extract and harden shared readNoTicketsDir",
       "status": "completed",
@@ -805,5 +883,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-24T07:06:49.426Z"
+  "lastSynced": "2026-04-24T08:11:04.991Z"
 }

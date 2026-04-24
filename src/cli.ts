@@ -57,11 +57,22 @@ function flagString(flags: Readonly<Record<string, FlagValue>>, key: string): st
   return typeof value === 'string' ? value : undefined;
 }
 
-function urlsForFlags(flags: Readonly<Record<string, FlagValue>>): ResolvedUrls | { error: string } {
+function urlsForFlagsOrFail(flags: Readonly<Record<string, FlagValue>>): ResolvedUrls | null {
+  const profile = flagString(flags, 'profile');
   try {
-    return resolveUrls({ profile: flagString(flags, 'profile') });
+    const resolved = resolveUrls({ profile });
+    if (
+      resolved.source === 'profile' &&
+      (process.env['NO_TICKETS_API_URL'] || process.env['NO_TICKETS_AUTH_URL'])
+    ) {
+      console.error(
+        `Note: --profile ${profile} is shadowing NO_TICKETS_API_URL / NO_TICKETS_AUTH_URL env vars.`,
+      );
+    }
+    return resolved;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'failed to resolve URLs' };
+    fail(err instanceof Error ? err.message : 'failed to resolve URLs');
+    return null;
   }
 }
 
@@ -72,8 +83,8 @@ function loadPushConfig(apiUrl: string) {
 }
 
 async function handlePush(flags: Readonly<Record<string, FlagValue>>): Promise<void> {
-  const urls = urlsForFlags(flags);
-  if ('error' in urls) return fail(urls.error);
+  const urls = urlsForFlagsOrFail(flags);
+  if (urls === null) return;
 
   const session = detectAgent();
   const isStdin = Boolean(flags['stdin']);
@@ -128,8 +139,8 @@ async function handleToken(
   flags: Readonly<Record<string, FlagValue>>,
 ): Promise<void> {
   const subcommand = subcommandArgs[0];
-  const urls = urlsForFlags(flags);
-  if ('error' in urls) return fail(urls.error);
+  const urls = urlsForFlagsOrFail(flags);
+  if (urls === null) return;
   const { apiUrl } = urls;
 
   switch (subcommand) {
@@ -216,8 +227,8 @@ async function handleInit(
   openBrowser: (url: string) => Promise<void>,
   flags: Readonly<Record<string, FlagValue>>,
 ): Promise<void> {
-  const urls = urlsForFlags(flags);
-  if ('error' in urls) return fail(urls.error);
+  const urls = urlsForFlagsOrFail(flags);
+  if (urls === null) return;
   const timeoutResult = resolveAuthTimeout(flags);
   if (typeof timeoutResult === 'object') return fail(timeoutResult.error);
   const timeoutMs = timeoutResult;
@@ -292,8 +303,8 @@ async function handleInit(
 }
 
 function handleStatus(flags: Readonly<Record<string, FlagValue>>): void {
-  const urls = urlsForFlags(flags);
-  if ('error' in urls) return fail(urls.error);
+  const urls = urlsForFlagsOrFail(flags);
+  if (urls === null) return;
   try {
     console.log(JSON.stringify(describeAuthStatus({ apiUrl: urls.apiUrl, authUrl: urls.authUrl })));
   } catch {

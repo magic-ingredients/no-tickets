@@ -57,13 +57,13 @@ export function resolveAuth(): ResolvedAuth {
  * reflect --profile / env / pair-validation). Without it, falls back to
  * env-only resolution for the MCP tool's simpler call shape.
  */
-export function describeAuthStatus(urls?: { readonly apiUrl: string; readonly authUrl?: string }): AuthStatus {
+export function describeAuthStatus(urls?: { readonly apiUrl: string; readonly authUrl: string }): AuthStatus {
   const auth = resolveAuth();
   return {
     authenticated: true,
     source: auth.source,
     tokenType: auth.tokenType,
     apiUrl: urls?.apiUrl ?? process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL,
-    ...(urls?.authUrl !== undefined ? { authUrl: urls.authUrl } : {}),
+    ...(urls !== undefined ? { authUrl: urls.authUrl } : {}),
   };
 }

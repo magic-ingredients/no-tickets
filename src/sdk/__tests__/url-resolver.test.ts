@@ -58,6 +58,20 @@ describe('resolveUrls', () => {
     expect(() => resolveUrls({})).toThrow(/NO_TICKETS_API_URL is not/);
   });
 
+  it('pair-validation error includes the offending value', () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://typo.example.com');
+
+    expect(() => resolveUrls({})).toThrow(/typo\.example\.com/);
+  });
+
+  it('treats whitespace-only env vars as unset', () => {
+    vi.stubEnv('NO_TICKETS_API_URL', '   ');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', '\t');
+
+    const resolved = resolveUrls({});
+    expect(resolved.source).toBe('default');
+  });
+
   it('treats empty-string env vars as unset', () => {
     vi.stubEnv('NO_TICKETS_API_URL', '');
     vi.stubEnv('NO_TICKETS_AUTH_URL', '');
@@ -106,16 +120,32 @@ describe('resolveUrls with --profile', () => {
     expect(() => resolveUrls({ profile: 'staging' })).toThrow(/Available: production/);
   });
 
-  it('errors when the file is malformed JSON', async () => {
+  it('errors with a distinct "invalid JSON" message when the file is malformed', async () => {
     await writeConfig('not json');
 
-    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/profile "staging" not found/);
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/contains invalid JSON/);
   });
 
-  it('errors when the profile entry is missing required fields', async () => {
-    await writeConfig(JSON.stringify({ profiles: { staging: { apiUrl: 'x' } } }));
+  it('errors when the profile entry is missing apiUrl', async () => {
+    await writeConfig(JSON.stringify({ profiles: { staging: { authUrl: 'https://x' } } }));
 
-    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/profile "staging" not found/);
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/is invalid/);
+  });
+
+  it('errors when apiUrl is not an http(s) URL', async () => {
+    await writeConfig(JSON.stringify({
+      profiles: { staging: { apiUrl: 'not-a-url', authUrl: 'https://x' } },
+    }));
+
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/is invalid/);
+  });
+
+  it('errors when apiUrl is an empty string', async () => {
+    await writeConfig(JSON.stringify({
+      profiles: { staging: { apiUrl: '', authUrl: 'https://x' } },
+    }));
+
+    expect(() => resolveUrls({ profile: 'staging' })).toThrow(/is invalid/);
   });
 
   it('--profile wins over env vars', async () => {

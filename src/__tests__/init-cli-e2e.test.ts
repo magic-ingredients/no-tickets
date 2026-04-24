@@ -234,14 +234,51 @@ describe('init command e2e', () => {
 
     await runCli(['init'], { openBrowser });
 
-    const apiHint = logSpy.mock.calls.find((call: unknown[]) =>
-      typeof call[0] === 'string' && (call[0] as string).startsWith('Using API:'),
+    expect(logSpy).toHaveBeenCalledWith('Using API: https://api.no-tickets.com');
+    expect(logSpy).toHaveBeenCalledWith('Using Auth: https://app.no-tickets.com/api/auth/cli');
+  });
+
+  it('echoes the resolved env-var URLs (not the defaults) when both env vars are set', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api-staging.example.com');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app-staging.example.com/api/auth/cli');
+    stubAuthServer({ token: 'nt_session_x' });
+
+    await runCli(['init'], { openBrowser });
+
+    expect(logSpy).toHaveBeenCalledWith('Using API: https://api-staging.example.com');
+    expect(logSpy).toHaveBeenCalledWith('Using Auth: https://app-staging.example.com/api/auth/cli');
+  });
+
+  it('exits 1 when only NO_TICKETS_AUTH_URL is set (inverse pair-validation)', async () => {
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.example.com/api/auth/cli');
+
+    await runCli(['init'], { openBrowser });
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('NO_TICKETS_API_URL'));
+    expect(authServer.startAuthServer).not.toHaveBeenCalled();
+  });
+
+  it('warns when --profile shadows NO_TICKETS_API_URL / NO_TICKETS_AUTH_URL env vars', async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(
+      join(testDir, '.notickets', 'config.json'),
+      JSON.stringify({
+        profiles: {
+          staging: { apiUrl: 'https://from-profile.example.com', authUrl: 'https://from-profile-auth.example.com/api/auth/cli' },
+        },
+      }),
     );
-    const authHint = logSpy.mock.calls.find((call: unknown[]) =>
-      typeof call[0] === 'string' && (call[0] as string).startsWith('Using Auth:'),
-    );
-    expect(apiHint).toBeDefined();
-    expect(authHint).toBeDefined();
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://from-env.example.com');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://from-env-auth.example.com/api/auth/cli');
+    stubAuthServer({ token: 'nt_session_x' });
+
+    await runCli(['init', '--profile', 'staging'], { openBrowser });
+
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('shadowing'));
+    // And the profile URL still wins.
+    expect(logSpy).toHaveBeenCalledWith('Using API: https://from-profile.example.com');
   });
 
   it('exits 1 with a clear error when --timeout is not a positive number', async () => {

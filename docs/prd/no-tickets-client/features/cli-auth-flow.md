@@ -54,11 +54,17 @@ Receives the token redirect from the browser OAuth flow.
 
 **Expected changes:**
 - Start HTTP server on random available port
-- Listen for GET `/callback?token=xxx`
-- Extract token, shut down server
-- Return token to calling code
+- Accept an `expectedState` (CSRF nonce) at construction; reject any callback whose `state` query param does not match
+- Listen for GET `/callback?token=xxx&email=yyy&state=NONCE`
+- Extract token + email, shut down server, resolve `callbackPromise` with `{ token, email }`
+- Reject callbacks with method other than GET, missing/empty token, missing email, or mismatched state with HTTP 400 — and do not settle the promise (legitimate flow keeps waiting until timeout)
 - Timeout after 120 seconds (user didn't complete login)
 - Handle port conflicts gracefully
+
+**Wire format the CLI uses to talk to the server:**
+- CLI generates `code = randomBytes(16).toString('hex')` (128-bit CSRF nonce)
+- Browser opens `https://app.no-tickets.com/api/auth/cli?port=PORT&code=NONCE`
+- Server's localhost redirect: `http://127.0.0.1:PORT/callback?token=…&email=…&state=NONCE` where `state` echoes the `code` the CLI sent
 
 ### 2. Build credential storage
 status: completed

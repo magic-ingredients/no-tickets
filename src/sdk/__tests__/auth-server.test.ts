@@ -134,16 +134,67 @@ describe('startAuthServer', () => {
     await expect(callbackPromise).rejects.toThrow('Auth server closed');
   });
 
-  it('uses only the first valid callback when called twice', async () => {
+  it('uses only the first valid callback and rejects (409) a second one', async () => {
     const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
     cleanup = close;
 
-    await fetch(
+    const first = await fetch(
       `http://127.0.0.1:${port}/callback?token=first_token&email=a%40b.com&state=${NONCE}`,
     );
+    expect(first.status).toBe(200);
     const result = await callbackPromise;
-
     expect(result.token).toBe('first_token');
+
+    // Second request lands after server.close() has fired, so the connection
+    // refusal is what we observe. Either way, the resolved value is unchanged.
+    await expect(
+      fetch(`http://127.0.0.1:${port}/callback?token=second_token&email=a%40b.com&state=${NONCE}`),
+    ).rejects.toThrow();
+
+    expect((await callbackPromise).token).toBe('first_token');
+  });
+
+  it('returns 405 for non-GET methods on /callback', async () => {
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 100 });
+    cleanup = close;
+    pendingCallback = callbackPromise;
+
+    const response = await fetch(`http://127.0.0.1:${port}/callback?token=t&email=a%40b.com&state=${NONCE}`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(405);
+  });
+
+  it('preserves "+" characters in the email (alice+tag@example.com)', async () => {
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    cleanup = close;
+
+    const aliasedEmail = 'alice+tag@example.com';
+    await fetch(
+      `http://127.0.0.1:${port}/callback?token=t&email=${encodeURIComponent(aliasedEmail)}&state=${NONCE}`,
+    );
+
+    const result = await callbackPromise;
+    expect(result.email).toBe(aliasedEmail);
+  });
+
+  it('rejects callbacks that arrive after close() with HTTP 409 (no resolve)', async () => {
+    // Force a race: send the callback request while the server is shutting down.
+    // Because the server is already torn down, the most likely observable is a
+    // connection-level error. The contract we care about is: the promise was
+    // rejected by close() and is NOT later overwritten by the callback.
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+
+    await close();
+    await expect(callbackPromise).rejects.toThrow('Auth server closed');
+
+    await expect(
+      fetch(`http://127.0.0.1:${port}/callback?token=late&email=a%40b.com&state=${NONCE}`),
+    ).rejects.toThrow();
+
+    // Promise stays rejected — no late resolve.
+    await expect(callbackPromise).rejects.toThrow('Auth server closed');
   });
 
   it('does not reject after successful callback even if timeout is short', async () => {

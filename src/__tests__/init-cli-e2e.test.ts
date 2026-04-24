@@ -242,22 +242,113 @@ describe('init command e2e', () => {
     }
   });
 
-  it('SIGINT after auth completes does NOT mark the run as cancelled', async () => {
-    stubAuthServer({ token: 'nt_session_done', email: 'a@b.com' });
+  it('SIGINT handler captured before completion is a no-op once `completed=true`', async () => {
+    // We can't drive this through process.emit('SIGINT') because process.once
+    // removes the listener after one fire, so by the time auth has completed
+    // there's nothing for emit() to invoke. Instead capture the actual handler
+    // function passed to process.once and call it directly post-completion.
+    const onceSpy = vi.spyOn(process, 'once');
+    const close = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(authServer.startAuthServer).mockResolvedValue({
+      port: 54321,
+      callbackPromise: Promise.resolve({ token: 'nt_session_done', email: 'a@b.com' }),
+      close,
+    });
 
     await runCli(['init'], { openBrowser });
 
-    // Auth completed; the SIGINT handler should be uninstalled. Firing SIGINT
-    // here MUST NOT print Cancelled or change exit code.
-    process.exitCode = undefined;
-    process.emit('SIGINT');
+    const sigintRegistration = onceSpy.mock.calls.find((call) => call[0] === 'SIGINT');
+    expect(sigintRegistration).toBeDefined();
+    const handler = sigintRegistration![1] as () => void;
+
+    // resolveInitAuth's finally block already calls close() on success — that
+    // call doesn't count for this assertion. Reset before the simulated late
+    // SIGINT so we can isolate whether the handler triggered an extra close.
+    close.mockClear();
+
+    handler();
     await new Promise((resolve) => setImmediate(resolve));
 
-    const cancelledLog = errSpy.mock.calls.find((call: unknown[]) =>
-      typeof call[0] === 'string' && (call[0] as string).includes('Cancelled'),
-    );
-    expect(cancelledLog).toBeUndefined();
-    expect(process.exitCode).not.toBe(130);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('cleanup() removes the SIGINT listener and clears the wait timer', async () => {
+    const onceSpy = vi.spyOn(process, 'once');
+    const offSpy = vi.spyOn(process, 'off');
+    stubAuthServer({ token: 'nt_session_t' });
+
+    await runCli(['init', '--timeout', '60000'], { openBrowser });
+
+    const sigintReg = onceSpy.mock.calls.find((call) => call[0] === 'SIGINT');
+    const sigintRem = offSpy.mock.calls.find((call) => call[0] === 'SIGINT');
+    expect(sigintReg).toBeDefined();
+    expect(sigintRem).toBeDefined();
+    expect(sigintReg![1]).toBe(sigintRem![1]);
+  });
+
+  it('wait hint fires exactly at the WAIT_HINT_INTERVAL_MS boundary and reports correct numbers', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveCallback!: (v: { token: string; email: string }) => void;
+      const callbackPromise = new Promise<{ token: string; email: string }>((resolve) => {
+        resolveCallback = resolve;
+      });
+      vi.mocked(authServer.startAuthServer).mockResolvedValue({
+        port: 54321,
+        callbackPromise,
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // --timeout exactly equal to WAIT_HINT_INTERVAL_MS — boundary case.
+      const cliPromise = runCli(['init', '--timeout', '10000'], { openBrowser });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      // Pin the exact format including elapsed and total seconds.
+      expect(logSpy).toHaveBeenCalledWith('Still waiting for browser callback (10s / 10s)…');
+
+      resolveCallback({ token: 'nt_session_done', email: 'a@b.com' });
+      await vi.advanceTimersByTimeAsync(0);
+      await cliPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not emit further wait hints after auth completes', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveCallback!: (v: { token: string; email: string }) => void;
+      const callbackPromise = new Promise<{ token: string; email: string }>((resolve) => {
+        resolveCallback = resolve;
+      });
+      vi.mocked(authServer.startAuthServer).mockResolvedValue({
+        port: 54321,
+        callbackPromise,
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const cliPromise = runCli(['init', '--timeout', '60000'], { openBrowser });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const hintsAfterFirstInterval = logSpy.mock.calls.filter((call: unknown[]) =>
+        typeof call[0] === 'string' && (call[0] as string).includes('Still waiting'),
+      ).length;
+
+      resolveCallback({ token: 'nt_session_done', email: 'a@b.com' });
+      await vi.advanceTimersByTimeAsync(0);
+      await cliPromise;
+
+      // Crank the clock well past several would-be intervals.
+      await vi.advanceTimersByTimeAsync(60_000);
+      const hintsAfterCompletion = logSpy.mock.calls.filter((call: unknown[]) =>
+        typeof call[0] === 'string' && (call[0] as string).includes('Still waiting'),
+      ).length;
+
+      expect(hintsAfterCompletion).toBe(hintsAfterFirstInterval);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('SIGINT during init closes the auth server and prints "Cancelled."', async () => {

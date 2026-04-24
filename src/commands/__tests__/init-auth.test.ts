@@ -191,6 +191,36 @@ describe('resolveInitAuth', () => {
     expect(credentials.saveCredentials).not.toHaveBeenCalled();
   });
 
+  it('omits timeoutMs from startAuthServer call when not provided by caller', async () => {
+    vi.mocked(credentials.loadCredentials).mockReturnValue(null);
+    stubAuthServerSuccess('nt_session_x', 'a@b.com');
+    vi.mocked(credentials.saveCredentials).mockReturnValue(undefined);
+
+    await resolveInitAuth({
+      authUrl: 'https://app.no-tickets.com/api/auth/cli',
+      openBrowser: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const startCall = vi.mocked(authServer.startAuthServer).mock.calls[0]?.[0];
+    expect(startCall).toBeDefined();
+    expect('timeoutMs' in startCall!).toBe(false);
+  });
+
+  it('forwards explicit timeoutMs to startAuthServer', async () => {
+    vi.mocked(credentials.loadCredentials).mockReturnValue(null);
+    stubAuthServerSuccess('nt_session_x', 'a@b.com');
+    vi.mocked(credentials.saveCredentials).mockReturnValue(undefined);
+
+    await resolveInitAuth({
+      authUrl: 'https://app.no-tickets.com/api/auth/cli',
+      openBrowser: vi.fn().mockResolvedValue(undefined),
+      timeoutMs: 5000,
+    });
+
+    const startCall = vi.mocked(authServer.startAuthServer).mock.calls[0]?.[0];
+    expect(startCall?.timeoutMs).toBe(5000);
+  });
+
   it('generates a fresh nonce per call', async () => {
     vi.mocked(credentials.loadCredentials).mockReturnValue(null);
     stubAuthServerSuccess('nt_session_a', 'a@b.com');

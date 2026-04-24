@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { loadCredentials, saveCredentials } from '../sdk/credentials.js';
-import { startAuthServer } from '../sdk/auth-server.js';
+import { startAuthServer, type AuthServerHandle } from '../sdk/auth-server.js';
 
 interface InitAuthOptions {
   readonly authUrl: string;
@@ -10,7 +10,7 @@ interface InitAuthOptions {
   /** Optional hook invoked once the local auth server is listening. Lets the
    *  caller install signal handlers / progress timers that need access to the
    *  server's close() function. Must NOT throw. */
-  readonly onServerReady?: (server: { close: () => Promise<void> }) => void;
+  readonly onServerReady?: (server: Pick<AuthServerHandle, 'close'>) => void;
 }
 
 interface InitAuthResult {

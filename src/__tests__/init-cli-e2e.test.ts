@@ -187,6 +187,79 @@ describe('init command e2e', () => {
     }
   });
 
+  it('exits 1 with a clear error when --timeout is not a positive number', async () => {
+    await runCli(['init', '--timeout', 'abc'], { openBrowser });
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--timeout'));
+    expect(authServer.startAuthServer).not.toHaveBeenCalled();
+  });
+
+  it('exits 1 when --timeout is zero', async () => {
+    await runCli(['init', '--timeout', '0'], { openBrowser });
+
+    expect(process.exitCode).toBe(1);
+    expect(authServer.startAuthServer).not.toHaveBeenCalled();
+  });
+
+  it('falls back to default when NO_TICKETS_AUTH_TIMEOUT_MS is malformed (no flag set)', async () => {
+    vi.stubEnv('NO_TICKETS_AUTH_TIMEOUT_MS', 'not-a-number');
+    stubAuthServer({ token: 'nt_session_t' });
+
+    await runCli(['init'], { openBrowser });
+
+    const startCall = vi.mocked(authServer.startAuthServer).mock.calls[0]?.[0];
+    expect(startCall?.timeoutMs).toBe(120_000);
+  });
+
+  it('skips the periodic wait hint when --timeout is shorter than one interval', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveCallback!: (v: { token: string; email: string }) => void;
+      const callbackPromise = new Promise<{ token: string; email: string }>((resolve) => {
+        resolveCallback = resolve;
+      });
+      vi.mocked(authServer.startAuthServer).mockResolvedValue({
+        port: 54321,
+        callbackPromise,
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const cliPromise = runCli(['init', '--timeout', '5000'], { openBrowser });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const hint = logSpy.mock.calls.find((call: unknown[]) =>
+        typeof call[0] === 'string' && (call[0] as string).toLowerCase().includes('still waiting'),
+      );
+      expect(hint).toBeUndefined();
+
+      resolveCallback({ token: 'nt_session_done', email: 'a@b.com' });
+      await vi.advanceTimersByTimeAsync(0);
+      await cliPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('SIGINT after auth completes does NOT mark the run as cancelled', async () => {
+    stubAuthServer({ token: 'nt_session_done', email: 'a@b.com' });
+
+    await runCli(['init'], { openBrowser });
+
+    // Auth completed; the SIGINT handler should be uninstalled. Firing SIGINT
+    // here MUST NOT print Cancelled or change exit code.
+    process.exitCode = undefined;
+    process.emit('SIGINT');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const cancelledLog = errSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).includes('Cancelled'),
+    );
+    expect(cancelledLog).toBeUndefined();
+    expect(process.exitCode).not.toBe(130);
+  });
+
   it('SIGINT during init closes the auth server and prints "Cancelled."', async () => {
     let rejectCallback!: (err: Error) => void;
     const callbackPromise = new Promise<{ token: string; email: string }>((_, reject) => {

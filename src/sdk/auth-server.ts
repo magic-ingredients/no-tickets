@@ -48,7 +48,7 @@ export interface AuthServerHandle {
   readonly close: () => Promise<void>;
 }
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+export const DEFAULT_TIMEOUT_MS = 120_000;
 
 export async function startAuthServer(
   options: AuthServerOptions,

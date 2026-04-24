@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { describeAuthStatus, resolveAuth, DEFAULT_API_URL, NOT_AUTHENTICATED_MESSAGE } from './sdk/auth.js';
 import { createToken, listTokens, revokeToken } from './commands/token.js';
 import { resolveInitAuth } from './commands/init-auth.js';
+import { DEFAULT_TIMEOUT_MS as DEFAULT_AUTH_TIMEOUT_MS } from './sdk/auth-server.js';
 
 const DEFAULT_AUTH_URL = 'https://app.no-tickets.com/api/auth/cli';
 
@@ -175,21 +176,29 @@ export function platformBrowserOpener(url: string): Promise<void> {
   });
 }
 
-const DEFAULT_AUTH_TIMEOUT_MS = 120_000;
 const WAIT_HINT_INTERVAL_MS = 10_000;
 
-function resolveAuthTimeout(flags: Readonly<Record<string, FlagValue>>): number {
-  const flag = flagString(flags, 'timeout');
-  if (flag !== undefined) {
-    const parsed = Number(flag);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+/** Parse a positive-integer ms value. Returns null on invalid input so the
+ *  caller can decide between hard-fail (explicit user input) and silent
+ *  fallback (env var / unset). */
+function parsePositiveMs(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function resolveAuthTimeout(flags: Readonly<Record<string, FlagValue>>): number | { error: string } {
+  const flagRaw = flagString(flags, 'timeout');
+  if (flagRaw !== undefined) {
+    const parsed = parsePositiveMs(flagRaw);
+    if (parsed === null) {
+      return { error: `--timeout: ${flagRaw} is not a positive number of milliseconds` };
+    }
+    return parsed;
   }
-  const envRaw = process.env['NO_TICKETS_AUTH_TIMEOUT_MS'];
-  if (envRaw) {
-    const parsed = Number(envRaw);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return DEFAULT_AUTH_TIMEOUT_MS;
+  const envParsed = parsePositiveMs(process.env['NO_TICKETS_AUTH_TIMEOUT_MS']);
+  return envParsed ?? DEFAULT_AUTH_TIMEOUT_MS;
 }
 
 async function handleInit(
@@ -197,16 +206,21 @@ async function handleInit(
   flags: Readonly<Record<string, FlagValue>>,
 ): Promise<void> {
   const authUrl = process.env['NO_TICKETS_AUTH_URL'] ?? DEFAULT_AUTH_URL;
-  const timeoutMs = resolveAuthTimeout(flags);
+  const timeoutResult = resolveAuthTimeout(flags);
+  if (typeof timeoutResult === 'object') return fail(timeoutResult.error);
+  const timeoutMs = timeoutResult;
 
   let waitHintTimer: NodeJS.Timeout | undefined;
   let sigintHandler: (() => void) | undefined;
-  let cancelled = false;
-  let serverClose: (() => Promise<void>) | undefined;
+  let closeFiredBySigint = false;
+  let completed = false;
 
   const cleanup = (): void => {
     if (waitHintTimer) clearInterval(waitHintTimer);
-    if (sigintHandler) process.off('SIGINT', sigintHandler);
+    if (sigintHandler) {
+      process.off('SIGINT', sigintHandler);
+      sigintHandler = undefined;
+    }
   };
 
   try {
@@ -214,19 +228,26 @@ async function handleInit(
       authUrl,
       timeoutMs,
       onServerReady: ({ close }) => {
-        serverClose = close;
         sigintHandler = () => {
-          cancelled = true;
-          void close();
+          // Race guard: if the auth flow already completed, ignore SIGINT.
+          if (completed) return;
+          closeFiredBySigint = true;
+          close().catch(() => { /* close errors are non-actionable */ });
         };
         process.once('SIGINT', sigintHandler);
 
-        const startedAt = Date.now();
-        const totalSeconds = Math.round(timeoutMs / 1000);
-        waitHintTimer = setInterval(() => {
-          const elapsed = Math.round((Date.now() - startedAt) / 1000);
-          console.log(`Still waiting for browser callback (${elapsed}s / ${totalSeconds}s)…`);
-        }, WAIT_HINT_INTERVAL_MS);
+        // Skip the periodic hint when the timeout is shorter than one interval —
+        // there's no value in a single "waiting (10s / 5s)…" line.
+        if (timeoutMs >= WAIT_HINT_INTERVAL_MS) {
+          const startedAt = Date.now();
+          const totalSeconds = Math.round(timeoutMs / 1000);
+          waitHintTimer = setInterval(() => {
+            const elapsed = Math.round((Date.now() - startedAt) / 1000);
+            console.log(`Still waiting for browser callback (${elapsed}s / ${totalSeconds}s)…`);
+          }, WAIT_HINT_INTERVAL_MS);
+          // unref so a stuck wait timer can never block process exit.
+          waitHintTimer.unref();
+        }
       },
       openBrowser: async (url) => {
         console.log(`Opening browser to authenticate:\n  ${url}\n(If the browser does not open, paste the URL above.)`);
@@ -237,6 +258,7 @@ async function handleInit(
         }
       },
     });
+    completed = true;
     cleanup();
     if (result.isNewAuth) {
       console.log('Authenticated. Credentials saved to ~/.notickets/credentials.');
@@ -245,15 +267,12 @@ async function handleInit(
     }
   } catch (err) {
     cleanup();
-    if (cancelled) {
+    if (closeFiredBySigint) {
       console.error('Cancelled.');
       process.exitCode = 130;
       return;
     }
     fail(err instanceof Error ? err.message : 'Authentication failed');
-  } finally {
-    // Best-effort: ensure the auth server is closed even if cleanup raced.
-    if (cancelled && serverClose) await serverClose().catch(() => {});
   }
 }
 

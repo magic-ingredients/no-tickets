@@ -36,13 +36,16 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-function stubAuthServer(result: { token?: string; rejectWith?: Error }): ReturnType<typeof vi.fn> {
+function stubAuthServer(result: { token?: string; email?: string; rejectWith?: Error }): ReturnType<typeof vi.fn> {
   const close = vi.fn().mockResolvedValue(undefined);
   vi.mocked(authServer.startAuthServer).mockResolvedValue({
     port: 54321,
-    tokenPromise: result.rejectWith
+    callbackPromise: result.rejectWith
       ? Promise.reject(result.rejectWith)
-      : Promise.resolve(result.token ?? 'nt_session_new'),
+      : Promise.resolve({
+          token: result.token ?? 'nt_session_new',
+          email: result.email ?? 'real@user.com',
+        }),
     close,
   });
   return close;
@@ -56,8 +59,10 @@ describe('init command e2e', () => {
 
     expect(openedUrls).toHaveLength(1);
     const opened = new URL(openedUrls[0]!);
-    expect(opened.origin + opened.pathname).toBe('https://app.no-tickets.com/auth/cli');
-    expect(opened.searchParams.get('callback_port')).toBe('54321');
+    expect(opened.origin + opened.pathname).toBe('https://app.no-tickets.com/api/auth/cli');
+    expect(opened.searchParams.get('port')).toBe('54321');
+    expect(opened.searchParams.get('callback_port')).toBeNull();
+    expect(opened.searchParams.get('code')).toMatch(/^[0-9a-f]{32}$/);
 
     const stored = loadCredentials();
     expect(stored?.token).toBe('nt_session_fresh');
@@ -70,20 +75,20 @@ describe('init command e2e', () => {
 
     await runCli(['init'], { openBrowser });
 
-    const urlHint = logSpy.mock.calls.find((call) =>
-      typeof call[0] === 'string' && (call[0] as string).includes('app.no-tickets.com/auth/cli'),
+    const urlHint = logSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).includes('app.no-tickets.com/api/auth/cli'),
     );
     expect(urlHint).toBeDefined();
   });
 
   it('honours NO_TICKETS_AUTH_URL override', async () => {
-    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app-staging.no-tickets.com/auth/cli');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app-staging.no-tickets.com/api/auth/cli');
     stubAuthServer({ token: 'nt_session_staging' });
 
     await runCli(['init'], { openBrowser });
 
     const opened = new URL(openedUrls[0]!);
-    expect(opened.origin + opened.pathname).toBe('https://app-staging.no-tickets.com/auth/cli');
+    expect(opened.origin + opened.pathname).toBe('https://app-staging.no-tickets.com/api/auth/cli');
   });
 
   it('short-circuits when credentials already exist', async () => {
@@ -96,14 +101,13 @@ describe('init command e2e', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('alice@example.com'));
   });
 
-  it('does NOT print the placeholder email on a new auth', async () => {
-    stubAuthServer({ token: 'nt_session_fresh' });
+  it('saves the email returned by the auth server (no placeholder)', async () => {
+    stubAuthServer({ token: 'nt_session_fresh', email: 'real@user.com' });
 
     await runCli(['init'], { openBrowser });
 
-    // resolveInitAuth saves a hardcoded 'authenticated@no-tickets.com' placeholder
-    // pending server-side change. The CLI must not surface it.
-    const leaked = logSpy.mock.calls.find((call) =>
+    expect(loadCredentials()?.email).toBe('real@user.com');
+    const leaked = logSpy.mock.calls.find((call: unknown[]) =>
       typeof call[0] === 'string' && (call[0] as string).includes('authenticated@no-tickets.com'),
     );
     expect(leaked).toBeUndefined();

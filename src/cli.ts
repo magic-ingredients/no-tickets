@@ -11,7 +11,7 @@ import { describeAuthStatus, resolveAuth, DEFAULT_API_URL, NOT_AUTHENTICATED_MES
 import { createToken, listTokens, revokeToken } from './commands/token.js';
 import { resolveInitAuth } from './commands/init-auth.js';
 
-const DEFAULT_AUTH_URL = 'https://app.no-tickets.com/auth/cli';
+const DEFAULT_AUTH_URL = 'https://app.no-tickets.com/api/auth/cli';
 
 export interface CliDeps {
   /** Override for the browser opener. Tests inject a stub; production uses platformBrowserOpener. */

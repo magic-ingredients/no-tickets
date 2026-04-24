@@ -2,29 +2,37 @@ import * as http from 'node:http';
 import { URL } from 'node:url';
 
 export interface AuthServerOptions {
+  /** CSRF nonce that the callback's `state` query param must match. */
+  readonly expectedState: string;
   readonly timeoutMs?: number;
+}
+
+export interface AuthCallbackResult {
+  readonly token: string;
+  readonly email: string;
 }
 
 export interface AuthServerHandle {
   readonly port: number;
-  readonly tokenPromise: Promise<string>;
+  readonly callbackPromise: Promise<AuthCallbackResult>;
   readonly close: () => Promise<void>;
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export async function startAuthServer(
-  options: AuthServerOptions = {},
+  options: AuthServerOptions,
 ): Promise<AuthServerHandle> {
+  const { expectedState } = options;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  let resolveToken: (token: string) => void;
-  let rejectToken: (error: Error) => void;
+  let resolveCallback: (result: AuthCallbackResult) => void;
+  let rejectCallback: (error: Error) => void;
   let settled = false;
 
-  const tokenPromise = new Promise<string>((resolve, reject) => {
-    resolveToken = resolve;
-    rejectToken = reject;
+  const callbackPromise = new Promise<AuthCallbackResult>((resolve, reject) => {
+    resolveCallback = resolve;
+    rejectCallback = reject;
   });
 
   const server = http.createServer((req, res) => {
@@ -37,7 +45,10 @@ export async function startAuthServer(
     }
 
     const token = url.searchParams.get('token');
-    if (!token) {
+    const email = url.searchParams.get('email');
+    const state = url.searchParams.get('state');
+
+    if (!token || !email || !state || state !== expectedState) {
       res.writeHead(400);
       res.end();
       return;
@@ -48,7 +59,7 @@ export async function startAuthServer(
 
     if (!settled) {
       settled = true;
-      resolveToken(token);
+      resolveCallback({ token, email });
       server.close();
     }
   });
@@ -56,7 +67,7 @@ export async function startAuthServer(
   const timeout = setTimeout(() => {
     if (!settled) {
       settled = true;
-      rejectToken(new Error('Authentication timed out — no callback received'));
+      rejectCallback(new Error('Authentication timed out — no callback received'));
       server.close();
     }
   }, timeoutMs);
@@ -65,7 +76,7 @@ export async function startAuthServer(
     clearTimeout(timeout);
     if (!settled) {
       settled = true;
-      rejectToken(new Error('Auth server closed'));
+      rejectCallback(new Error('Auth server closed'));
     }
     return new Promise<void>((resolve) => {
       server.close(() => resolve());
@@ -80,7 +91,7 @@ export async function startAuthServer(
         reject(new Error('Failed to get server address'));
         return;
       }
-      resolve({ port: addr.port, tokenPromise, close });
+      resolve({ port: addr.port, callbackPromise, close });
     });
   });
 }

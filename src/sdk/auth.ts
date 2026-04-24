@@ -14,6 +14,7 @@ export interface AuthStatus {
   readonly source: AuthSource;
   readonly tokenType: TokenType;
   readonly apiUrl: string;
+  readonly authUrl?: string;
 }
 
 export const DEFAULT_API_URL = 'https://api.no-tickets.com';
@@ -51,13 +52,18 @@ export function resolveAuth(): ResolvedAuth {
 /**
  * Resolve auth and shape it into a user-facing status payload.
  * Shared by the CLI `status` command and the MCP `status` tool.
+ *
+ * Optional `urls` allows the CLI to pass already-resolved URLs (so they
+ * reflect --profile / env / pair-validation). Without it, falls back to
+ * env-only resolution for the MCP tool's simpler call shape.
  */
-export function describeAuthStatus(): AuthStatus {
+export function describeAuthStatus(urls?: { readonly apiUrl: string; readonly authUrl?: string }): AuthStatus {
   const auth = resolveAuth();
   return {
     authenticated: true,
     source: auth.source,
     tokenType: auth.tokenType,
-    apiUrl: process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL,
+    apiUrl: urls?.apiUrl ?? process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL,
+    ...(urls?.authUrl !== undefined ? { authUrl: urls.authUrl } : {}),
   };
 }

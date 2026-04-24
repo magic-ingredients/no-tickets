@@ -14,6 +14,7 @@ beforeEach(async () => {
   vi.stubEnv('NO_TICKETS_HOME', testDir);
   delete process.env['NO_TICKETS_TOKEN'];
   delete process.env['NO_TICKETS_API_URL'];
+  delete process.env['NO_TICKETS_AUTH_URL'];
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   process.exitCode = undefined;
@@ -29,6 +30,7 @@ describe('status command e2e', () => {
   it('reports authenticated state from NO_TICKETS_TOKEN env var', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_envtoken');
     vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.com');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.test.com/api/auth/cli');
 
     await runCli(['status']);
 
@@ -39,6 +41,7 @@ describe('status command e2e', () => {
       source: 'env',
       tokenType: 'push',
       apiUrl: 'https://api.test.com',
+      authUrl: 'https://app.test.com/api/auth/cli',
     });
   });
 

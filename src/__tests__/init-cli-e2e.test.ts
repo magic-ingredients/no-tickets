@@ -23,6 +23,7 @@ beforeEach(async () => {
   vi.stubEnv('NO_TICKETS_HOME', testDir);
   delete process.env['NO_TICKETS_TOKEN'];
   delete process.env['NO_TICKETS_AUTH_URL'];
+  delete process.env['NO_TICKETS_API_URL'];
   delete process.env['NO_TICKETS_AUTH_TIMEOUT_MS'];
 
   openedUrls = [];
@@ -82,7 +83,8 @@ describe('init command e2e', () => {
     expect(urlHint).toBeDefined();
   });
 
-  it('honours NO_TICKETS_AUTH_URL override', async () => {
+  it('honours NO_TICKETS_AUTH_URL + NO_TICKETS_API_URL pair override', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api-staging.no-tickets.com');
     vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app-staging.no-tickets.com/api/auth/cli');
     stubAuthServer({ token: 'nt_session_staging' });
 
@@ -185,6 +187,61 @@ describe('init command e2e', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('--profile loads URLs from ~/.notickets/config.json', async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(
+      join(testDir, '.notickets', 'config.json'),
+      JSON.stringify({
+        profiles: {
+          staging: {
+            apiUrl: 'https://api-staging.example.com',
+            authUrl: 'https://app-staging.example.com/api/auth/cli',
+          },
+        },
+      }),
+    );
+    stubAuthServer({ token: 'nt_session_p' });
+
+    await runCli(['init', '--profile', 'staging'], { openBrowser });
+
+    const opened = new URL(openedUrls[0]!);
+    expect(opened.origin + opened.pathname).toBe('https://app-staging.example.com/api/auth/cli');
+  });
+
+  it('exits 1 with a helpful error when --profile is set but config file does not exist', async () => {
+    await runCli(['init', '--profile', 'staging'], { openBrowser });
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('does not exist'));
+    expect(authServer.startAuthServer).not.toHaveBeenCalled();
+  });
+
+  it('exits 1 when only NO_TICKETS_API_URL is set (pair validation)', async () => {
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api.example.com');
+
+    await runCli(['init'], { openBrowser });
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('NO_TICKETS_AUTH_URL'));
+    expect(authServer.startAuthServer).not.toHaveBeenCalled();
+  });
+
+  it('echoes the resolved API and Auth URLs before opening the browser', async () => {
+    stubAuthServer({ token: 'nt_session_x' });
+
+    await runCli(['init'], { openBrowser });
+
+    const apiHint = logSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).startsWith('Using API:'),
+    );
+    const authHint = logSpy.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).startsWith('Using Auth:'),
+    );
+    expect(apiHint).toBeDefined();
+    expect(authHint).toBeDefined();
   });
 
   it('exits 1 with a clear error when --timeout is not a positive number', async () => {

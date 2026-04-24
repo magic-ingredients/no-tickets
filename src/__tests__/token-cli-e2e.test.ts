@@ -40,6 +40,7 @@ describe('token list command e2e', () => {
   it('calls GET /v1/tokens with the session token and prints entries as JSON', async () => {
     vi.stubEnv('NO_TICKETS_TOKEN', 'nt_session_secret');
     vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.com');
+    vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.test.com/api/auth/cli');
     fetchSpy.mockReturnValue(jsonResponse({
       tokens: [
         { id: 'tok-1', prefix: 'nt_push_ab', label: 'CI', createdAt: '2026-04-22T10:00:00Z' },

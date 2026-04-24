@@ -60,6 +60,7 @@ beforeEach(async () => {
   vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_test123');
   vi.stubEnv('NO_TICKETS_PROJECT_ID', 'proj-e2e');
   vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.com');
+  vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.test.com/api/auth/cli');
 
   originalCwd = process.cwd();
   process.chdir(testDir);

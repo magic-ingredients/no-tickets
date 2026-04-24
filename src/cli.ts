@@ -7,12 +7,11 @@ import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
 import { readNoTicketsDir } from './core/fs.js';
 import { spawn } from 'node:child_process';
-import { describeAuthStatus, resolveAuth, DEFAULT_API_URL, NOT_AUTHENTICATED_MESSAGE } from './sdk/auth.js';
+import { describeAuthStatus, resolveAuth, NOT_AUTHENTICATED_MESSAGE } from './sdk/auth.js';
 import { createToken, listTokens, revokeToken } from './commands/token.js';
 import { resolveInitAuth } from './commands/init-auth.js';
 import { DEFAULT_TIMEOUT_MS as DEFAULT_AUTH_TIMEOUT_MS } from './sdk/auth-server.js';
-
-const DEFAULT_AUTH_URL = 'https://app.no-tickets.com/api/auth/cli';
+import { resolveUrls, type ResolvedUrls } from './sdk/url-resolver.js';
 
 export interface CliDeps {
   /** Override for the browser opener. Tests inject a stub; production uses platformBrowserOpener. */
@@ -37,7 +36,7 @@ type FlagValue = boolean | string;
 /** Flags that consume the following argv entry as their value.
  *  All other flags are parsed as booleans so positional args like
  *  `push --dry-run some-file` are never accidentally swallowed. */
-const VALUE_FLAGS = new Set<string>(['project', 'label', 'timeout']);
+const VALUE_FLAGS = new Set<string>(['project', 'label', 'timeout', 'profile']);
 
 interface ParsedArgs {
   readonly command: Command;
@@ -53,18 +52,33 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf-8');
 }
 
-function loadPushConfig() {
-  const apiUrl = process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL;
+function flagString(flags: Readonly<Record<string, FlagValue>>, key: string): string | undefined {
+  const value = flags[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function urlsForFlags(flags: Readonly<Record<string, FlagValue>>): ResolvedUrls | { error: string } {
+  try {
+    return resolveUrls({ profile: flagString(flags, 'profile') });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'failed to resolve URLs' };
+  }
+}
+
+function loadPushConfig(apiUrl: string) {
   const teamId = process.env['NO_TICKETS_TEAM_ID'] ?? '';
   const projectId = process.env['NO_TICKETS_PROJECT_ID'] ?? '';
   return { apiUrl, teamId, projectId };
 }
 
 async function handlePush(flags: Readonly<Record<string, FlagValue>>): Promise<void> {
+  const urls = urlsForFlags(flags);
+  if ('error' in urls) return fail(urls.error);
+
   const session = detectAgent();
   const isStdin = Boolean(flags['stdin']);
   const isDryRun = Boolean(flags['dry-run']);
-  const config = loadPushConfig();
+  const config = loadPushConfig(urls.apiUrl);
 
   const payload = isStdin
     ? await buildStdinPush(session)
@@ -101,11 +115,6 @@ function requireSessionToken(): string | null {
   }
 }
 
-function flagString(flags: Readonly<Record<string, FlagValue>>, key: string): string | undefined {
-  const value = flags[key];
-  return typeof value === 'string' ? value : undefined;
-}
-
 function handleRequestResult(result: { readonly success: boolean; readonly error?: string }, onSuccess: () => void): void {
   if (!result.success) {
     fail(result.error ?? 'Request failed');
@@ -119,7 +128,9 @@ async function handleToken(
   flags: Readonly<Record<string, FlagValue>>,
 ): Promise<void> {
   const subcommand = subcommandArgs[0];
-  const apiUrl = process.env['NO_TICKETS_API_URL'] ?? DEFAULT_API_URL;
+  const urls = urlsForFlags(flags);
+  if ('error' in urls) return fail(urls.error);
+  const { apiUrl } = urls;
 
   switch (subcommand) {
     case 'list': {
@@ -205,10 +216,14 @@ async function handleInit(
   openBrowser: (url: string) => Promise<void>,
   flags: Readonly<Record<string, FlagValue>>,
 ): Promise<void> {
-  const authUrl = process.env['NO_TICKETS_AUTH_URL'] ?? DEFAULT_AUTH_URL;
+  const urls = urlsForFlags(flags);
+  if ('error' in urls) return fail(urls.error);
   const timeoutResult = resolveAuthTimeout(flags);
   if (typeof timeoutResult === 'object') return fail(timeoutResult.error);
   const timeoutMs = timeoutResult;
+
+  console.log(`Using API: ${urls.apiUrl}`);
+  console.log(`Using Auth: ${urls.authUrl}`);
 
   let waitHintTimer: NodeJS.Timeout | undefined;
   let sigintHandler: (() => void) | undefined;
@@ -225,7 +240,7 @@ async function handleInit(
 
   try {
     const result = await resolveInitAuth({
-      authUrl,
+      authUrl: urls.authUrl,
       timeoutMs,
       onServerReady: ({ close }) => {
         sigintHandler = () => {
@@ -276,9 +291,11 @@ async function handleInit(
   }
 }
 
-function handleStatus(): void {
+function handleStatus(flags: Readonly<Record<string, FlagValue>>): void {
+  const urls = urlsForFlags(flags);
+  if ('error' in urls) return fail(urls.error);
   try {
-    console.log(JSON.stringify(describeAuthStatus()));
+    console.log(JSON.stringify(describeAuthStatus({ apiUrl: urls.apiUrl, authUrl: urls.authUrl })));
   } catch {
     console.error(NOT_AUTHENTICATED_MESSAGE);
     process.exitCode = 1;
@@ -324,7 +341,16 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
 
   switch (parsed.command) {
     case 'help':
-      console.log('Usage: npx no-tickets <command> [options]\n\nCommands: init, push, status, validate, connect, disconnect, token');
+      console.log(
+        'Usage: npx no-tickets <command> [options]\n\n' +
+          'Commands: init, push, status, validate, connect, disconnect, token\n\n' +
+          'Common options:\n' +
+          '  --profile <name>   Load API + auth URLs from a named profile in ~/.notickets/config.json\n' +
+          '  --timeout <ms>     Override the OAuth callback wait timeout (init only)\n\n' +
+          'Environment overrides:\n' +
+          '  NO_TICKETS_API_URL + NO_TICKETS_AUTH_URL  (set both or neither)\n' +
+          '  NO_TICKETS_TOKEN, NO_TICKETS_PROJECT_ID, NO_TICKETS_HOME',
+      );
       break;
     case 'version':
       console.log(CLI_VERSION);
@@ -336,7 +362,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
       await handleValidate();
       break;
     case 'status':
-      handleStatus();
+      handleStatus(parsed.flags);
       break;
     case 'token':
       await handleToken(parsed.args, parsed.flags);

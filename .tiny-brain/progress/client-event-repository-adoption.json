@@ -1,0 +1,239 @@
+{
+  "id": "client-event-repository-adoption",
+  "title": "Client Event Repository Adoption — Envelopes, publish(), Discovery",
+  "type": "active",
+  "status": "not_started",
+  "prdId": "client-event-repository-adoption",
+  "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
+  "created": "2026-04-27T14:39:35.599Z",
+  "lastUpdated": "2026-05-06T20:50:37.549Z",
+  "features": [
+    {
+      "id": "envelope-schemas",
+      "number": 1,
+      "title": "Envelope Schemas + SDK Surface Reset",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-1-1",
+          "description": "Define Event envelope (zod + types)",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-2",
+          "description": "Define Subject and SubjectRef",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-3",
+          "description": "Define Interaction envelope",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-4",
+          "description": "Type-ID grammar (parse + format)",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-5",
+          "description": "Trim Session / Actor / PushEnvironment to envelope shape",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-6",
+          "description": "Remove push payload schemas",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-7",
+          "description": "Sub-path export verification",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 7,
+        "completed": 0,
+        "remaining": 7
+      }
+    },
+    {
+      "id": "emit-event-client",
+      "number": 2,
+      "title": "publish() + Subjects + Interactions HTTP Client",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-2-1",
+          "description": "HTTP client core",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-2",
+          "description": "publish (array body)",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-3",
+          "description": "Subjects API",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-4",
+          "description": "Interactions API",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-5",
+          "description": "Remove push command + push HTTP client",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-6",
+          "description": "tiny-brain integration cutover",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 6,
+        "completed": 0,
+        "remaining": 6
+      }
+    },
+    {
+      "id": "registry-introspection",
+      "number": 3,
+      "title": "Registry Introspection + Caching",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-3-1",
+          "description": "Registry HTTP client (list + describe)",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-2",
+          "description": "Cache layer",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-3",
+          "description": "`client.events.list` + `client.events.describe`",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-4",
+          "description": "Async refresh worker",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-5",
+          "description": "Stale-cache detection",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 5,
+        "completed": 0,
+        "remaining": 5
+      }
+    },
+    {
+      "id": "registry-aware-cli",
+      "number": 4,
+      "title": "nt publish / nt event / nt subject / nt action CLIs",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-4-1",
+          "description": "nt event list",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-2",
+          "description": "nt event describe",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-3",
+          "description": "nt publish <type-id>",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-4",
+          "description": "nt subject",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-5",
+          "description": "nt action",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-6",
+          "description": "Drift notification",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-7",
+          "description": "CLI help + docs",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 7,
+        "completed": 0,
+        "remaining": 7
+      }
+    },
+    {
+      "id": "mcp-discovery-tools",
+      "number": 5,
+      "title": "MCP Discovery Tools",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-5-1",
+          "description": "Register tools in the MCP server",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-2",
+          "description": "Wire tools to underlying client primitives",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-3",
+          "description": "Structured error mapping",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-4",
+          "description": "Remove old push MCP tool",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5-5",
+          "description": "Smoke test the discovery flow",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 5,
+        "completed": 0,
+        "remaining": 5
+      }
+    }
+  ],
+  "gitUserName": "Andy Richardson",
+  "gitUserEmail": "rishson@gmail.com",
+  "author": "Andy Richardson",
+  "currentState": {
+    "overallProgress": {
+      "completedFeatures": 0,
+      "totalFeatures": 5,
+      "completedTasks": 0,
+      "totalTasks": 30,
+      "percentComplete": 0
+    }
+  }
+}

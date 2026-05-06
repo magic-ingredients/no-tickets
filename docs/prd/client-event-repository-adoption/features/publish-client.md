@@ -1,5 +1,5 @@
 ---
-id: emit-event-client
+id: publish-client
 prd_id: client-event-repository-adoption
 number: 2
 title: publish() + Subjects + Interactions HTTP Client
@@ -40,9 +40,15 @@ The single HTTP module maps server errors to typed exceptions:
 - 422 unknown type → `UnknownEventTypeError(typeId, batchIndex)` — server reports the index of the bad entry within the batch
 - 422 schema mismatch → `EventValidationError(typeId, issues, batchIndex)`
 - 403 → `PermissionDeniedError(domain)`
-- 5xx → `ServerError(status, body)` with bounded retries (idempotent ops only)
+- 5xx → `ServerError(status, body)` — **no retries on `POST /v1/events`** in v1 (see Retry policy in PRD); bounded retries for idempotent calls only (`subjects.list/get`, `events.list/describe`).
 
 Per-event errors fail the whole batch (the server runs everything in one transaction). The error carries the failing index so callers can identify which event in their batch was the cause.
+
+The 422 response body shape — including the `batchIndex` field — is owned by the server PRD (`single-events-endpoint-and-product-domain`). This feature's error mapping pins to that contract; if the server PRD changes the shape, the SDK error mapping breaks and needs an update.
+
+### Source defaulting in the transport
+
+The transport client auto-fills `source` on each event before send if the caller hasn't provided one. Default for direct SDK use is `{ name: 'sdk', sdkVersion }`. CI auto-detection runs once per client construction (cached); detected provider populates `attributes.provider`/`runId`/`workflow`. Caller-supplied `source` merges with auto-detected source — caller wins on conflicts.
 
 ## Acceptance Criteria
 
@@ -50,12 +56,13 @@ Per-event errors fail the whole batch (the server runs everything in one transac
 - [ ] Single-event convenience: `publish([oneEvent])` works without any wrapper.
 - [ ] Batch publish: `publish([a, b, c])` sends one request with all three events.
 - [ ] Per-event validation error from the server returns a typed exception with the batch index of the failing event.
+- [ ] `source` auto-filled on each event when not provided; caller-supplied `source` merges with auto-detected (caller wins on conflicts).
 - [ ] `subjects.create(subject)`, `subjects.get(ref)`, `subjects.list({ type })` round-trip.
 - [ ] `runInteraction(id, { input, subject? })` returns the server's response (`{ events }` or final shape).
 - [ ] Auth resolution unchanged; push tokens and session tokens both work.
-- [ ] Typed errors thrown for 4xx; bounded retries for 5xx on idempotent calls.
+- [ ] Typed errors thrown for 4xx; **no retries** on `POST /v1/events`; bounded retries for 5xx on idempotent reads.
+- [ ] Per-publish trace log at debug level (request id, event count, type ids).
 - [ ] Old `push` command and HTTP client are removed (consumer deletion of Feature 1's schema deletion).
-- [ ] tiny-brain switched off the push payload — publishes `ai.completion.recorded.v1`, `ai.review.completed.v1`, `ai.task.completed.v1` directly via `publish`.
 
 ## Tasks
 
@@ -69,10 +76,12 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 - `src/transport/errors.test.ts` (new)
 
 **Expected changes:**
-- Single `Client` class accepting `{ baseUrl, token, fetch? }`.
+- Single `Client` class accepting `{ baseUrl, token, fetch?, logger? }`.
 - Methods: `request(method, path, body?)` is the private workhorse; per-operation wrappers below.
 - Error mapping centralised here; typed exception classes exported.
-- Tests cover auth header injection, retry logic on 5xx, error mapping for each documented status, batch-index propagation on per-event 422.
+- Retry policy: no retries on `POST /v1/events`; bounded exponential backoff (max 3 attempts) for idempotent reads on 5xx.
+- Debug-level trace log on every request (path, status, latency); structured warning on retry.
+- Tests cover auth header injection, retry logic for idempotent reads, no-retry on `POST /v1/events`, error mapping for each documented status, batch-index propagation on per-event 422.
 
 ### 2. publish (array body)
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
@@ -84,9 +93,10 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 
 **Expected changes:**
 - `publish(client, events: Event[]): Promise<{ ingested, deduped, ids }>`.
+- Auto-fills `source` per event (using `mergeSource(autoDetected, event.source)` from Feature 1 Task 1) before envelope validation.
 - Validates each envelope locally with `eventSchema` before sending (cheap fail-fast); aborts on first invalid envelope and reports its index.
 - Sends as a single `POST /v1/events` with the array as the JSON body — no wrapper key.
-- Tests cover happy path single + batch, schema fail before send carries index, server-side 422 unknown type carries the server's batch index, dedupe count matches the response.
+- Tests cover happy path single + batch, source auto-fill applied when caller omits source, source merge when caller provides partial source, schema fail before send carries index, server-side 422 unknown type carries the server's batch index, dedupe count matches the response, no retry on 5xx (single attempt only).
 
 ### 3. Subjects API
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
@@ -130,18 +140,14 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 - CLI exit code unchanged for bad subcommands (helpful error).
 - Tests assert push is not in the help listing and exits non-zero with a hint to use `nt publish` (Feature 4 lands the new command; in the interim, the message stands alone).
 
-### 6. tiny-brain integration cutover
-End-to-end task — failing tests, implementation, and any review-driven refactors land here.
+### 6. tiny-brain integration cutover (SUPERSEDED — moved to tiny-brain repo)
 
-**Files to modify/create (in tiny-brain repo, tracked here for completeness):**
-- tiny-brain's push integration
+status: superseded
+commitSha: null
 
-**Expected changes:**
-- tiny-brain publishes `ai.completion.recorded.v1`, `ai.review.completed.v1`, and `ai.task.completed.v1` directly via the SDK's `publish`, not via the legacy push payload.
-- Session-end batches use a single `publish([...])` call, not N round-trips.
-- Validation of the cutover happens in tiny-brain's CI; this feature ships the SDK surface tiny-brain consumes.
+The tiny-brain cutover lives in the tiny-brain repo as its own PRD/fix. Tracking it here violated the PRD-as-unit-of-release boundary (cross-repo work cannot be CI-validated by this repo, and the task blocked Feature 2's acceptance until external commits landed).
 
-This task is tracked in this feature for visibility; the implementation lives in tiny-brain.
+This PRD now ships only the SDK surface tiny-brain consumes. The cutover itself is tracked separately. No work happens here for this task.
 
 ## Dependencies
 

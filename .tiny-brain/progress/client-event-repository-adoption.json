@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-06T20:50:37.549Z",
+  "lastUpdated": "2026-05-06T21:25:58.018Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -16,48 +16,53 @@
       "tasks": [
         {
           "id": "task-1-1",
-          "description": "Define Event envelope (zod + types)",
+          "description": "Define Source (zod + types)",
           "status": "not_started"
         },
         {
           "id": "task-1-2",
-          "description": "Define Subject and SubjectRef",
+          "description": "Define Event envelope (zod + types)",
           "status": "not_started"
         },
         {
           "id": "task-1-3",
-          "description": "Define Interaction envelope",
+          "description": "Define Subject and SubjectRef",
           "status": "not_started"
         },
         {
           "id": "task-1-4",
-          "description": "Type-ID grammar (parse + format)",
+          "description": "Define Interaction envelope",
           "status": "not_started"
         },
         {
           "id": "task-1-5",
-          "description": "Trim Session / Actor / PushEnvironment to envelope shape",
+          "description": "Type-ID grammar (parse + format)",
           "status": "not_started"
         },
         {
           "id": "task-1-6",
-          "description": "Remove push payload schemas",
+          "description": "Source construction helpers (Session / Actor / PushEnvironment / detectAgent)",
           "status": "not_started"
         },
         {
           "id": "task-1-7",
+          "description": "Remove push payload schemas",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-8",
           "description": "Sub-path export verification",
           "status": "not_started"
         }
       ],
       "taskSummary": {
-        "total": 7,
+        "total": 8,
         "completed": 0,
-        "remaining": 7
+        "remaining": 8
       }
     },
     {
-      "id": "emit-event-client",
+      "id": "publish-client",
       "number": 2,
       "title": "publish() + Subjects + Interactions HTTP Client",
       "status": "not_started",
@@ -89,14 +94,15 @@
         },
         {
           "id": "task-2-6",
-          "description": "tiny-brain integration cutover",
-          "status": "not_started"
+          "description": "tiny-brain integration cutover (SUPERSEDED — moved to tiny-brain repo)",
+          "status": "superseded",
+          "completedAt": "2026-05-06T21:21:24.539Z"
         }
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 0,
-        "remaining": 6
+        "completed": 1,
+        "remaining": 5
       }
     },
     {
@@ -155,34 +161,39 @@
         },
         {
           "id": "task-4-3",
-          "description": "nt publish <type-id>",
+          "description": "nt publish <type-id> (single event)",
           "status": "not_started"
         },
         {
           "id": "task-4-4",
-          "description": "nt subject",
+          "description": "nt publish --batch <file.jsonl>",
           "status": "not_started"
         },
         {
           "id": "task-4-5",
-          "description": "nt action",
+          "description": "nt subject",
           "status": "not_started"
         },
         {
           "id": "task-4-6",
-          "description": "Drift notification",
+          "description": "nt action",
           "status": "not_started"
         },
         {
           "id": "task-4-7",
+          "description": "Drift notification",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-8",
           "description": "CLI help + docs",
           "status": "not_started"
         }
       ],
       "taskSummary": {
-        "total": 7,
+        "total": 8,
         "completed": 0,
-        "remaining": 7
+        "remaining": 8
       }
     },
     {
@@ -231,9 +242,9 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 5,
-      "completedTasks": 0,
-      "totalTasks": 30,
-      "percentComplete": 0
+      "completedTasks": 1,
+      "totalTasks": 32,
+      "percentComplete": 3
     }
   }
 }

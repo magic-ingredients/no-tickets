@@ -21,28 +21,46 @@ This replaces `nt push` from a user's perspective. The legacy `nt push` was alre
 ```
 nt event list [--domain <name>] [--deprecated]
 nt event describe <type-id>
+
 nt publish <type-id> --data <json|@file|->
-                   [--subject <type:id>]
-                   [--source <s>]
+                   [--subject-type <t> --subject-id <id>]
+                   [--source-name <name>]
+                   [--source-attribute key=value]...
                    [--parent <event-id>]
                    [--trace <id>]
                    [--dedupe-key <s>]
+nt publish --batch <file.jsonl>
+                   [--source-name <name>]
+                   [--source-attribute key=value]...
 
 nt subject create --type <t> --external-id <id> --display-name <n> [--metadata <json>]
 nt subject get <type> <id>
 nt subject list --type <t> [--archived]
 
 nt action <interaction-id> --input <json|@file|->
-                           [--subject <type:id>]
+                           [--subject-type <t> --subject-id <id>]
 ```
+
+### Subject reference encoding
+
+Subject references are passed via separate `--subject-type <t>` and `--subject-id <id>` flags. Earlier drafts proposed `--subject <type:id>` colon-encoded, which fails for IDs containing colons (URNs, ARNs). Split flags avoid encoding gymnastics entirely.
+
+### Source overrides at the CLI
+
+The CLI auto-fills `source` to `{ name: 'cli', sdkVersion, version: <cli-version> }`. Callers can override:
+- `--source-name <name>` overrides `source.name`
+- `--source-attribute key=value` (repeatable) adds entries to `source.attributes`
+
+Caller-supplied fields merge with auto-detected — caller wins on conflicts. Most users never need these flags; they exist for integrations invoking `nt publish` from a wrapper script that wants to identify itself.
 
 ### Registry-aware behaviours
 
 - `nt event list` groups by domain, marks deprecated types, dims types the caller cannot write (server-side filtering already excludes most; deprecated-but-visible reads remain).
-- `nt event describe` synthesises an example payload from the JSON Schema (uses field defaults, then enum first values, then placeholders).
-- `nt publish <type-id>` validates `--data` against the cached JSON Schema *before* hitting the network. Validation errors print field paths.
+- `nt event describe` synthesises an example payload from the JSON Schema (uses field defaults, then enum first values, then placeholders) via the shared `example-synth` lib (also consumed by Feature 5's MCP `describe_event_type`).
+- `nt publish <type-id>` validates `--data` against the cached JSON Schema *before* hitting the network. Validation errors print field paths. **Best-effort** — a stale cache may pass a payload the server rejects; the server is the source of truth.
 - Unknown `<type-id>` triggers a fuzzy-match against the cached list: top-3 suggestions printed, exit non-zero, no network call.
-- `--data -` reads stdin (pipe-friendly); `--data @path/to/file.json` reads a file.
+- `--data -` reads stdin (pipe-friendly); `--data @path/to/file.json` reads a file. The `@` prefix is unambiguous: no valid JSON value starts with `@`.
+- `--batch <file.jsonl>` reads one JSON event per line, validates each locally, sends the entire batch in a single `POST /v1/events`. Stdin batch via `nt publish --batch -`.
 
 ### Drift notification
 
@@ -57,11 +75,14 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 ## Acceptance Criteria
 
 - [ ] `nt event list` prints types grouped by domain; `--domain` filters; `--deprecated` includes deprecated.
-- [ ] `nt event describe <type-id>` prints required/optional fields, dedupe strategy, retention, and a synthesised example payload.
-- [ ] `nt publish <type-id> --data <json>` validates locally then sends; `--data -` and `--data @file` work.
+- [ ] `nt event describe <type-id>` prints required/optional fields, dedupe strategy, retention, and a synthesised example payload (via shared `example-synth` lib).
+- [ ] `nt publish <type-id> --data <json>` validates locally (best-effort) then sends; `--data -` and `--data @file` work.
+- [ ] `nt publish --batch <file.jsonl>` validates and publishes every line as one event in a single request; `--batch -` reads from stdin.
+- [ ] Subject references use split `--subject-type <t> --subject-id <id>` flags; no colon-encoded form.
+- [ ] Source overrides via `--source-name` and repeatable `--source-attribute key=value`; merged with auto-detected source.
 - [ ] Unknown type id prints fuzzy-match suggestions and exits non-zero without sending.
-- [ ] `nt subject` and `nt action` round-trip against the server.
-- [ ] Drift notification appears on registry diffs; suppressed by `--quiet`.
+- [ ] `nt subject create/get/list` and `nt action` round-trip against the server.
+- [ ] Drift notification appears on registry diffs (after bounded refresh wait, default 200ms); suppressed by `--quiet` and `NO_TICKETS_QUIET=1`.
 - [ ] All commands exit 0 on success, non-zero on validation failure, non-zero on server error.
 - [ ] CLI help text generated lists new verbs; no reference to removed `push` command.
 
@@ -86,33 +107,53 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - `src/cli/commands/event/describe.test.ts` (new)
 - `src/cli/lib/schema-render.ts` (new — renders JSON Schema as human form)
 - `src/cli/lib/schema-render.test.ts` (new)
-- `src/cli/lib/example-synth.ts` (new — synthesises example payload from JSON Schema)
-- `src/cli/lib/example-synth.test.ts` (new)
+- `src/lib/example-synth.ts` (new — synthesises example payload from JSON Schema; **shared** lib used by both this command and Feature 5's MCP `describe_event_type`)
+- `src/lib/example-synth.test.ts` (new)
 
 **Expected changes:**
 - `schema-render` walks JSON Schema producing required/optional groupings with type annotations.
-- `example-synth` produces a minimal valid payload from a JSON Schema, preferring defaults → enum first values → typed placeholders.
+- `example-synth` produces a minimal valid payload from a JSON Schema, preferring defaults → enum first values → typed placeholders. Lives outside `cli/` so MCP can import it.
 - Tests cover representative shapes: simple object, nested, enums, arrays, refs.
 
-### 3. nt publish <type-id>
+### 3. nt publish <type-id> (single event)
 
 **Files to modify/create:**
-- `src/cli/commands/event/emit.ts` (new)
-- `src/cli/commands/event/emit.test.ts` (new)
+- `src/cli/commands/publish/single.ts` (new)
+- `src/cli/commands/publish/single.test.ts` (new)
 - `src/cli/lib/data-input.ts` (new — handles `--data <json|@file|->`)
 - `src/cli/lib/data-input.test.ts` (new)
 - `src/cli/lib/fuzzy-match.ts` (new)
 - `src/cli/lib/fuzzy-match.test.ts` (new)
+- `src/cli/lib/source-flags.ts` (new — parses `--source-name` and repeatable `--source-attribute key=value`)
+- `src/cli/lib/source-flags.test.ts` (new)
 
 **Expected changes:**
-- Reads `--data` from inline JSON, file, or stdin.
-- Validates against cached JSON Schema using a JSON Schema validator (e.g. ajv).
+- Reads `--data` from inline JSON, file, or stdin (`-`).
+- Subject from `--subject-type` + `--subject-id` if both provided; otherwise undefined.
+- Source from `--source-name` + repeated `--source-attribute key=value`; merged with auto-detected (caller wins).
+- Validates against cached JSON Schema using a JSON Schema validator (e.g. ajv). **Best-effort** — server is authoritative; document this in the help text.
 - Unknown type → `fuzzyMatch(input, cachedTypeIds, { topN: 3 })` → suggestions printed, exit 2.
 - Validation error → field path + message printed, exit 1.
 - Server error → mapped error printed, exit 3.
 - Tests cover each path.
 
-### 4. nt subject
+### 4. nt publish --batch <file.jsonl>
+
+**Files to modify/create:**
+- `src/cli/commands/publish/batch.ts` (new)
+- `src/cli/commands/publish/batch.test.ts` (new)
+- `src/cli/lib/jsonl.ts` (new — line-by-line JSON reader for files and stdin)
+- `src/cli/lib/jsonl.test.ts` (new)
+
+**Expected changes:**
+- Reads JSONL from file path or stdin (`--batch -`).
+- Each line is one event; parse error on any line → exit 1 with line number.
+- Source flags apply to *every* event in the batch (merged with each event's own source if present).
+- Validates each event against cached JSON Schema before sending; on validation failure, exit 1 with line number + field path.
+- Sends all events as one `POST /v1/events`; server-side per-event 422 carries `batchIndex` which maps back to JSONL line number for diagnostics.
+- Tests cover: file read, stdin read, partial-batch local validation failure, server-side per-event failure with line-number mapping.
+
+### 5. nt subject
 
 **Files to modify/create:**
 - `src/cli/commands/subject/create.ts` (new)
@@ -125,7 +166,7 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - Output as JSON by default; `--format table` for human reads.
 - Tests cover happy path and 404 mapping.
 
-### 5. nt action
+### 6. nt action
 
 **Files to modify/create:**
 - `src/cli/commands/action.ts` (new)
@@ -134,10 +175,11 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 **Expected changes:**
 - Wraps `runInteraction(id, { input, subject? })`.
 - `--input` follows the same `--data <json|@file|->` convention.
+- Subject from split `--subject-type` + `--subject-id` flags.
 - Output renders the response (event ids).
 - Tests cover happy path, permission denial, unknown interaction id.
 
-### 6. Drift notification
+### 7. Drift notification
 
 **Files to modify/create:**
 - `src/cli/lib/drift-notify.ts` (new)
@@ -145,12 +187,14 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - Wire into each new command's success path
 
 **Expected changes:**
-- After a command's primary action, compare pre/post cache (refresh result from Feature 3).
+- After a command's primary action, await the async refresh promise with bounded timeout (default 200ms via `awaitRefresh` from Feature 3 Task 4).
+- If refresh completed with a diff, compare pre/post cache.
 - Print one stderr line listing up to 3 new type ids; truncate with `...`.
+- If refresh did not complete in time, no notification this invocation; the next invocation picks up the diff.
 - Suppressed by `--quiet` and `NO_TICKETS_QUIET=1`.
-- Tests cover: no diff → no print; small diff → full list; large diff → truncated.
+- Tests cover: no diff → no print; small diff → full list; large diff → truncated; refresh-too-slow → no print.
 
-### 7. CLI help + docs
+### 8. CLI help + docs
 
 **Files to modify/create:**
 - `src/cli.ts`

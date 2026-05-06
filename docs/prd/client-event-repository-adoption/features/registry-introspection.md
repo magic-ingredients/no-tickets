@@ -5,7 +5,7 @@ number: 3
 title: Registry Introspection + Caching
 status: not_started
 created: 2026-04-27
-updated: 2026-04-27
+updated: 2026-05-06
 ---
 
 # Feature: Registry Introspection + Caching
@@ -20,8 +20,10 @@ Every higher-level surface (Feature 4 CLI, Feature 5 MCP tools) consumes this. G
 
 ```json
 {
+  "version": 1,
   "etag": "W/\"abc123\"",
   "fetchedAt": "2026-04-27T10:23:00Z",
+  "serverUrl": "https://no-tickets.example.com",
   "types": [
     {
       "id": "engineering.deploy.completed.v1",
@@ -39,28 +41,42 @@ Every higher-level surface (Feature 4 CLI, Feature 5 MCP tools) consumes this. G
 }
 ```
 
+`version: 1` is required upfront so future shape migrations have a clean discriminator. Future cache shapes bump `version` and the reader either upgrades in place or wipes-and-refetches.
+
 ### Cache location
 
-`<cwd>/.notickets/.cache/registry.json` — under a hidden `.cache/` subdirectory to avoid colliding with the user's `.notickets/` working data (epics, features, fixes). Cache is per-server-URL: the file key includes a hash of the configured server URL so multi-tenant local development doesn't cross streams.
+Resolution order:
+1. **Project-local**: `<cwd>/.notickets/.cache/registry-<hash>.json` if `<cwd>/.notickets/` exists or any ancestor up to git root contains one.
+2. **User-local fallback**: `~/.notickets/.cache/registry-<hash>.json` if no project-local `.notickets/` is found.
+
+Under a hidden `.cache/` subdirectory to avoid colliding with the user's `.notickets/` working data (epics, features, fixes). Cache is per-server-URL: the file key (`<hash>`) is a hash of the configured server URL so multi-tenant local development doesn't cross streams.
+
+The README documents that `.notickets/.cache/` should be gitignored when `.notickets/` itself is committed.
 
 ### Refresh discipline
 
 - Reads always served from cache, synchronously.
-- Refresh fires asynchronously on every CLI invocation, not blocking the command.
+- Refresh fires asynchronously on every CLI invocation. Commands wait briefly (default 200ms, configurable via `NO_TICKETS_REFRESH_WAIT_MS`) for the refresh to complete before computing drift; if it doesn't complete in time, the command proceeds without blocking and the drift notification is deferred to the next invocation.
 - Conditional GET with `If-None-Match`. 304 → no-op. 200 → cache replaced atomically (write to temp, rename).
 - If refresh fails, log a debug-level note; never error the user-facing command.
 - Stale-cache warning when cache age > threshold (default 14 days, configurable) AND last refresh attempt failed. Surfaces via the drift-notification line in routine commands (Feature 4).
+- Multi-process race: two concurrent invocations may both fire refreshes. Atomic temp+rename prevents file corruption; ETag mostly mitigates duplicate work; the rare case where a slower-but-newer 200 loses to a faster-but-older 200 is documented behaviour (next refresh self-heals via ETag).
+
+### Auth scoping
+
+`/v1/admin/event-types` accepts both push tokens and session tokens. Required so CI runners with only push tokens can validate locally. Confirmed contract with the server PRD (`event-repository-foundation` Feature 1 Task 6).
 
 ## Acceptance Criteria
 
-- [ ] `client.events.list({ domain?, deprecated? })` returns cached entries; refreshes async.
+- [ ] `client.events.list({ domain?, deprecated? })` returns cached entries; refreshes async; bounded wait on refresh (default 200ms) before returning so first-invocation drift detection works.
 - [ ] `client.events.describe(typeId)` returns one type from cache; falls back to `/v1/admin/event-types/:id` on cache miss.
 - [ ] First fetch from clean state populates cache and returns within 2s on a healthy network.
 - [ ] Subsequent calls offline succeed if cache exists; fail with a clear diagnostic if cache is missing.
 - [ ] Permission scoping: server-side filter is reflected in the cached payload (we do not re-filter client-side).
 - [ ] ETag respected: `If-None-Match` sent on refresh; 304 leaves cache untouched but updates `fetchedAt`.
-- [ ] Cache file is valid JSON; corrupt cache wipes-and-refetches without erroring the calling command.
-- [ ] Cache namespaced per server URL.
+- [ ] Cache file is valid JSON, carries `"version": 1`; corrupt or unknown-version cache wipes-and-refetches without erroring the calling command.
+- [ ] Cache namespaced per server URL; project-local location preferred, user-local fallback when no `.notickets/` in cwd or ancestors.
+- [ ] Both push tokens and session tokens accepted by `/v1/admin/event-types` (CI runners with push tokens can introspect).
 
 ## Tasks
 
@@ -82,10 +98,10 @@ Every higher-level surface (Feature 4 CLI, Feature 5 MCP tools) consumes this. G
 - `src/registry/cache.test.ts` (new)
 
 **Expected changes:**
-- `readCache(serverUrl): CacheFile | null` — corrupt cache → null, not throw.
-- `writeCache(serverUrl, file)` — atomic temp+rename.
-- `cachePath(serverUrl)` — hashed-key file under `.notickets/.cache/registry-<hash>.json`.
-- Tests: corrupt cache recovery, atomic write, multi-server isolation.
+- `readCache(serverUrl): CacheFile | null` — corrupt cache or unknown `version` → null, not throw.
+- `writeCache(serverUrl, file)` — atomic temp+rename. `file` carries `version: 1`.
+- `cachePath(serverUrl)`: walks from cwd up to git root looking for `.notickets/`; returns `<found>/.notickets/.cache/registry-<hash>.json` if found, otherwise `~/.notickets/.cache/registry-<hash>.json`.
+- Tests: corrupt cache recovery, unknown-version recovery, atomic write, multi-server isolation, project-local preferred over user-local, fallback to user-local when no `.notickets/` exists in cwd ancestors.
 
 ### 3. `client.events.list` + `client.events.describe`
 
@@ -106,10 +122,12 @@ Every higher-level surface (Feature 4 CLI, Feature 5 MCP tools) consumes this. G
 - `src/registry/refresh.test.ts` (new)
 
 **Expected changes:**
-- `scheduleRefresh(client)` fires-and-forgets; bounded concurrency (one inflight refresh per server).
+- `scheduleRefresh(client): Promise<RefreshResult>` — fires async, returns a promise callers can optionally await with a bounded timeout.
+- `awaitRefresh(promise, { timeoutMs })` — utility for callers (CLI commands) that want to wait briefly before computing drift.
+- Bounded concurrency (one inflight refresh per server URL within a process; cross-process race documented as accepted).
 - Refresh uses cached ETag; merges 200 atomically, leaves cache on 304.
 - Failures logged at debug level; success returns the new state for callers that want it.
-- Tests: parallel calls coalesce, failed refresh leaves prior cache, 304 updates `fetchedAt` only.
+- Tests: parallel in-process calls coalesce, failed refresh leaves prior cache, 304 updates `fetchedAt` only, `awaitRefresh` returns within timeoutMs even if refresh is slow.
 
 ### 5. Stale-cache detection
 

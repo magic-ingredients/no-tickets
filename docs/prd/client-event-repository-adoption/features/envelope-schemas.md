@@ -5,16 +5,16 @@ number: 1
 title: Envelope Schemas + SDK Surface Reset
 status: not_started
 created: 2026-04-27
-updated: 2026-04-27
+updated: 2026-05-06
 ---
 
 # Feature: Envelope Schemas + SDK Surface Reset
 
 ## Description
 
-Replace the current push-payload-shaped exports in `src/core/types.ts` and `src/core/schemas.ts` with envelope-only types: `Event`, `Subject`, `Interaction`, `Session`, `Actor`, `SubjectRef`, plus the type-ID grammar parser. The SDK ships nothing about domain payloads — that's the server registry's job per ADR-0001.
+Replace the current push-payload-shaped exports in `src/core/types.ts` and `src/core/schemas.ts` with envelope-only types: `Event`, `Source`, `Subject`, `Interaction`, `Session`, `Actor`, `SubjectRef`, plus the type-ID grammar parser. The SDK ships nothing about domain payloads — that's the server registry's job per ADR-0001.
 
-This is the most disruptive feature in the PRD. Every existing consumer that imports `Push`, `WorkSchema`, `EngineeringSchema`, `ProductSchema`, `CodeQualitySchema`, etc. will fail to type-check after this lands. That's intentional: ADR-0001 and the no-v1-backcompat stance accept this as a clean cut. tiny-brain and any other internal consumer migrate as part of Feature 2.
+This is the most disruptive feature in the PRD. Every existing consumer that imports `Push`, `WorkSchema`, `EngineeringSchema`, `ProductSchema`, `CodeQualitySchema`, etc. will fail to type-check after this lands. That's intentional: ADR-0001 and the no-v1-backcompat stance accept this as a clean cut.
 
 ### Wire-format types
 
@@ -22,12 +22,19 @@ This is the most disruptive feature in the PRD. Every existing consumer that imp
 type Event<T = unknown> = {
   readonly type: TypeId;
   readonly data: T;
+  readonly source: Source;          // mandatory; SDK auto-fills based on entry surface
   readonly subject?: SubjectRef;
-  readonly source: string;
   readonly occurredAt?: string;
   readonly parentEventId?: string;
   readonly traceId?: string;
   readonly dedupeKey?: string;
+};
+
+type Source = {
+  readonly name: string;            // 'cli' | 'mcp' | 'ci' | 'cron' | 'integration' | 'sdk'
+  readonly sdkVersion: string;      // version of @magic-ingredients/no-tickets, SDK auto-fills
+  readonly version?: string;        // version of the named producer (when distinct from SDK)
+  readonly attributes?: Readonly<Record<string, string | number | boolean>>;
 };
 
 type SubjectRef = { readonly type: string; readonly id: string };
@@ -45,10 +52,17 @@ type Interaction<TInput = unknown> = {
   readonly subject?: SubjectRef;
 };
 
-type TypeId = `${string}.${string}.${string}.v${number}`;
+// Type-ID grammar: ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2}\.v[1-9]\d*$
+type TypeId = string;
 ```
 
-`Session`, `Actor`, and `PushEnvironment` survive but lose their push-specific fields and become inputs to `emitEvent`'s `source` / actor inference instead.
+`Session`, `Actor`, and `PushEnvironment` survive but lose their push-specific fields and collapse into helpers that *construct* `Source` rather than sit alongside it as parallel envelope concepts. `detectAgent()` returns a `Source` directly (with appropriate `name` and `attributes` for detected CI providers, etc.).
+
+### Source defaulting and override
+
+`Source` is required on every event but rarely set explicitly. The SDK auto-fills `name` and `sdkVersion` based on entry surface (see PRD §"Source semantics" for the per-surface defaults). Caller-supplied `source` fields **merge** with auto-detected ones — caller wins on conflicts, but the auto-filled fields fill any gaps.
+
+`attributes` is free-form `Record<string, string | number | boolean>`. The PRD documents conventions (cookbook) but the schema does not enforce them; callers can add their own keys freely.
 
 ### Refinement ban
 
@@ -56,9 +70,10 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 
 ## Acceptance Criteria
 
-- [ ] `src/core/types.ts` exports envelope types only; no `Push`, `WorkSchema`, `EngineeringSchema`, `ProductSchema`, `CodeQualitySchema` types.
-- [ ] `src/core/schemas.ts` exports envelope zod schemas only; same exclusion.
-- [ ] `parseTypeId(s)` returns `{ domain, entity, action, version }` or `null`; rejects malformed IDs.
+- [ ] `src/core/types.ts` exports envelope types only (`Event`, `Source`, `Subject`, `SubjectRef`, `Interaction`, `Session`, `Actor`, `PushEnvironment`, `TypeId`); no `Push`, `WorkSchema`, `EngineeringSchema`, `ProductSchema`, `CodeQualitySchema` types.
+- [ ] `src/core/schemas.ts` exports envelope zod schemas only (`eventSchema`, `sourceSchema`, `subjectSchema`, `subjectRefSchema`, `interactionRequestSchema`, `interactionResponseSchema`); same exclusion.
+- [ ] `Source` is required on `eventSchema`; `sourceSchema` enforces `name` (string) and `sdkVersion` (string) as required, `version` and `attributes` as optional.
+- [ ] `parseTypeId(s)` returns `{ domain, entity, action, version }` or `null`; rejects malformed IDs against the regex `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2}\.v[1-9]\d*$`.
 - [ ] `formatTypeId(parts)` round-trips with `parseTypeId`.
 - [ ] No envelope schema uses `.refine()`.
 - [ ] Sub-path exports (`./types`, `./schemas`) still resolve; their contents shrink.
@@ -66,7 +81,22 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 
 ## Tasks
 
-### 1. Define Event envelope (zod + types)
+### 1. Define Source (zod + types)
+
+**Files to modify/create:**
+- `src/core/source.ts` (new — Source schema + type + auto-fill helpers)
+- `src/core/source.test.ts` (new)
+- `src/core/types.ts`
+- `src/core/schemas.ts`
+
+**Expected changes:**
+- `sourceSchema` zod accepts `{ name, sdkVersion, version?, attributes? }` with `attributes` typed as `z.record(z.union([z.string(), z.number(), z.boolean()]))`.
+- `name` and `sdkVersion` required; `version` and `attributes` optional.
+- `mergeSource(auto, override)` helper merges caller-supplied source with auto-detected source (override fields win).
+- `sdkVersion` resolved at build time via build-tool define replacement (e.g., `tsup` `define`/`replace`); no runtime `require('./package.json')`.
+- Tests cover: shape validation, merge semantics (caller wins on conflict, gaps filled by auto), build-time version constant present.
+
+### 2. Define Event envelope (zod + types)
 
 **Files to modify/create:**
 - `src/core/event.ts` (new — envelope schema + type)
@@ -75,12 +105,12 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 - `src/core/schemas.ts`
 
 **Expected changes:**
-- `eventSchema` zod accepts `{ type, data, subject?, source, occurredAt?, parentEventId?, traceId?, dedupeKey? }`.
+- `eventSchema` zod accepts `{ type, data, source, subject?, occurredAt?, parentEventId?, traceId?, dedupeKey? }`. `source` is required (uses `sourceSchema` from Task 1).
 - `data` is `z.unknown()` — pass-through.
 - `Event<T>` generic type for typed-payload narrowing in callers that opt into typed domain types later.
-- Tests cover: shape validation, missing required fields, unknown fields rejected at top level (data is opaque), no refinements present.
+- Tests cover: shape validation, missing required fields (including `source`), unknown fields rejected at top level (data is opaque), no refinements present.
 
-### 2. Define Subject and SubjectRef
+### 3. Define Subject and SubjectRef
 
 **Files to modify/create:**
 - `src/core/subject.ts` (new)
@@ -93,7 +123,7 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 - `subjectSchema` for promotion API — `{ type, externalId, displayName, metadata? }`.
 - Tests cover both shapes.
 
-### 3. Define Interaction envelope
+### 4. Define Interaction envelope
 
 **Files to modify/create:**
 - `src/core/interaction.ts` (new)
@@ -106,18 +136,19 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 - `interactionResponseSchema` for the response: `{ events: { id, type }[] }` (final shape pinned to server's response — adjust during integration).
 - Tests cover request/response round-trip.
 
-### 4. Type-ID grammar (parse + format)
+### 5. Type-ID grammar (parse + format)
 
 **Files to modify/create:**
 - `src/core/type-id.ts` (new)
 - `src/core/type-id.test.ts` (new)
 
 **Expected changes:**
+- Regex: `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2}\.v[1-9]\d*$`. Lowercase only, underscores allowed within segments, version is `v1`+ (no `v0`, no leading zeros).
 - `parseTypeId('engineering.deploy.completed.v1')` → `{ domain: 'engineering', entity: 'deploy', action: 'completed', version: 1 }`.
 - `formatTypeId(parts)` reverses.
-- Tests: malformed ids, missing version, multi-word actions, action with underscores (`status_changed`), version with extra digits (`v12`).
+- Tests: valid IDs (simple, with underscores like `engineering.health.status_changed.v1`, multi-digit versions like `v12`), invalid IDs (uppercase, leading-zero version `v01`, version `v0`, missing version, extra segments, special chars, empty segments).
 
-### 5. Trim Session / Actor / PushEnvironment to envelope shape
+### 6. Source construction helpers (Session / Actor / PushEnvironment / detectAgent)
 
 **Files to modify/create:**
 - `src/agent-detect.ts`
@@ -126,11 +157,12 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 - `src/core/schemas.ts`
 
 **Expected changes:**
-- `Session`, `Actor`, `PushEnvironment` shed any push-payload-specific fields.
-- `detectAgent()` returns the trimmed shape; output feeds `emitEvent`'s `source` and the server's actor inference middleware.
-- Tests update for the new shape; assertions about removed fields removed.
+- `Session`, `Actor`, `PushEnvironment` shed push-payload-specific fields and become helpers that *construct* `Source` (rather than sit alongside it as parallel envelope concepts).
+- `detectAgent()` returns a fully-formed `Source`: `name: 'ci'` for known CI providers (GitHub Actions, GitLab, Circle, ...) with `attributes.provider`/`runId`/`workflow` populated; `name: 'sdk'` otherwise.
+- `attributes.machine` populated only when `NO_TICKETS_INCLUDE_MACHINE=1`; value is a hashed hostname (per-installation salt stored at `~/.notickets/.machine-salt`), never the raw hostname.
+- Tests update for the new shape; tests for hashed-machine path assert the salt file is created if missing and the hash is stable across runs with the same salt.
 
-### 6. Remove push payload schemas
+### 7. Remove push payload schemas
 
 **Files to modify/create:**
 - `src/core/types.ts`
@@ -143,7 +175,7 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 - Resulting `types.ts` and `schemas.ts` contain only envelope/primitive shapes.
 - Type-check passes after the delete; failing imports are addressed by Feature 2 removing the push command surface.
 
-### 7. Sub-path export verification
+### 8. Sub-path export verification
 
 **Files to modify/create:**
 - `package.json`

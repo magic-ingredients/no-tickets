@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T06:15:36.105Z",
+  "lastUpdated": "2026-05-07T06:29:52.872Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -184,7 +184,36 @@
         {
           "id": "task-1-6",
           "description": "Source construction helpers (Session / Actor / PushEnvironment / detectAgent)",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T06:17:12.397Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T06:18:57.971Z",
+              "completedAt": "2026-05-07T06:21:02.968Z",
+              "reviewSha": "6cc4c37",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T06:21:02.968Z",
+              "refactorCommitSha": "3351c7065bfb0797200bbbfefc94591fb414027f",
+              "refactorCompletedAt": "2026-05-07T06:24:41.528Z",
+              "refactorCommittedAt": "2026-05-07T06:24:41.528Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T06:24:41.528Z",
+              "completedAt": "2026-05-07T06:27:35.771Z",
+              "reviewSha": "3351c70",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T06:27:35.771Z",
+              "refactorCommitSha": "34498edb33c42e9e850fa0e814e4a69f434ba0b8",
+              "refactorCompletedAt": "2026-05-07T06:29:52.871Z",
+              "refactorCommittedAt": "2026-05-07T06:29:52.871Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T06:17:55.503Z",
+          "testCommitSha": "10b8cf5cea4be5c48b0d3877b8761557e0464ec1",
+          "redCompletedAt": "2026-05-07T06:17:55.503Z",
+          "commitSha": "6cc4c3775e8abbe06adc0c09293d30f99b661ec6",
+          "greenCompletedAt": "2026-05-07T06:18:57.971Z",
+          "completedAt": "2026-05-07T06:29:52.872Z"
         },
         {
           "id": "task-1-7",
@@ -199,8 +228,8 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 5,
-        "remaining": 3
+        "completed": 6,
+        "remaining": 2
       }
     },
     {
@@ -386,9 +415,9 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 5,
-      "completedTasks": 6,
+      "completedTasks": 7,
       "totalTasks": 32,
-      "percentComplete": 19
+      "percentComplete": 22
     },
     "workRemaining": {
       "pendingFeatures": [
@@ -397,13 +426,13 @@
         "nt publish / nt event / nt subject / nt action CLIs",
         "MCP Discovery Tools"
       ],
-      "currentFeatureTasks": 3,
+      "currentFeatureTasks": 2,
       "futureFeatureTasks": 24
     },
     "nextAction": {
       "featureId": "envelope-schemas",
-      "taskId": "task-1-6",
-      "description": "Source construction helpers (Session / Actor / PushEnvironment / detectAgent)"
+      "taskId": "task-1-7",
+      "description": "Remove push payload schemas"
     },
     "blockers": []
   }

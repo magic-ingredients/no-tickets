@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T11:55:13.810Z",
+  "lastUpdated": "2026-05-07T12:03:28.601Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -456,7 +456,7 @@
       "id": "registry-introspection",
       "number": 3,
       "title": "Registry Introspection + Caching",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-3-1",
@@ -597,15 +597,43 @@
         {
           "id": "task-3-5",
           "description": "Stale-cache detection",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T11:55:26.300Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T11:57:11.338Z",
+              "completedAt": "2026-05-07T11:58:13.080Z",
+              "reviewSha": "6aa41ed",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T11:58:13.080Z",
+              "refactorCommitSha": "476f7a32049e9f824311aad97356760a2df23d75",
+              "refactorCompletedAt": "2026-05-07T12:00:24.793Z",
+              "refactorCommittedAt": "2026-05-07T12:00:24.793Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T12:00:24.793Z",
+              "completedAt": "2026-05-07T12:02:12.180Z",
+              "reviewSha": "476f7a32049e9f824311aad97356760a2df23d75",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T12:02:12.180Z",
+              "refactorCommitSha": "cd30e2a6f4fc985aaba8f3f2281d746ed0e4a9e0",
+              "refactorCompletedAt": "2026-05-07T12:03:28.599Z",
+              "refactorCommittedAt": "2026-05-07T12:03:28.599Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T11:56:21.208Z",
+          "testCommitSha": "a08e6ecc5715a5ab278c9a26c632d40807f64b12",
+          "redCompletedAt": "2026-05-07T11:56:21.208Z",
+          "commitSha": "6aa41ed7c4195251a848de9261a7dfc03b55776b",
+          "greenCompletedAt": "2026-05-07T11:57:11.338Z",
+          "completedAt": "2026-05-07T12:03:28.601Z"
         }
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 4,
-        "remaining": 1,
-        "weightedProgress": 0.8,
-        "nextTask": "Stale-cache detection"
+        "completed": 5,
+        "remaining": 0,
+        "weightedProgress": 1
       }
     },
     {
@@ -710,12 +738,12 @@
     "feature": 2,
     "featureTitle": "publish() + Subjects + Interactions HTTP Client",
     "overallProgress": {
-      "completedFeatures": 1,
+      "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 19,
+      "completedTasks": 20,
       "totalTasks": 32,
-      "percentComplete": 59,
-      "weightedPercentComplete": 25
+      "percentComplete": 63,
+      "weightedPercentComplete": 28
     },
     "workRemaining": {
       "pendingFeatures": [

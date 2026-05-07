@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T10:43:53.234Z",
+  "lastUpdated": "2026-05-07T11:06:23.591Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -456,12 +456,41 @@
       "id": "registry-introspection",
       "number": 3,
       "title": "Registry Introspection + Caching",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-3-1",
           "description": "Registry HTTP client (list + describe)",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T10:44:13.547Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T10:48:31.405Z",
+              "completedAt": "2026-05-07T10:50:19.394Z",
+              "reviewSha": "f48d34a",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T10:50:19.394Z",
+              "refactorCommitSha": "a4842ae2ec1b953b9da1ad8c41a6680b42b78819",
+              "refactorCompletedAt": "2026-05-07T10:56:48.078Z",
+              "refactorCommittedAt": "2026-05-07T10:56:48.078Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T10:56:48.078Z",
+              "completedAt": "2026-05-07T11:00:18.655Z",
+              "reviewSha": "a4842ae2ec1b953b9da1ad8c41a6680b42b78819",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T11:00:18.655Z",
+              "refactorCommitSha": "d04f423cc7e78d341d2152cf97e179de8d815baf",
+              "refactorCompletedAt": "2026-05-07T11:06:23.588Z",
+              "refactorCommittedAt": "2026-05-07T11:06:23.588Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T10:46:23.211Z",
+          "testCommitSha": "de7ab967553e3dfc92baf5b959e006e480c0f7dc",
+          "redCompletedAt": "2026-05-07T10:46:23.211Z",
+          "commitSha": "f48d34a85ea0bf62754a6028d20d407da5c78551",
+          "greenCompletedAt": "2026-05-07T10:48:31.404Z",
+          "completedAt": "2026-05-07T11:06:23.591Z"
         },
         {
           "id": "task-3-2",
@@ -486,8 +515,10 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 0,
-        "remaining": 5
+        "completed": 1,
+        "remaining": 4,
+        "weightedProgress": 0.2,
+        "nextTask": "Cache layer"
       }
     },
     {
@@ -594,18 +625,17 @@
     "overallProgress": {
       "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 15,
+      "completedTasks": 16,
       "totalTasks": 32,
-      "percentComplete": 47,
-      "weightedPercentComplete": 13
+      "percentComplete": 50,
+      "weightedPercentComplete": 16
     },
     "workRemaining": {
       "pendingFeatures": [
-        "Registry Introspection + Caching",
         "nt publish / nt event / nt subject / nt action CLIs"
       ],
       "currentFeatureTasks": 1,
-      "futureFeatureTasks": 13
+      "futureFeatureTasks": 8
     },
     "blockers": []
   }

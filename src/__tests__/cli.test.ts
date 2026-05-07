@@ -177,6 +177,24 @@ describe('runCli dispatch', () => {
     expect(helpText).toContain('validate');
   });
 
+  it('--help output lists the new registry-aware verbs', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    expect(helpText).toContain('event');
+    expect(helpText).toContain('publish');
+    expect(helpText).toContain('subject');
+    expect(helpText).toContain('action');
+  });
+
+  it('--help output does NOT mention the removed `push` command', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    // Use word-boundary match — "publish" contains "push" as a non-word
+    // substring? actually "publish" has "publi" then "sh", not "push", so a
+    // simple toContain on " push" is enough. Be defensive with whitespace.
+    expect(helpText).not.toMatch(/(?:^|\s|,)push(?:\s|,|$)/);
+  });
+
   it('--help output does not list the removed push command', async () => {
     await runCli(['--help']);
     const helpText = logSpy.mock.calls[0]![0] as string;

@@ -1,4 +1,4 @@
-import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase, WorkEntity } from './types.js';
+import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase } from './types.js';
 
 /**
  * Compute a state snapshot from parsed documents.
@@ -44,56 +44,6 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
     epics,
     pushedAt: pushedAt ?? new Date().toISOString(),
   };
-}
-
-/**
- * Convert parsed .notickets/ documents into a flat WorkEntity array
- * for the v2 Push payload's work schema.
- * Pure function — no I/O.
- */
-export function toWorkEntities(parsed: ParseResult): readonly WorkEntity[] {
-  const epicIds = new Set(parsed.epics.map((e) => e.frontmatter.id));
-  const entities: WorkEntity[] = [];
-
-  for (const epic of parsed.epics) {
-    const epicEntity: WorkEntity = {
-      id: epic.frontmatter.id,
-      type: 'epic',
-      title: epic.frontmatter.title,
-      status: epic.frontmatter.status,
-      ...(epic.frontmatter.meta != null ? { meta: epic.frontmatter.meta } : {}),
-    };
-    entities.push(epicEntity);
-  }
-
-  for (const feature of parsed.features) {
-    if (!epicIds.has(feature.frontmatter.epic)) continue;
-
-    const featureEntity: WorkEntity = {
-      id: feature.frontmatter.id,
-      type: 'feature',
-      parentId: feature.frontmatter.epic,
-      title: feature.frontmatter.title,
-      status: feature.frontmatter.status,
-      ...(feature.frontmatter.assignee != null ? { assignee: feature.frontmatter.assignee } : {}),
-      ...(feature.frontmatter.assignee_type != null ? { assigneeType: feature.frontmatter.assignee_type } : {}),
-      ...(feature.frontmatter.meta != null ? { meta: feature.frontmatter.meta } : {}),
-    };
-    entities.push(featureEntity);
-
-    for (const task of feature.tasks) {
-      const taskEntity: WorkEntity = {
-        id: `${feature.frontmatter.id}-task-${task.number}`,
-        type: 'task',
-        parentId: feature.frontmatter.id,
-        title: task.title,
-        status: task.status,
-      };
-      entities.push(taskEntity);
-    }
-  }
-
-  return entities;
 }
 
 /**

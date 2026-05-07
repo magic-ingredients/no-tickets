@@ -1,4 +1,4 @@
-import type { BoardState, FeedEvent, AssigneeType, Push, PushResult } from '../core/types.js';
+import type { BoardState, FeedEvent, AssigneeType } from '../core/types.js';
 
 interface ApiClientConfig {
   readonly token: string;
@@ -52,7 +52,6 @@ interface BreakDownParams {
 }
 
 interface ApiClient {
-  push(payload: Push): Promise<PushResult>;
   getBoard(projectId: string): Promise<BoardState>;
   getFeed(projectId: string): Promise<readonly FeedEvent[]>;
   createEpic(params: CreateEpicParams): Promise<unknown>;
@@ -111,13 +110,6 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
   const { token, apiUrl } = config;
 
   return {
-    async push(payload) {
-      return request(apiUrl, token, '/v1/push', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }) as Promise<PushResult>;
-    },
-
     async getBoard(projectId) {
       return request(apiUrl, token, `/v1/board/${encodeURIComponent(projectId)}`) as Promise<BoardState>;
     },

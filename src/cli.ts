@@ -1,9 +1,4 @@
 import { createRequire } from 'node:module';
-import { assemblePush, mergeSession } from './commands/push.js';
-import { detectAgent } from './agent-detect.js';
-import { createApiClient } from './sdk/api-client.js';
-import { buildPushAuth } from './commands/push-auth.js';
-import { pushSchema } from './core/schemas.js';
 import { validateFiles } from './commands/validate.js';
 import { readNoTicketsDir } from './core/fs.js';
 import { spawn } from 'node:child_process';
@@ -21,10 +16,10 @@ export interface CliDeps {
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require('../package.json') as { version: string };
 
-type Command = 'push' | 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'token' | 'help' | 'version' | 'unknown';
+type Command = 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'token' | 'help' | 'version' | 'unknown';
 
 const KNOWN_COMMANDS = new Set<Command>([
-  'push', 'init', 'connect', 'disconnect', 'status', 'validate', 'token',
+  'init', 'connect', 'disconnect', 'status', 'validate', 'token',
 ]);
 
 function isKnownCommand(value: string): value is Command {
@@ -42,14 +37,6 @@ interface ParsedArgs {
   readonly command: Command;
   readonly args: readonly string[];
   readonly flags: Readonly<Record<string, FlagValue>>;
-}
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
 }
 
 function flagString(flags: Readonly<Record<string, FlagValue>>, key: string): string | undefined {
@@ -74,42 +61,6 @@ function urlsForFlagsOrFail(flags: Readonly<Record<string, FlagValue>>): Resolve
     fail(err instanceof Error ? err.message : 'failed to resolve URLs');
     return null;
   }
-}
-
-function loadPushConfig(apiUrl: string) {
-  const teamId = process.env['NO_TICKETS_TEAM_ID'] ?? '';
-  const projectId = process.env['NO_TICKETS_PROJECT_ID'] ?? '';
-  return { apiUrl, teamId, projectId };
-}
-
-async function handlePush(flags: Readonly<Record<string, FlagValue>>): Promise<void> {
-  const urls = urlsForFlagsOrFail(flags);
-  if (urls === null) return;
-
-  const session = detectAgent();
-  const isStdin = Boolean(flags['stdin']);
-  const isDryRun = Boolean(flags['dry-run']);
-  const config = loadPushConfig(urls.apiUrl);
-
-  const payload = isStdin
-    ? await buildStdinPush(session)
-    : await buildFilePush(config.projectId, session);
-
-  if (isDryRun) {
-    console.log(JSON.stringify(payload, null, 2));
-    return;
-  }
-
-  const authConfig = buildPushAuth(config);
-  const client = createApiClient({ token: authConfig.token, apiUrl: authConfig.apiUrl });
-  const result = await client.push(payload);
-  console.log(JSON.stringify(result));
-}
-
-async function buildStdinPush(session: ReturnType<typeof detectAgent>) {
-  const raw = await readStdin();
-  const parsed = pushSchema.parse(JSON.parse(raw));
-  return mergeSession(parsed, session);
 }
 
 function fail(message: string): void {
@@ -333,16 +284,6 @@ async function handleValidate(): Promise<void> {
   process.exitCode = 1;
 }
 
-async function buildFilePush(projectId: string, session: ReturnType<typeof detectAgent>) {
-  if (!projectId) {
-    throw new Error('NO_TICKETS_PROJECT_ID environment variable is required for push');
-  }
-  const files = await readNoTicketsDir('.notickets');
-  const payload = assemblePush({ files, projectId, session });
-  pushSchema.parse(payload);
-  return payload;
-}
-
 /**
  * Run the CLI with the given arguments.
  */
@@ -354,7 +295,7 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     case 'help':
       console.log(
         'Usage: npx no-tickets <command> [options]\n\n' +
-          'Commands: init, push, status, validate, connect, disconnect, token\n\n' +
+          'Commands: init, status, validate, connect, disconnect, token\n\n' +
           'Common options:\n' +
           '  --profile <name>   Load API + auth URLs from a named profile in ~/.notickets/config.json\n' +
           '  --timeout <ms>     Override the OAuth callback wait timeout (init only)\n\n' +
@@ -365,9 +306,6 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
       break;
     case 'version':
       console.log(CLI_VERSION);
-      break;
-    case 'push':
-      await handlePush(parsed.flags);
       break;
     case 'validate':
       await handleValidate();

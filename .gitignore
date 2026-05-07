@@ -7,3 +7,4 @@ reports/
 .env
 .env.*
 package-lock.json
+/.stryker-tmp/

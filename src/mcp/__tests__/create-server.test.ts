@@ -68,13 +68,14 @@ describe('createMcpServer', () => {
     expect(options.capabilities).toHaveProperty('tools');
   });
 
-  it('registers exactly 3 tools: push, validate, status', () => {
+  it('registers validate and status tools (push removed; F5 will add publish_event)', () => {
     createMcpServer();
 
     const registeredNames = lastInstance!.registerToolCalls.map((c) => c.name);
 
-    expect(registeredNames).toEqual(['push', 'validate', 'status']);
-    expect(registeredNames).toHaveLength(3);
+    expect(registeredNames).toEqual(['validate', 'status']);
+    expect(registeredNames).toHaveLength(2);
+    expect(registeredNames).not.toContain('push');
   });
 
   it('registers each tool with a non-empty description and inputSchema', () => {
@@ -99,11 +100,6 @@ describe('createMcpServer', () => {
   describe('tool input schemas', () => {
     beforeEach(() => {
       createMcpServer();
-    });
-
-    it('push accepts a payload object', () => {
-      const schema = findTool('push').config.inputSchema as Record<string, unknown>;
-      expect(schema).toHaveProperty('payload');
     });
 
     it('validate accepts optional directory parameter', () => {

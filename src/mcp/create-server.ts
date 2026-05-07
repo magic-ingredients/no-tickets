@@ -3,7 +3,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { toolError } from './tools/types.js';
-import { handlePush } from './tools/push.js';
 import { handleValidate } from './tools/validate.js';
 import { handleStatus } from './tools/status.js';
 
@@ -16,21 +15,6 @@ export function createMcpServer(): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { tools: {} } },
-  );
-
-  server.registerTool(
-    'push',
-    {
-      description: 'Push a v2 event payload to the no-tickets server',
-      inputSchema: { payload: z.string().describe('JSON-encoded Push payload') },
-    },
-    async (args: { payload: string }): Promise<ReturnType<typeof toolError>> => {
-      try {
-        return await handlePush(args.payload);
-      } catch (err) {
-        return toolError(err);
-      }
-    },
   );
 
   server.registerTool(

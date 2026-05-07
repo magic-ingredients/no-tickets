@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createApiClient } from '../api-client.js';
-import type { BoardState, FeedEvent, Push } from '../../core/types.js';
+import type { BoardState, FeedEvent } from '../../core/types.js';
 
 let fetchSpy: ReturnType<typeof vi.fn>;
 
@@ -224,52 +224,6 @@ describe('breakDown', () => {
   });
 });
 
-describe('push', () => {
-  it('calls POST /v1/push with Push payload', async () => {
-    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
-    fetchSpy.mockReturnValue(jsonResponse({ success: true, changesApplied: 2, eventsGenerated: 1 }));
-
-    const payload: Push = {
-      projectId: 'proj-1',
-      timestamp: '2026-04-22T10:00:00Z',
-      work: { entities: [{ id: 'e-1', type: 'epic', title: 'Platform', status: 'not_started' }] },
-    };
-    await client.push(payload);
-
-    const { url, init } = lastFetchCall();
-    expect(url).toBe('https://api.test.com/v1/push');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body as string)).toEqual(payload);
-  });
-
-  it('returns PushResult from server', async () => {
-    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
-    const serverResponse = { success: true, changesApplied: 3, eventsGenerated: 2 };
-    fetchSpy.mockReturnValue(jsonResponse(serverResponse));
-
-    const result = await client.push({ projectId: 'p1', timestamp: '2026-04-22T10:00:00Z' });
-
-    expect(result).toEqual(serverResponse);
-  });
-
-  it('sends Bearer auth header', async () => {
-    const client = createApiClient({ token: 'nt_push_xyz', apiUrl: 'https://api.test.com' });
-    fetchSpy.mockReturnValue(jsonResponse({ success: true, changesApplied: 0, eventsGenerated: 0 }));
-
-    await client.push({ projectId: 'p1', timestamp: '2026-04-22T10:00:00Z' });
-
-    const { init } = lastFetchCall();
-    expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer nt_push_xyz');
-  });
-
-  it('throws on server error', async () => {
-    const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
-    fetchSpy.mockReturnValue(jsonResponse({ error: 'Invalid payload' }, 400));
-
-    await expect(client.push({ projectId: 'p1', timestamp: '2026-04-22T10:00:00Z' })).rejects.toThrow('400: Invalid payload');
-  });
-});
-
 describe('path parameter encoding', () => {
   it('encodes projectId in getBoard URL', async () => {
     const client = createApiClient({ token: 'tok', apiUrl: 'https://api.test.com' });
@@ -333,7 +287,6 @@ describe('path contract (regression guard)', () => {
 
     await client.getBoard('p1');
     await client.getFeed('p1');
-    await client.push({ projectId: 'p', timestamp: '2026-04-22T10:00:00Z' });
     await client.createEpic({ projectId: 'p', title: 'E' });
     await client.createFeature({ projectId: 'p', epicId: 'e1', title: 'F' });
     await client.createFix({ projectId: 'p', epicId: 'e1', title: 'Fix' });

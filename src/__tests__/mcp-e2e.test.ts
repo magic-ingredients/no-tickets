@@ -58,45 +58,13 @@ async function createConnectedClient() {
 }
 
 describe('MCP server e2e', () => {
-  it('lists exactly 3 tools', async () => {
+  it('lists current tools (push removed; F5 will add publish_event)', async () => {
     const client = await createConnectedClient();
     const tools = await client.listTools();
 
     const names = tools.tools.map((t) => t.name);
-    expect(names).toEqual(['push', 'validate', 'status']);
-  });
-
-  it('push tool validates and sends payload to API', async () => {
-    const client = await createConnectedClient();
-    const payload = JSON.stringify({
-      projectId: 'proj-1',
-      timestamp: '2026-04-22T10:00:00Z',
-      work: { entities: [{ id: 'e1', type: 'epic', title: 'E', status: 'not_started' }] },
-    });
-
-    const result = await client.callTool({ name: 'push', arguments: { payload } });
-
-    expect(result.isError).toBeFalsy();
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    const [url] = fetchSpy.mock.calls[0] as [string];
-    expect(url).toContain('/v1/push');
-  });
-
-  it('push tool returns error for invalid JSON', async () => {
-    const client = await createConnectedClient();
-
-    const result = await client.callTool({ name: 'push', arguments: { payload: 'not json' } });
-
-    expect(result.isError).toBe(true);
-  });
-
-  it('push tool returns error for invalid payload schema', async () => {
-    const client = await createConnectedClient();
-    const payload = JSON.stringify({ notAValidPush: true });
-
-    const result = await client.callTool({ name: 'push', arguments: { payload } });
-
-    expect(result.isError).toBe(true);
+    expect(names).toEqual(['validate', 'status']);
+    expect(names).not.toContain('push');
   });
 
   it('validate tool returns valid for well-formed files', async () => {

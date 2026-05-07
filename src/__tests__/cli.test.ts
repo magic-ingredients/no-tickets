@@ -2,17 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parseArgs, runCli } from '../cli.js';
 
 describe('parseArgs', () => {
-  it('parses push command with empty args and flags', () => {
-    const result = parseArgs(['push']);
-    expect(result.command).toBe('push');
+  it('parses init command with empty args and flags', () => {
+    const result = parseArgs(['init']);
+    expect(result.command).toBe('init');
     expect(result.args).toEqual([]);
     expect(result.flags).toEqual({});
-  });
-
-  it('parses push --dry-run', () => {
-    const result = parseArgs(['push', '--dry-run']);
-    expect(result.command).toBe('push');
-    expect(result.flags['dry-run']).toBe(true);
   });
 
   it('parses init command', () => {
@@ -69,8 +63,8 @@ describe('parseArgs', () => {
   });
 
   it('treats single-dash args after command as positional', () => {
-    const result = parseArgs(['push', '-v']);
-    expect(result.command).toBe('push');
+    const result = parseArgs(['validate', '-v']);
+    expect(result.command).toBe('validate');
     expect(result.args).toEqual(['-v']);
     expect(result.flags).toEqual({});
   });
@@ -86,13 +80,13 @@ describe('parseArgs', () => {
   });
 
   it('collects multiple flags', () => {
-    const result = parseArgs(['push', '--dry-run', '--verbose']);
-    expect(result).toEqual({ command: 'push', args: [], flags: { 'dry-run': true, 'verbose': true } });
+    const result = parseArgs(['init', '--quiet', '--verbose']);
+    expect(result).toEqual({ command: 'init', args: [], flags: { 'quiet': true, 'verbose': true } });
   });
 
   it('skips empty-string args between positionals and flags', () => {
-    const result = parseArgs(['push', '', '--dry-run']);
-    expect(result).toEqual({ command: 'push', args: [], flags: { 'dry-run': true } });
+    const result = parseArgs(['init', '', '--quiet']);
+    expect(result).toEqual({ command: 'init', args: [], flags: { 'quiet': true } });
   });
 
   it('skips a trailing empty-string arg', () => {
@@ -102,10 +96,10 @@ describe('parseArgs', () => {
 
   it('leaves positional args alone when following a boolean flag', () => {
     // Regression: parseArgs must NOT consume the next arg as a value unless the
-    // flag is in the known value-flag allowlist. `dry-run` is a boolean flag,
+    // flag is in the known value-flag allowlist. `quiet` is a boolean flag,
     // so `somefile` stays a positional.
-    const result = parseArgs(['push', '--dry-run', 'somefile']);
-    expect(result).toEqual({ command: 'push', args: ['somefile'], flags: { 'dry-run': true } });
+    const result = parseArgs(['init', '--quiet', 'somefile']);
+    expect(result).toEqual({ command: 'init', args: ['somefile'], flags: { 'quiet': true } });
   });
 
   it('parses --project <value> as a string-valued flag', () => {
@@ -179,8 +173,14 @@ describe('runCli dispatch', () => {
     const helpText = logSpy.mock.calls[0]![0] as string;
     expect(helpText).toContain('Commands:');
     expect(helpText).toContain('init');
-    expect(helpText).toContain('push');
     expect(helpText).toContain('status');
+    expect(helpText).toContain('validate');
+  });
+
+  it('--help output does not list the removed push command', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    expect(helpText).not.toContain('push');
   });
 
   it('empty argv prints a Usage line (default help)', async () => {

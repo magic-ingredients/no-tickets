@@ -109,6 +109,23 @@ describe('runInteraction — happy path', () => {
     expect(calls[0]?.rawBody).not.toContain('subject');
   });
 
+  it('does NOT assign subject:undefined into the in-memory wire body', async () => {
+    // Pin the in-memory shape, not just the JSON output. JSON.stringify drops
+    // undefined keys silently — without this test, an impl that always wrote
+    // `wireBody.subject = body.subject` (subject sometimes undefined) would
+    // pass the wire-bytes test but leak `subject: undefined` to anything
+    // reading the object before serialisation.
+    const requestSpy = vi.spyOn(Client.prototype, 'request').mockResolvedValue(RESPONSE_OK);
+
+    await runInteraction(client(vi.fn()), 'app.thread.reply', { input: { text: 'hi' } });
+
+    const passedBody = requestSpy.mock.calls[0]?.[2];
+    expect(passedBody).toStrictEqual({ input: { text: 'hi' } });
+    expect(Object.keys(passedBody as object)).toEqual(['input']);
+
+    requestSpy.mockRestore();
+  });
+
   it('URL-encodes `/` in the :id segment (catches a swap to encodeURI)', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: RESPONSE_OK })]);
 

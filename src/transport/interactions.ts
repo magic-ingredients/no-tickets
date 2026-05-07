@@ -11,15 +11,18 @@ export interface RunInteractionBody<TInput = unknown> {
   readonly subject?: SubjectRef;
 }
 
-export async function runInteraction<TInput = unknown>(
+export async function runInteraction(
   client: Client,
   id: string,
-  body: RunInteractionBody<TInput>,
+  body: RunInteractionBody,
 ): Promise<InteractionResponse> {
-  interactionRequestSchema.parse({ id, input: body.input, subject: body.subject });
-
-  const wireBody: Record<string, unknown> = { input: body.input };
-  if (body.subject !== undefined) wireBody['subject'] = body.subject;
+  const parsed = interactionRequestSchema.parse({
+    id,
+    input: body.input,
+    subject: body.subject,
+  });
+  const wireBody: Record<string, unknown> = { input: parsed.input };
+  if (parsed.subject !== undefined) wireBody['subject'] = parsed.subject;
 
   const path = `/v1/interactions/${encodeURIComponent(id)}`;
   const response = await client.request<unknown>('POST', path, wireBody);

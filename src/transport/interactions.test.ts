@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, expectTypeOf } from 'vitest';
 import { ZodError } from 'zod';
 import { Client } from './client.js';
-import { runInteraction } from './interactions.js';
+import { runInteraction, type RunInteractionBody } from './interactions.js';
 import { EventValidationError, PermissionDeniedError } from './errors.js';
 import type { SubjectRef } from '../core/subject.js';
 
@@ -9,6 +9,7 @@ interface RecordedCall {
   readonly url: string;
   readonly method: string;
   readonly body: unknown;
+  readonly rawBody: string | undefined;
 }
 
 interface MockResponseInit {
@@ -44,7 +45,7 @@ function recordingFetch(responses: Response[]): {
       }
       body = JSON.parse(rawBody);
     }
-    calls.push({ url, method, body });
+    calls.push({ url, method, body, rawBody: typeof rawBody === 'string' ? rawBody : undefined });
     const response = responses[i++];
     if (!response) throw new Error(`recordingFetch ran out of responses at call ${i}`);
     return response;
@@ -95,21 +96,33 @@ describe('runInteraction — happy path', () => {
     expect(calls[0]?.body).toEqual({ input: { text: 'hi' }, subject });
   });
 
-  it('omits subject from the body when not provided', async () => {
+  it('omits the subject key from the WIRE BYTES when not provided (not just the parsed body)', async () => {
+    // Asserting against rawBody catches the case where the in-memory object
+    // carries `subject: undefined` (which JSON.stringify silently drops). If
+    // a caller's middleware reads the in-memory object before serialisation
+    // they should not see a phantom subject key.
     const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: RESPONSE_OK })]);
 
     await runInteraction(client(fetchImpl), 'app.thread.reply', { input: { text: 'hi' } });
 
-    expect(calls[0]?.body).toEqual({ input: { text: 'hi' } });
-    expect(Object.keys(calls[0]?.body as object)).not.toContain('subject');
+    expect(calls[0]?.rawBody).toBe(JSON.stringify({ input: { text: 'hi' } }));
+    expect(calls[0]?.rawBody).not.toContain('subject');
   });
 
-  it('URL-encodes the :id segment so reserved chars survive', async () => {
+  it('URL-encodes `/` in the :id segment (catches a swap to encodeURI)', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: RESPONSE_OK })]);
 
-    await runInteraction(client(fetchImpl), 'app/thread reply', { input: {} });
+    await runInteraction(client(fetchImpl), 'app/thread', { input: {} });
 
-    expect(calls[0]?.url).toBe('https://api.example.com/v1/interactions/app%2Fthread%20reply');
+    expect(calls[0]?.url).toBe('https://api.example.com/v1/interactions/app%2Fthread');
+  });
+
+  it('URL-encodes spaces in the :id segment', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: RESPONSE_OK })]);
+
+    await runInteraction(client(fetchImpl), 'thread reply', { input: {} });
+
+    expect(calls[0]?.url).toBe('https://api.example.com/v1/interactions/thread%20reply');
   });
 });
 
@@ -170,6 +183,33 @@ describe('runInteraction — server errors', () => {
   });
 });
 
+describe('runInteraction — response shape', () => {
+  it('returns an empty events array when the server emitted no follow-up events', async () => {
+    const { fetch: fetchImpl } = recordingFetch([jsonResponse({ body: { events: [] } })]);
+
+    const result = await runInteraction(client(fetchImpl), 'app.thread.reply', { input: {} });
+
+    expect(result.events).toEqual([]);
+  });
+
+  it('strips unknown response fields (zod default behaviour) so the shape stays narrow', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({
+        body: {
+          events: [{ id: 'evt_1', type: 'app.thread.replied.v1' }],
+          requestId: 'req_xyz',
+          extra: 'should-be-stripped',
+        },
+      }),
+    ]);
+
+    const result = await runInteraction(client(fetchImpl), 'app.thread.reply', { input: {} });
+
+    expect(result).toEqual({ events: [{ id: 'evt_1', type: 'app.thread.replied.v1' }] });
+    expect(Object.keys(result)).toEqual(['events']);
+  });
+});
+
 describe('runInteraction — response validation', () => {
   it('throws a ZodError when the server response is not an InteractionResponse', async () => {
     const { fetch: fetchImpl } = recordingFetch([
@@ -189,5 +229,12 @@ describe('runInteraction — response validation', () => {
     await expect(
       runInteraction(client(fetchImpl), 'app.thread.reply', { input: {} }),
     ).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('runInteraction — types', () => {
+  it('RunInteractionBody<TInput> narrows the input field to TInput', () => {
+    type Body = RunInteractionBody<{ text: string }>;
+    expectTypeOf<Body['input']>().toEqualTypeOf<{ text: string }>();
   });
 });

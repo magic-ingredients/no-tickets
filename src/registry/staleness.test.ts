@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { isCacheStale, DEFAULT_STALE_THRESHOLD_DAYS } from './staleness.js';
 import type { CacheFile } from './cache.js';
 import type { EventTypeSpec } from './client.js';
@@ -45,9 +45,9 @@ describe('isCacheStale — explicit threshold', () => {
     expect(isCacheStale(cache, { thresholdDays: 14, now: NOW })).toBe(true);
   });
 
-  it('returns false at the exact threshold boundary (>= threshold counts as stale; < is fresh)', () => {
-    // Cache fetched exactly 14 days before NOW. Boundary semantics: NOT
-    // stale at the threshold (allows one freshness day of grace).
+  it('returns false at the exact threshold boundary (== threshold is fresh; > threshold is stale)', () => {
+    // Cache fetched exactly 14 days before NOW. Boundary semantics: at the
+    // threshold the cache is fresh; one ms past makes it stale (next test).
     const cache = buildCache('2026-04-23T00:00:00Z');
     expect(isCacheStale(cache, { thresholdDays: 14, now: NOW })).toBe(false);
   });
@@ -84,10 +84,6 @@ describe('isCacheStale — default threshold', () => {
 });
 
 describe('isCacheStale — env override', () => {
-  beforeEach(() => {
-    delete process.env['NO_TICKETS_REGISTRY_STALE_DAYS'];
-  });
-
   it('honours NO_TICKETS_REGISTRY_STALE_DAYS when no explicit threshold is supplied', () => {
     process.env['NO_TICKETS_REGISTRY_STALE_DAYS'] = '3';
     const cache = buildCache('2026-05-01T00:00:00Z'); // 6 days
@@ -114,5 +110,36 @@ describe('isCacheStale — env override', () => {
     const cache = buildCache('2026-05-01T00:00:00Z');
 
     expect(isCacheStale(cache, { now: NOW })).toBe(false);
+  });
+
+  it('treats an empty-string env var as unset (falls back to default)', () => {
+    process.env['NO_TICKETS_REGISTRY_STALE_DAYS'] = '';
+    const cache = buildCache('2026-05-01T00:00:00Z'); // 6 days
+
+    expect(isCacheStale(cache, { now: NOW })).toBe(false);
+  });
+});
+
+describe('isCacheStale — explicit threshold validation', () => {
+  it('falls back to env / default when explicit thresholdDays is NaN', () => {
+    process.env['NO_TICKETS_REGISTRY_STALE_DAYS'] = '3';
+    const cache = buildCache('2026-05-01T00:00:00Z'); // 6 days
+    // Explicit NaN is invalid, so env (3 days) takes over → cache is stale.
+    expect(isCacheStale(cache, { thresholdDays: NaN, now: NOW })).toBe(true);
+  });
+
+  it('falls back to env / default when explicit thresholdDays is non-positive', () => {
+    process.env['NO_TICKETS_REGISTRY_STALE_DAYS'] = '3';
+    const cache = buildCache('2026-05-01T00:00:00Z'); // 6 days
+    expect(isCacheStale(cache, { thresholdDays: -5, now: NOW })).toBe(true);
+    expect(isCacheStale(cache, { thresholdDays: 0, now: NOW })).toBe(true);
+  });
+
+  it('falls back to default when explicit thresholdDays is Infinity', () => {
+    // Infinity * MS_PER_DAY is Infinity; ageMs > Infinity is always false,
+    // so without validation everything would be "fresh" forever — masking
+    // an obviously bad caller value.
+    const cache = buildCache('2020-01-01T00:00:00Z'); // very old
+    expect(isCacheStale(cache, { thresholdDays: Infinity, now: NOW })).toBe(true);
   });
 });

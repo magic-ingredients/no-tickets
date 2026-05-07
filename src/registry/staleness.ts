@@ -11,12 +11,20 @@ export interface StalenessOptions {
   readonly now?: Date;
 }
 
+function isValidThreshold(n: number): boolean {
+  return Number.isFinite(n) && n > 0;
+}
+
 function thresholdFromEnv(): number {
   const raw = process.env['NO_TICKETS_REGISTRY_STALE_DAYS'];
   if (raw === undefined || raw === '') return DEFAULT_STALE_THRESHOLD_DAYS;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_STALE_THRESHOLD_DAYS;
-  return parsed;
+  return isValidThreshold(parsed) ? parsed : DEFAULT_STALE_THRESHOLD_DAYS;
+}
+
+function resolveThreshold(explicit: number | undefined): number {
+  if (explicit !== undefined && isValidThreshold(explicit)) return explicit;
+  return thresholdFromEnv();
 }
 
 /** Determine whether the cache is stale relative to the threshold.
@@ -40,6 +48,6 @@ export function isCacheStale(
   const ageMs = nowMs - fetchedAtMs;
   if (ageMs < 0) return true;
 
-  const thresholdDays = options.thresholdDays ?? thresholdFromEnv();
+  const thresholdDays = resolveThreshold(options.thresholdDays);
   return ageMs > thresholdDays * MS_PER_DAY;
 }

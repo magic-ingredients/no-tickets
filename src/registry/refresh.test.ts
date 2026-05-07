@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Client } from '../transport/client.js';
-import { scheduleRefresh, awaitRefresh, __resetRefreshState } from './refresh.js';
+import { createRefreshScheduler, awaitRefresh } from './refresh.js';
 import { writeCache, readCache, type CacheFile } from './cache.js';
 import type { EventTypeSpec } from './client.js';
 
@@ -36,7 +36,6 @@ beforeEach(() => {
   tempCwd = mkdtempSync(join(tmpdir(), 'no-tickets-refresh-cwd-'));
   process.env['NO_TICKETS_HOME'] = tempHome;
   cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempCwd);
-  __resetRefreshState();
 });
 
 afterEach(() => {
@@ -81,15 +80,21 @@ function seedCache(overrides: Partial<CacheFile> = {}): CacheFile {
   return file;
 }
 
+function freshScheduler(opts: Parameters<typeof createRefreshScheduler>[0] = {}): ReturnType<
+  typeof createRefreshScheduler
+> {
+  return createRefreshScheduler(opts);
+}
+
 describe('scheduleRefresh — fresh fetch (no prior cache)', () => {
   it('writes a new CacheFile with the server etag and types', async () => {
     const headers = { etag: 'W/"new"' };
     const fetchImpl: typeof fetch = async () =>
       jsonResponse({ body: { types: [TYPE_A, TYPE_B] }, headers });
 
-    const result = await scheduleRefresh(makeClient(fetchImpl));
+    const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
-    expect(result.status).toBe('200');
+    expect(result.status).toBe('updated');
     const cache = readCache(BASE_URL);
     expect(cache?.etag).toBe('W/"new"');
     expect(cache?.types).toEqual([TYPE_A, TYPE_B]);
@@ -102,7 +107,7 @@ describe('scheduleRefresh — fresh fetch (no prior cache)', () => {
       return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
     };
 
-    await scheduleRefresh(makeClient(fetchImpl));
+    await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
     expect(captured?.get('if-none-match')).toBeNull();
   });
@@ -117,7 +122,7 @@ describe('scheduleRefresh — conditional refresh', () => {
       return jsonResponse({ body: { types: [TYPE_A] }, headers: { etag: 'W/"new"' } });
     };
 
-    await scheduleRefresh(makeClient(fetchImpl));
+    await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
     expect(captured?.get('if-none-match')).toBe('W/"seed"');
   });
@@ -127,13 +132,26 @@ describe('scheduleRefresh — conditional refresh', () => {
     const fetchImpl: typeof fetch = async () =>
       new Response(null, { status: 304, headers: { etag: 'W/"seed"' } });
 
-    const result = await scheduleRefresh(makeClient(fetchImpl));
+    const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
-    expect(result.status).toBe('304');
+    expect(result.status).toBe('unchanged');
     const after = readCache(BASE_URL);
     expect(after?.etag).toBe(seeded.etag);
     expect(after?.types).toEqual(seeded.types);
     expect(after?.fetchedAt).not.toBe(seeded.fetchedAt);
+  });
+
+  it('on 304 with no prior cache (defensive against server quirks): no write, status unchanged', async () => {
+    // No seedCache. Server returns 304 anyway. We treat it as unchanged but
+    // have nothing on disk to bump. Must not crash, must not write a partial
+    // CacheFile.
+    const fetchImpl: typeof fetch = async () =>
+      new Response(null, { status: 304, headers: { etag: 'W/"x"' } });
+
+    const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
+
+    expect(result.status).toBe('unchanged');
+    expect(readCache(BASE_URL)).toBeNull();
   });
 
   it('on 200: replaces the cache atomically with the new types and etag', async () => {
@@ -144,9 +162,9 @@ describe('scheduleRefresh — conditional refresh', () => {
         headers: { etag: 'W/"updated"' },
       });
 
-    const result = await scheduleRefresh(makeClient(fetchImpl));
+    const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
-    expect(result.status).toBe('200');
+    expect(result.status).toBe('updated');
     const after = readCache(BASE_URL);
     expect(after?.etag).toBe('W/"updated"');
     expect(after?.types).toEqual([TYPE_A, TYPE_B]);
@@ -160,9 +178,28 @@ describe('scheduleRefresh — failure handling', () => {
       throw new Error('offline');
     };
 
-    const result = await scheduleRefresh(makeClient(fetchImpl));
+    const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
     expect(result.status).toBe('failed');
+  });
+
+  it('logs the failure at debug level when a logger is supplied', async () => {
+    seedCache();
+    const debug = vi.fn();
+    const warn = vi.fn();
+    const scheduler = freshScheduler({ logger: { debug, warn } });
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error('offline');
+    };
+
+    await scheduler.scheduleRefresh(makeClient(fetchImpl));
+
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(debug.mock.calls[0]?.[0]).toMatchObject({
+      event: 'registry.refresh.failed',
+      baseUrl: BASE_URL,
+    });
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('leaves the prior cache intact on failure', async () => {
@@ -171,7 +208,7 @@ describe('scheduleRefresh — failure handling', () => {
       throw new Error('offline');
     };
 
-    await scheduleRefresh(makeClient(fetchImpl));
+    await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
     expect(readCache(BASE_URL)).toEqual(seeded);
   });
@@ -181,7 +218,7 @@ describe('scheduleRefresh — failure handling', () => {
     const fetchImpl: typeof fetch = async () =>
       jsonResponse({ status: 503, body: { msg: 'unavail' } });
 
-    const result = await scheduleRefresh(makeClient(fetchImpl));
+    const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
     expect(result.status).toBe('failed');
   });
@@ -189,23 +226,31 @@ describe('scheduleRefresh — failure handling', () => {
 
 describe('scheduleRefresh — bounded concurrency', () => {
   it('coalesces parallel in-process calls for the same server (one inflight)', async () => {
+    // Use a manually-controlled deferred so the coalescing is deterministic
+    // and not dependent on a sleep racing the event loop.
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let callCount = 0;
     const fetchImpl: typeof fetch = async () => {
       callCount++;
-      // Yield so multiple concurrent calls can stack up before we resolve.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await blocked;
       return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
     };
+    const scheduler = freshScheduler();
     const client = makeClient(fetchImpl);
 
-    const [a, b, c] = await Promise.all([
-      scheduleRefresh(client),
-      scheduleRefresh(client),
-      scheduleRefresh(client),
-    ]);
+    // Issue all three calls before releasing the in-flight refresh.
+    const promises = [
+      scheduler.scheduleRefresh(client),
+      scheduler.scheduleRefresh(client),
+      scheduler.scheduleRefresh(client),
+    ];
+    release();
+    const [a, b, c] = await Promise.all(promises);
 
     expect(callCount).toBe(1);
-    // All three callers see the same result.
     expect(a).toEqual(b);
     expect(b).toEqual(c);
   });
@@ -223,8 +268,9 @@ describe('scheduleRefresh — bounded concurrency', () => {
       fetch: fetchImpl,
       source: { name: 'sdk', sdkVersion: 'x' },
     });
+    const scheduler = freshScheduler();
 
-    await Promise.all([scheduleRefresh(a), scheduleRefresh(b)]);
+    await Promise.all([scheduler.scheduleRefresh(a), scheduler.scheduleRefresh(b)]);
 
     expect(callCount).toBe(2);
   });
@@ -235,10 +281,11 @@ describe('scheduleRefresh — bounded concurrency', () => {
       callCount++;
       return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
     };
+    const scheduler = freshScheduler();
     const client = makeClient(fetchImpl);
 
-    await scheduleRefresh(client);
-    await scheduleRefresh(client);
+    await scheduler.scheduleRefresh(client);
+    await scheduler.scheduleRefresh(client);
 
     expect(callCount).toBe(2);
   });
@@ -250,10 +297,10 @@ describe('awaitRefresh', () => {
     const fetchImpl: typeof fetch = async () =>
       jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
 
-    const promise = scheduleRefresh(makeClient(fetchImpl));
+    const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
     const result = await awaitRefresh(promise, { timeoutMs: 1000 });
 
-    expect(result.status).toBe('200');
+    expect(result.status).toBe('updated');
   });
 
   it('returns { status: "timeout" } when the refresh is still inflight', async () => {
@@ -266,12 +313,26 @@ describe('awaitRefresh', () => {
       return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
     };
 
-    const promise = scheduleRefresh(makeClient(fetchImpl));
+    const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
     const result = await awaitRefresh(promise, { timeoutMs: 50 });
 
     expect(result.status).toBe('timeout');
     release();
-    // Ensure the underlying refresh still completes and doesn't unhandled-reject.
     await promise;
+  });
+
+  it('clears the timer when the refresh resolves first (no leak / late timeout)', async () => {
+    seedCache();
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+
+    const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
+    // Long timeout — would observably delay test if not cleared.
+    const start = Date.now();
+    const result = await awaitRefresh(promise, { timeoutMs: 60_000 });
+    const elapsed = Date.now() - start;
+
+    expect(result.status).toBe('updated');
+    expect(elapsed).toBeLessThan(2000);
   });
 });

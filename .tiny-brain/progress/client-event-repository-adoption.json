@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T15:09:32.873Z",
+  "lastUpdated": "2026-05-07T15:19:27.248Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -781,7 +781,36 @@
         {
           "id": "task-4-5",
           "description": "nt subject",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T15:09:45.306Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T15:11:29.079Z",
+              "completedAt": "2026-05-07T15:13:26.477Z",
+              "reviewSha": "976fda9",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:13:26.477Z",
+              "refactorCommitSha": "9e67f5850a4eba9a2d0f1b8b49c3e75be43f1d9c",
+              "refactorCompletedAt": "2026-05-07T15:15:35.743Z",
+              "refactorCommittedAt": "2026-05-07T15:15:35.743Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T15:15:35.743Z",
+              "completedAt": "2026-05-07T15:17:54.438Z",
+              "reviewSha": "9e67f5850a4eba9a2d0f1b8b49c3e75be43f1d9c",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:17:54.438Z",
+              "refactorCommitSha": "3b19a60272446bd2606af081fb0dbafc65f2137f",
+              "refactorCompletedAt": "2026-05-07T15:19:27.247Z",
+              "refactorCommittedAt": "2026-05-07T15:19:27.247Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T15:10:35.795Z",
+          "testCommitSha": "0c7cae7dbaa7f246d9860d0a0ca07cc6d945005c",
+          "redCompletedAt": "2026-05-07T15:10:35.795Z",
+          "commitSha": "976fda96a23e6ec3347aad65d3dc00e0f3ab1bbd",
+          "greenCompletedAt": "2026-05-07T15:11:29.079Z",
+          "completedAt": "2026-05-07T15:19:27.248Z"
         },
         {
           "id": "task-4-6",
@@ -801,10 +830,10 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 4,
-        "remaining": 4,
-        "weightedProgress": 0.5,
-        "nextTask": "nt subject"
+        "completed": 5,
+        "remaining": 3,
+        "weightedProgress": 0.625,
+        "nextTask": "nt action"
       }
     },
     {
@@ -858,10 +887,10 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 24,
+      "completedTasks": 25,
       "totalTasks": 32,
-      "percentComplete": 75,
-      "weightedPercentComplete": 41
+      "percentComplete": 78,
+      "weightedPercentComplete": 44
     },
     "workRemaining": {
       "pendingFeatures": [],

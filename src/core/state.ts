@@ -82,13 +82,11 @@ export function computeFeatureProgress(feature: FeatureState): number {
   const taskPercent = feature.tasks.total > 0
     ? (feature.tasks.completed / feature.tasks.total) * 100
     : 0;
-  const testPercent = feature.tests.total > 0
-    ? (feature.tests.passing / feature.tests.total) * 100
-    : 0;
 
-  const raw = feature.tests.total === 0
-    ? phasePercent * 0.4 + taskPercent * 0.6
-    : phasePercent * 0.3 + taskPercent * 0.35 + testPercent * 0.35;
+  if (feature.tests.total === 0) {
+    return Math.min(100, Math.round(phasePercent * 0.4 + taskPercent * 0.6));
+  }
 
-  return Math.min(100, Math.round(raw));
+  const testPercent = (feature.tests.passing / feature.tests.total) * 100;
+  return Math.min(100, Math.round(phasePercent * 0.3 + taskPercent * 0.35 + testPercent * 0.35));
 }

@@ -308,6 +308,32 @@ describe('handlePublishEvent', () => {
 
     expect(result).toEqual({ id: 'evt_dup', deduped: true });
   });
+
+  it('reports deduped: false when ingested > 0 even if the response also has dedupes (mixed batch is impossible for a singular publish; defensive)', async () => {
+    const { deps } = buildDeps({
+      publishResult: { ingested: 1, deduped: 1, ids: ['evt_1'] },
+    });
+
+    const result = await handlePublishEvent(
+      { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+      deps,
+    );
+
+    expect(result).toEqual({ id: 'evt_1', deduped: false });
+  });
+
+  it('reports deduped: false when both ingested and deduped are zero (boundary; kills > 0 → >= 0)', async () => {
+    const { deps } = buildDeps({
+      publishResult: { ingested: 0, deduped: 0, ids: ['evt_void'] },
+    });
+
+    const result = await handlePublishEvent(
+      { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+      deps,
+    );
+
+    expect(result).toEqual({ id: 'evt_void', deduped: false });
+  });
 });
 
 describe('handleRunInteraction', () => {
@@ -343,7 +369,7 @@ describe('handleRunInteraction', () => {
     ]);
   });
 
-  it('omits subject when not supplied', async () => {
+  it('omits subject when not supplied — body forwards just { input }', async () => {
     const { deps, runInt } = buildDeps({});
 
     await handleRunInteraction(
@@ -351,8 +377,7 @@ describe('handleRunInteraction', () => {
       deps,
     );
 
-    const arg = runInt.mock.calls[0]?.[1];
-    expect(arg).not.toHaveProperty('subject');
+    expect(runInt.mock.calls[0]?.[1]).toEqual({ input: { text: 'hi' } });
   });
 });
 

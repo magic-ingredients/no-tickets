@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { Client } from './client.js';
 import {
   UnknownEventTypeError,
-  EventValidationError,
   PermissionDeniedError,
   ServerError,
 } from './errors.js';

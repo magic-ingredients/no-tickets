@@ -8,7 +8,7 @@ import {
   rmSync,
   existsSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readCache, writeCache, cachePath, type CacheFile } from './cache.js';
 import type { EventTypeSpec } from './client.js';
@@ -32,35 +32,50 @@ const SAMPLE_FILE: CacheFile = {
 
 let tempHome: string;
 let tempCwd: string;
-let originalCwd: () => string;
+let cwdSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), 'no-tickets-cache-home-'));
   tempCwd = mkdtempSync(join(tmpdir(), 'no-tickets-cache-cwd-'));
+  // Stub HOME / USERPROFILE so os.homedir() resolves to the temp dir.
   vi.stubEnv('HOME', tempHome);
   vi.stubEnv('USERPROFILE', tempHome);
-  vi.stubEnv('NO_TICKETS_HOME', tempHome);
-  originalCwd = process.cwd;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (process as any).cwd = (): string => tempCwd;
+  // NO_TICKETS_HOME is the explicit override path; default tests must
+  // exercise the homedir() branch, so leave it unset.
+  delete process.env['NO_TICKETS_HOME'];
+  cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempCwd);
 });
 
 afterEach(() => {
+  cwdSpy.mockRestore();
   vi.unstubAllEnvs();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (process as any).cwd = originalCwd;
   rmSync(tempHome, { recursive: true, force: true });
   rmSync(tempCwd, { recursive: true, force: true });
 });
 
+const NOTICKETS_PATH_FRAGMENT = `${sep}.notickets${sep}`;
+
 describe('cachePath', () => {
-  it('returns a user-local path when no .notickets/ ancestor exists', () => {
+  it('returns a user-local path under homedir() when no .notickets/ ancestor exists', () => {
     const p = cachePath('https://api.example.com');
 
-    expect(p.startsWith(tempHome)).toBe(true);
-    expect(p).toContain('.notickets');
-    expect(p).toContain('.cache');
-    expect(p).toMatch(/registry-[0-9a-f]+\.json$/);
+    expect(p.startsWith(tempHome + sep)).toBe(true);
+    expect(p).toContain(`${NOTICKETS_PATH_FRAGMENT}.cache${sep}`);
+    expect(p).toMatch(/registry-[0-9a-f]{16}\.json$/);
+  });
+
+  it('respects NO_TICKETS_HOME when set, falling back away from homedir()', () => {
+    const altHome = mkdtempSync(join(tmpdir(), 'no-tickets-alt-'));
+    try {
+      process.env['NO_TICKETS_HOME'] = altHome;
+      const p = cachePath('https://api.example.com');
+
+      expect(p.startsWith(altHome + sep)).toBe(true);
+      expect(p.startsWith(tempHome + sep)).toBe(false);
+    } finally {
+      delete process.env['NO_TICKETS_HOME'];
+      rmSync(altHome, { recursive: true, force: true });
+    }
   });
 
   it('prefers a project-local .notickets/ in the cwd', () => {
@@ -68,21 +83,45 @@ describe('cachePath', () => {
 
     const p = cachePath('https://api.example.com');
 
-    expect(p.startsWith(tempCwd)).toBe(true);
-    expect(p).toContain(join('.notickets', '.cache'));
+    expect(p.startsWith(tempCwd + sep)).toBe(true);
+    expect(p).toContain(`${NOTICKETS_PATH_FRAGMENT}.cache${sep}`);
   });
 
   it('walks up to find an ancestor .notickets/ directory', () => {
     mkdirSync(join(tempCwd, '.notickets'));
     const child = join(tempCwd, 'sub', 'nested');
     mkdirSync(child, { recursive: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (process as any).cwd = (): string => child;
+    cwdSpy.mockReturnValue(child);
 
     const p = cachePath('https://api.example.com');
 
-    expect(p.startsWith(tempCwd)).toBe(true);
-    expect(p).not.toContain(join('sub', 'nested'));
+    expect(p.startsWith(tempCwd + sep)).toBe(true);
+    expect(p.startsWith(child + sep)).toBe(false);
+  });
+
+  it('stops the ancestor walk at git root (does not capture an unrelated ~/.notickets/)', () => {
+    // Layout: tempCwd is the "git repo" (.git is here); cwd is a subdir;
+    // there's NO .notickets anywhere in the repo. Walk should hit .git and
+    // bail out, NOT walk all the way up to find the user-home .notickets.
+    mkdirSync(join(tempHome, '.notickets')); // unrelated ancestor we must NOT pick
+    mkdirSync(join(tempCwd, '.git'));
+    const child = join(tempCwd, 'sub');
+    mkdirSync(child);
+    cwdSpy.mockReturnValue(child);
+
+    const p = cachePath('https://api.example.com');
+
+    // Falls back to user-local under homedir, not project-local under tempCwd.
+    expect(p.startsWith(tempHome + sep)).toBe(true);
+  });
+
+  it('ignores a regular file named ".notickets" (only directories count)', () => {
+    writeFileSync(join(tempCwd, '.notickets'), 'not a directory');
+
+    const p = cachePath('https://api.example.com');
+
+    // Ancestor lookup should skip the file and fall back to user-local.
+    expect(p.startsWith(tempHome + sep)).toBe(true);
   });
 
   it('produces a different path per server URL (multi-server isolation)', () => {
@@ -149,7 +188,7 @@ describe('writeCache', () => {
     expect(existsSync(p)).toBe(true);
   });
 
-  it('writes atomically: no temp file remains, final file has the new content', () => {
+  it('leaves no orphan temp files in the cache directory after successive writes', () => {
     writeCache('https://api.example.com', SAMPLE_FILE);
     const updated: CacheFile = { ...SAMPLE_FILE, etag: 'W/"new"' };
     writeCache('https://api.example.com', updated);
@@ -159,6 +198,7 @@ describe('writeCache', () => {
     const survivors = readdirSync(dir);
 
     expect(survivors).toHaveLength(1);
+    expect(survivors[0]).not.toMatch(/\.tmp$/);
     expect(JSON.parse(readFileSync(p, 'utf-8'))).toEqual(updated);
   });
 

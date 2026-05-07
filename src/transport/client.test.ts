@@ -120,6 +120,33 @@ describe('Client.request — auth + tracing', () => {
     expect(result).toBeUndefined();
   });
 
+  it('short-circuits 204 even when the response body would not parse as JSON', async () => {
+    // Defensive — proves the 204 check happens before JSON parsing. Without
+    // the short-circuit, "not-json" would reach JSON.parse and throw.
+    const fakeFetch: typeof fetch = async () =>
+      ({
+        status: 204,
+        ok: true,
+        headers: new Headers(),
+        text: async () => 'not-json',
+      }) as Response;
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fakeFetch });
+
+    const result = await client.request('DELETE', '/v1/subjects/x/y');
+
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined for an empty 200 body (non-204 empty response)', async () => {
+    const empty = new Response('', { status: 200 });
+    const { fetch: fetchImpl } = recordingFetch([empty]);
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    const result = await client.request('GET', '/v1/subjects');
+
+    expect(result).toBeUndefined();
+  });
+
   it('emits a debug log per request (path, status, latency)', async () => {
     const { fetch: fetchImpl } = recordingFetch([jsonResponse({ body: {} })]);
     const debug = vi.fn();
@@ -299,6 +326,23 @@ describe('Client.request — retry policy', () => {
 
     await expect(client.request('GET', '/v1/subjects')).rejects.toBeInstanceOf(PermissionDeniedError);
     expect(calls).toHaveLength(1);
+  });
+
+  it('uses a real timer-backed sleep when no sleep is injected', async () => {
+    // Pin defaultSleep against mutations that strip the setTimeout body.
+    // Without the timer, the second attempt would land near-instantly.
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ status: 502, body: '' }),
+      jsonResponse({ status: 200, body: { ok: true } }),
+    ]);
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    const start = Date.now();
+    await client.request('GET', '/v1/subjects');
+    const elapsed = Date.now() - start;
+
+    // BASE_BACKOFF_MS = 100; tolerate a small amount of clock fuzz on slow CI.
+    expect(elapsed).toBeGreaterThanOrEqual(90);
   });
 
   it('emits a structured warn log on retry', async () => {

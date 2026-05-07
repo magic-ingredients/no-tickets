@@ -74,6 +74,9 @@ export class Client {
       method,
       headers: this.#buildHeaders(body !== undefined),
     };
+    // Stryker disable next-line ConditionalExpression: equivalent mutant —
+    // JSON.stringify(undefined) returns undefined, so omitting this guard
+    // would assign init.body = undefined, observationally identical.
     if (body !== undefined) init.body = JSON.stringify(body);
 
     const maxAttempts = method === 'GET' ? MAX_ATTEMPTS : 1;

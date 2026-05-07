@@ -177,22 +177,29 @@ describe('runCli dispatch', () => {
     expect(helpText).toContain('validate');
   });
 
-  it('--help output lists the new registry-aware verbs', async () => {
+  it('--help output lists the new registry-aware verbs IN the Commands block', async () => {
     await runCli(['--help']);
     const helpText = logSpy.mock.calls[0]![0] as string;
-    expect(helpText).toContain('event');
-    expect(helpText).toContain('publish');
-    expect(helpText).toContain('subject');
-    expect(helpText).toContain('action');
+    // Extract everything from "Commands:" up to the first blank line so
+    // matches are anchored to the verb list rather than flag descriptions
+    // or env-var blurbs further down.
+    const match = /Commands:([\s\S]*?)\n\s*\n/.exec(helpText);
+    expect(match).not.toBeNull();
+    const commandsBlock = match?.[1] ?? '';
+    expect(commandsBlock).toContain('event');
+    expect(commandsBlock).toContain('publish');
+    expect(commandsBlock).toContain('subject');
+    expect(commandsBlock).toContain('action');
   });
 
-  it('--help output does NOT mention the removed `push` command', async () => {
+  it('--help output spells out the event and subject sub-command hints', async () => {
+    // Pin the documentation contract: `event` has list/describe and
+    // `subject` has create/get/list. A future help-text rewrite that drops
+    // the parenthetical hints fails this test loudly.
     await runCli(['--help']);
     const helpText = logSpy.mock.calls[0]![0] as string;
-    // Use word-boundary match — "publish" contains "push" as a non-word
-    // substring? actually "publish" has "publi" then "sh", not "push", so a
-    // simple toContain on " push" is enough. Be defensive with whitespace.
-    expect(helpText).not.toMatch(/(?:^|\s|,)push(?:\s|,|$)/);
+    expect(helpText).toContain('event (list|describe)');
+    expect(helpText).toContain('subject (create|get|list)');
   });
 
   it('--help output does not list the removed push command', async () => {

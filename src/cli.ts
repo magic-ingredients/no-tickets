@@ -16,10 +16,29 @@ export interface CliDeps {
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require('../package.json') as { version: string };
 
-type Command = 'init' | 'connect' | 'disconnect' | 'status' | 'validate' | 'token' | 'help' | 'version' | 'unknown';
+type Command =
+  | 'init'
+  | 'connect'
+  | 'disconnect'
+  | 'status'
+  | 'validate'
+  | 'token'
+  | 'event'
+  | 'publish'
+  | 'subject'
+  | 'action'
+  | 'help'
+  | 'version'
+  | 'unknown';
 
+// `event`, `publish`, `subject`, `action` are recognised so the help text
+// matches runtime parsing — each falls through to the default branch's
+// "not yet implemented" message until the dispatcher wiring lands. Without
+// this entry, users copying the help text get the "Unknown command" path
+// instead of a clear "X is not yet implemented" message.
 const KNOWN_COMMANDS = new Set<Command>([
   'init', 'connect', 'disconnect', 'status', 'validate', 'token',
+  'event', 'publish', 'subject', 'action',
 ]);
 
 function isKnownCommand(value: string): value is Command {

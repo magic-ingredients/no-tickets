@@ -1,13 +1,82 @@
 import { describe, it, expect } from 'vitest';
+import * as types from '../core/types.js';
+import * as schemas from '../core/schemas.js';
+import type {
+  Source,
+  Event,
+  Subject,
+  SubjectRef,
+  InteractionRequest,
+  InteractionResponse,
+  InteractionEventRef,
+  TypeIdParts,
+} from '../core/types.js';
+
+// -- ./schemas subpath --------------------------------------------------------
+
+const EXPECTED_SCHEMAS_KEYS = [
+  // v1 frontmatter (existing)
+  'phaseSchema',
+  'entityStatusSchema',
+  'taskStatusSchema',
+  'assigneeTypeSchema',
+  'epicFrontmatterSchema',
+  'featureFrontmatterSchema',
+  'taskSchema',
+  // envelope (new)
+  'sourceSchema',
+  'mergeSource',
+  'SDK_VERSION',
+  'eventSchema',
+  'subjectSchema',
+  'subjectRefSchema',
+  'interactionRequestSchema',
+  'interactionResponseSchema',
+  'interactionEventRefSchema',
+  'TYPE_ID_REGEX',
+  'parseTypeId',
+  'formatTypeId',
+  'isTypeId',
+] as const;
+
+describe('@magic-ingredients/no-tickets/schemas subpath', () => {
+  it('exports exactly the expected surface (allow-list, fails on add or remove)', () => {
+    const actual = Object.keys(schemas).sort();
+    const expected = [...EXPECTED_SCHEMAS_KEYS].sort();
+    expect(actual).toEqual(expected);
+  });
+
+  it('does not export push v2 schemas (regression guard)', () => {
+    const exported = Object.keys(schemas);
+    for (const banned of [
+      'pushSchema',
+      'workEntityTypeSchema',
+      'engineeringPhaseSchema',
+      'acceptanceStatusSchema',
+      'prioritySchema',
+      'codeQualitySourceSchema',
+      'pushEnvironmentSchema',
+      'sessionSchema',
+      'workEntitySchema',
+      'workDataSchema',
+      'engineeringReviewSchema',
+      'engineeringTaskSchema',
+      'engineeringDataSchema',
+      'productUpdateSchema',
+      'productDataSchema',
+      'codeQualityDataSchema',
+      'documentTypeSchema',
+    ]) {
+      expect(exported, `${banned} must not appear`).not.toContain(banned);
+    }
+  });
+});
 
 // -- ./types subpath ----------------------------------------------------------
 
-describe('@magic-ingredients/no-tickets/types subpath exports', () => {
-  it('exports envelope types only (no push v2 types)', async () => {
-    const types = await import('../core/types.js');
+describe('@magic-ingredients/no-tickets/types subpath', () => {
+  it('does not export push v2 types (runtime regression guard)', () => {
     const exported = Object.keys(types);
-
-    // Push v2 types must be gone.
     for (const banned of [
       'Push',
       'PushResult',
@@ -31,82 +100,62 @@ describe('@magic-ingredients/no-tickets/types subpath exports', () => {
       'FeedEvent',
       'SessionState',
     ]) {
-      expect(exported, `${banned} should not be exported from /types`).not.toContain(banned);
-    }
-  });
-});
-
-// -- ./schemas subpath --------------------------------------------------------
-
-describe('@magic-ingredients/no-tickets/schemas subpath exports', () => {
-  it('exports envelope zod schemas only (no push v2 schemas)', async () => {
-    const schemas = await import('../core/schemas.js');
-    const exported = Object.keys(schemas);
-
-    for (const banned of [
-      'pushSchema',
-      'workEntityTypeSchema',
-      'engineeringPhaseSchema',
-      'acceptanceStatusSchema',
-      'prioritySchema',
-      'codeQualitySourceSchema',
-      'pushEnvironmentSchema',
-      'sessionSchema',
-      'workEntitySchema',
-      'workDataSchema',
-      'engineeringReviewSchema',
-      'engineeringTaskSchema',
-      'engineeringDataSchema',
-      'productUpdateSchema',
-      'productDataSchema',
-      'codeQualityDataSchema',
-      'documentTypeSchema',
-    ]) {
-      expect(exported, `${banned} should not be exported from /schemas`).not.toContain(banned);
+      expect(exported, `${banned} must not appear`).not.toContain(banned);
     }
   });
 
-  it('re-exports envelope schemas via the /schemas subpath', async () => {
-    const schemas = await import('../core/schemas.js');
-    const exported = Object.keys(schemas);
+  it('re-exports envelope types (compile-time check via typed assignments)', () => {
+    // Each binding below fails to compile if the corresponding `export type`
+    // is removed from src/core/types.ts. tsc-as-test is the actual assertion;
+    // the runtime check below just keeps the bindings live.
+    const source: Source = { name: 'cli', sdkVersion: '0.0.0' };
+    const event: Event<{ x: number }> = { type: 'a.b.c.v1', data: { x: 1 }, source };
+    const subjectRef: SubjectRef = { type: 'feature', id: 'f1' };
+    const subject: Subject = { type: 'feature', externalId: 'f1', displayName: 'F1' };
+    const interactionReq: InteractionRequest = { id: 'i1', input: {} };
+    const interactionRes: InteractionResponse = { events: [] };
+    const interactionEvent: InteractionEventRef = { id: 'e1', type: 'a.b.c.v1' };
+    const typeIdParts: TypeIdParts = { domain: 'a', entity: 'b', action: 'c', version: 1 };
 
-    for (const expected of [
-      'sourceSchema',
-      'eventSchema',
-      'subjectSchema',
-      'subjectRefSchema',
-      'interactionRequestSchema',
-      'interactionResponseSchema',
-      'interactionEventRefSchema',
-      'TYPE_ID_REGEX',
-    ]) {
-      expect(exported, `${expected} should be re-exported from /schemas`).toContain(expected);
-    }
-  });
-});
-
-describe('envelope types subpath', () => {
-  it('re-exports envelope types via the /types subpath', async () => {
-    // Type-only exports don't appear in Object.keys at runtime, but they must
-    // resolve at the type-checking layer. Importing the module compiles only
-    // if the re-exports exist.
-    const types = await import('../core/types.js');
-    expect(types).toBeDefined();
+    expect([source, event, subjectRef, subject, interactionReq, interactionRes, interactionEvent, typeIdParts])
+      .toHaveLength(8);
   });
 });
 
 // -- package.json exports field -----------------------------------------------
 
 describe('package.json exports field', () => {
-  it('declares ./types and ./schemas subpath exports', async () => {
+  it('declares ./types pointing at dist/core/types.js with d.ts companion', async () => {
     const pkg = await import('../../package.json', { with: { type: 'json' } });
-    const exports = pkg.default.exports as Record<string, unknown>;
+    const exports = pkg.default.exports as Record<string, { types: string; import: string }>;
 
-    expect(exports['./types']).toBeDefined();
-    expect(exports['./schemas']).toBeDefined();
+    expect(exports['./types']).toEqual({
+      types: './dist/core/types.d.ts',
+      import: './dist/core/types.js',
+    });
   });
 
-  it('exports field has not regressed to including push paths', async () => {
+  it('declares ./schemas pointing at dist/core/schemas.js with d.ts companion', async () => {
+    const pkg = await import('../../package.json', { with: { type: 'json' } });
+    const exports = pkg.default.exports as Record<string, { types: string; import: string }>;
+
+    expect(exports['./schemas']).toEqual({
+      types: './dist/core/schemas.d.ts',
+      import: './dist/core/schemas.js',
+    });
+  });
+
+  it('declares root . pointing at dist/core/index.js with d.ts companion', async () => {
+    const pkg = await import('../../package.json', { with: { type: 'json' } });
+    const exports = pkg.default.exports as Record<string, { types: string; import: string }>;
+
+    expect(exports['.']).toEqual({
+      types: './dist/core/index.d.ts',
+      import: './dist/core/index.js',
+    });
+  });
+
+  it('does not regress to including push subpaths', async () => {
     const pkg = await import('../../package.json', { with: { type: 'json' } });
     const exports = pkg.default.exports as Record<string, unknown>;
     const keys = Object.keys(exports);

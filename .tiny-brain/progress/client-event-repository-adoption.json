@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T10:18:31.640Z",
+  "lastUpdated": "2026-05-07T10:27:19.759Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -365,7 +365,35 @@
         {
           "id": "task-2-3",
           "description": "Subjects API",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T10:18:46.579Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T10:21:52.525Z",
+              "completedAt": "2026-05-07T10:23:10.388Z",
+              "reviewSha": "e4106dc",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T10:23:10.388Z",
+              "refactorCommitSha": "7f476064239fe86b50da9704cfd5c60113037220",
+              "refactorCompletedAt": "2026-05-07T10:25:53.656Z",
+              "refactorCommittedAt": "2026-05-07T10:25:53.656Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T10:25:53.657Z",
+              "completedAt": "2026-05-07T10:27:19.758Z",
+              "reviewSha": "7f476064239fe86b50da9704cfd5c60113037220",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-05-07T10:27:19.758Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-05-07T10:27:19.758Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T10:20:07.254Z",
+          "testCommitSha": "7a556cacafb345f7c725c3f7397c35831e356252",
+          "redCompletedAt": "2026-05-07T10:20:07.254Z",
+          "commitSha": "e4106dc39ee9fca9d2fb42a9f98b7cd1ceac201f",
+          "greenCompletedAt": "2026-05-07T10:21:52.525Z",
+          "completedAt": "2026-05-07T10:27:19.759Z"
         },
         {
           "id": "task-2-4",
@@ -389,10 +417,10 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 3,
-        "remaining": 3,
-        "weightedProgress": 0.3333333333333333,
-        "nextTask": "Subjects API"
+        "completed": 4,
+        "remaining": 2,
+        "weightedProgress": 0.5,
+        "nextTask": "Interactions API"
       }
     },
     {
@@ -537,23 +565,23 @@
     "overallProgress": {
       "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 13,
+      "completedTasks": 14,
       "totalTasks": 32,
-      "percentComplete": 41,
-      "weightedPercentComplete": 6
+      "percentComplete": 44,
+      "weightedPercentComplete": 9
     },
     "workRemaining": {
       "pendingFeatures": [
         "Registry Introspection + Caching",
         "nt publish / nt event / nt subject / nt action CLIs"
       ],
-      "currentFeatureTasks": 3,
+      "currentFeatureTasks": 2,
       "futureFeatureTasks": 13
     },
     "nextAction": {
       "featureId": "publish-client",
-      "taskId": "task-2-3",
-      "description": "Subjects API"
+      "taskId": "task-2-4",
+      "description": "Interactions API"
     },
     "blockers": []
   }

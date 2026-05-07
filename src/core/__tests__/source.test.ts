@@ -167,10 +167,18 @@ describe('mergeSource', () => {
     expect(result.attributes).toEqual({ machine: 'hostA', provider: 'github' });
   });
 
-  it('returns undefined attributes when both auto and override have none', () => {
+  it('omits the attributes key entirely when both auto and override have none', () => {
     const autoNoAttrs: Source = { name: 'cli', sdkVersion: '1.2.3' };
     const result = mergeSource(autoNoAttrs, { name: 'integration' });
     expect(result.attributes).toBeUndefined();
+    expect(Object.keys(result)).not.toContain('attributes');
+  });
+
+  it('omits the version key entirely when neither auto nor override has it', () => {
+    const autoNoVersion: Source = { name: 'cli', sdkVersion: '1.2.3' };
+    const result = mergeSource(autoNoVersion, { name: 'integration' });
+    expect(result.version).toBeUndefined();
+    expect(Object.keys(result)).not.toContain('version');
   });
 
   it('uses override.attributes when auto has none', () => {

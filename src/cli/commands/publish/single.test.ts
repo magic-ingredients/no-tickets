@@ -65,7 +65,8 @@ describe('runPublishSingle — happy path', () => {
 
     expect(exit).toBe(0);
     expect(publish).toHaveBeenCalledTimes(1);
-    const [_client, events] = publish.mock.calls[0] ?? [];
+    const callArgs = publish.mock.calls[0];
+    const events = callArgs?.[1];
     expect(events).toEqual([
       expect.objectContaining({
         type: 'app.user.signed-up.v1',

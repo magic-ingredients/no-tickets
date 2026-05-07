@@ -27,6 +27,17 @@ const TYPE_B: EventTypeSpec = {
   deprecatedAt: '2026-01-01T00:00:00Z',
 };
 
+// TYPE_C has no `deprecatedAt` field at all (vs TYPE_A's explicit null).
+// Pins isDeprecated's "undefined" branch separately from the "null" branch.
+const TYPE_C: EventTypeSpec = {
+  id: 'app.session.started.v1',
+  domain: 'app.session',
+  entity: 'session',
+  action: 'started',
+  version: 1,
+  schema: { type: 'object', properties: {} },
+};
+
 const BASE_URL = 'https://api.example.com';
 
 function buildCache(): CacheFile {
@@ -46,16 +57,16 @@ let cwdSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), 'no-tickets-events-home-'));
   tempCwd = mkdtempSync(join(tmpdir(), 'no-tickets-events-cwd-'));
-  vi.stubEnv('HOME', tempHome);
-  vi.stubEnv('USERPROFILE', tempHome);
-  delete process.env['NO_TICKETS_HOME'];
+  // Use NO_TICKETS_HOME directly: cache.ts checks it first, bypassing
+  // os.homedir(). This keeps test isolation robust in Stryker's subprocess
+  // workers where vi.stubEnv('HOME') doesn't propagate into homedir().
+  process.env['NO_TICKETS_HOME'] = tempHome;
   cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempCwd);
-  // No project-local .notickets/ — falls back to tempHome.
 });
 
 afterEach(() => {
   cwdSpy.mockRestore();
-  vi.unstubAllEnvs();
+  delete process.env['NO_TICKETS_HOME'];
   rmSync(tempHome, { recursive: true, force: true });
   rmSync(tempCwd, { recursive: true, force: true });
 });
@@ -129,6 +140,22 @@ describe('events.list — cache reads', () => {
 
     expect(await events.list({ deprecated: false })).toEqual([TYPE_A]);
     expect(await events.list({ deprecated: true })).toEqual([TYPE_B]);
+  });
+
+  it('treats deprecatedAt as not present (omitted) the same as null — both NOT deprecated', async () => {
+    // TYPE_C has no deprecatedAt key at all.
+    writeCache(BASE_URL, { ...buildCache(), types: [TYPE_C] });
+    const events = createEvents({ client: makeClient() });
+
+    expect(await events.list({ deprecated: false })).toEqual([TYPE_C]);
+    expect(await events.list({ deprecated: true })).toEqual([]);
+  });
+
+  it('returns an empty array when the cached types list is empty', async () => {
+    writeCache(BASE_URL, { ...buildCache(), types: [] });
+    const events = createEvents({ client: makeClient() });
+
+    expect(await events.list()).toEqual([]);
   });
 });
 
@@ -239,6 +266,19 @@ describe('events.describe', () => {
     expect(result).toEqual(TYPE_A);
     // No cache file should have been written without a known ETag.
     expect(() => readFileSync(cachePath(BASE_URL), 'utf-8')).toThrow();
+    expect(readCache(BASE_URL)).toBeNull();
+  });
+
+  it('triggers scheduleRefresh on a full cache miss (no cache file exists)', async () => {
+    const scheduleRefresh = vi.fn().mockResolvedValue(undefined);
+    const events = createEvents({
+      client: makeClient(jsonFetch(TYPE_A)),
+      scheduleRefresh,
+    });
+
+    await events.describe(TYPE_A.id);
+
+    expect(scheduleRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('triggers scheduleRefresh on cache hit', async () => {

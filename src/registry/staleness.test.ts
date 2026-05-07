@@ -57,6 +57,11 @@ describe('isCacheStale — explicit threshold', () => {
     expect(isCacheStale(cache, { thresholdDays: 14, now: NOW })).toBe(true);
   });
 
+  it('treats age 0 (fetchedAt === now) as fresh (boundary kills the `<` → `<=` mutation)', () => {
+    const cache = buildCache(NOW.toISOString());
+    expect(isCacheStale(cache, { thresholdDays: 14, now: NOW })).toBe(false);
+  });
+
   it('returns true when the cache fetchedAt is in the future (clock skew)', () => {
     // Future timestamps mean negative age; treat as stale (something's wrong).
     const cache = buildCache('2030-01-01T00:00:00Z');
@@ -117,6 +122,27 @@ describe('isCacheStale — env override', () => {
     const cache = buildCache('2026-05-01T00:00:00Z'); // 6 days
 
     expect(isCacheStale(cache, { now: NOW })).toBe(false);
+  });
+
+  it('treats an unset env var distinctly from an empty-string env var (kills `||` mutations)', () => {
+    // Explicitly delete (env var truly absent — `process.env[X]` is undefined,
+    // not `""`). The `raw === undefined` branch must short-circuit before the
+    // `raw === ''` check evaluates.
+    delete process.env['NO_TICKETS_REGISTRY_STALE_DAYS'];
+    const fresh = buildCache('2026-05-01T00:00:00Z'); // 6 days
+    const old = buildCache('2026-04-01T00:00:00Z'); // 36 days
+
+    expect(isCacheStale(fresh, { now: NOW })).toBe(false);
+    expect(isCacheStale(old, { now: NOW })).toBe(true);
+  });
+
+  it('explicit thresholdDays: undefined falls through to env (kills the `!== undefined` guard mutation)', () => {
+    process.env['NO_TICKETS_REGISTRY_STALE_DAYS'] = '3';
+    const cache = buildCache('2026-05-01T00:00:00Z'); // 6 days
+
+    // Without the `!== undefined` guard, `isValidThreshold(undefined)` would
+    // be called on undefined and short-circuit the env path.
+    expect(isCacheStale(cache, { thresholdDays: undefined, now: NOW })).toBe(true);
   });
 });
 

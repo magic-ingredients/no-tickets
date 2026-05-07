@@ -295,7 +295,8 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
     case 'help':
       console.log(
         'Usage: npx no-tickets <command> [options]\n\n' +
-          'Commands: init, status, validate, connect, disconnect, token\n\n' +
+          'Commands: init, status, validate, connect, disconnect, token,\n' +
+          '          event (list|describe), publish, subject (create|get|list), action\n\n' +
           'Common options:\n' +
           '  --profile <name>   Load API + auth URLs from a named profile in ~/.notickets/config.json\n' +
           '  --timeout <ms>     Override the OAuth callback wait timeout (init only)\n\n' +

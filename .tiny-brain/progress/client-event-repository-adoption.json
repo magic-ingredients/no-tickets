@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T15:35:40.589Z",
+  "lastUpdated": "2026-05-07T15:46:28.157Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -640,7 +640,7 @@
       "id": "registry-aware-cli",
       "number": 4,
       "title": "nt publish / nt event / nt subject / nt action CLIs",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-4-1",
@@ -882,15 +882,43 @@
         {
           "id": "task-4-8",
           "description": "CLI help + docs",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T15:35:53.163Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T15:37:59.433Z",
+              "completedAt": "2026-05-07T15:39:18.690Z",
+              "reviewSha": "840aec3",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:39:18.690Z",
+              "refactorCommitSha": "9002dc5af6317766db8da9ba361a89690725ad1f",
+              "refactorCompletedAt": "2026-05-07T15:41:25.443Z",
+              "refactorCommittedAt": "2026-05-07T15:41:25.443Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T15:41:25.444Z",
+              "completedAt": "2026-05-07T15:44:59.387Z",
+              "reviewSha": "9002dc5af6317766db8da9ba361a89690725ad1f",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:44:59.387Z",
+              "refactorCommitSha": "8ee995a9e7cd75b41c76aa0701986e2ed5cce9ff",
+              "refactorCompletedAt": "2026-05-07T15:46:28.156Z",
+              "refactorCommittedAt": "2026-05-07T15:46:28.156Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T15:37:18.779Z",
+          "testCommitSha": "22cc5f644d93cce5dc77215b57b74766bdaf8c95",
+          "redCompletedAt": "2026-05-07T15:37:18.779Z",
+          "commitSha": "840aec35a08218f06315d375d7493e8a44557382",
+          "greenCompletedAt": "2026-05-07T15:37:59.433Z",
+          "completedAt": "2026-05-07T15:46:28.157Z"
         }
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 7,
-        "remaining": 1,
-        "weightedProgress": 0.875,
-        "nextTask": "CLI help + docs"
+        "completed": 8,
+        "remaining": 0,
+        "weightedProgress": 1
       }
     },
     {
@@ -942,12 +970,12 @@
     "feature": 2,
     "featureTitle": "publish() + Subjects + Interactions HTTP Client",
     "overallProgress": {
-      "completedFeatures": 2,
+      "completedFeatures": 3,
       "totalFeatures": 5,
-      "completedTasks": 27,
+      "completedTasks": 28,
       "totalTasks": 32,
-      "percentComplete": 84,
-      "weightedPercentComplete": 50
+      "percentComplete": 88,
+      "weightedPercentComplete": 53
     },
     "workRemaining": {
       "pendingFeatures": [],

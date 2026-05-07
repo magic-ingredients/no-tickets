@@ -90,4 +90,24 @@ describe('readJsonl', () => {
 
     expect(await readJsonl(path, stdinDeps(''))).toEqual([{ line: 1, value: { a: 1 } }]);
   });
+
+  it('returns exactly N entries for an N-line file (kills off-by-one loop bound mutations)', async () => {
+    const path = join(tempDir, 'count.jsonl');
+    writeFileSync(path, '{"a": 1}\n{"a": 2}\n{"a": 3}\n{"a": 4}\n{"a": 5}\n');
+
+    const result = await readJsonl(path, stdinDeps(''));
+
+    expect(result).toHaveLength(5);
+  });
+
+  it('only trims trailing CR — embedded \\r in a JSON string survives', async () => {
+    const path = join(tempDir, 'embedded-cr.jsonl');
+    // The JSON string contains a literal "\r" (escaped). With a regex like
+    // /\r/g instead of /\r$/, the embedded value would be corrupted.
+    writeFileSync(path, '{"text": "a\\rb"}\r\n');
+
+    const result = await readJsonl(path, stdinDeps(''));
+
+    expect(result[0]?.value).toEqual({ text: 'a\rb' });
+  });
 });

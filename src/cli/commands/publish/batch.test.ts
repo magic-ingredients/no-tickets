@@ -285,6 +285,210 @@ describe('runPublishBatch — server errors map back to JSONL line numbers', () 
   });
 });
 
+describe('runPublishBatch — non-object JSONL entries', () => {
+  it('rejects a JSONL line whose value is null', async () => {
+    const path = writeBatch('null\n');
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE] }, out);
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/line 1/);
+    expect(out.stderr.join('\n')).toMatch(/expected an object/);
+  });
+
+  it('rejects a JSONL line whose value is an array', async () => {
+    const path = writeBatch('[1, 2, 3]\n');
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(out.stderr.join('\n')).toMatch(/expected an object/);
+  });
+
+  it('rejects a JSONL line whose value is a primitive', async () => {
+    const path = writeBatch('42\n');
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(out.stderr.join('\n')).toMatch(/expected an object/);
+  });
+
+  it('rejects a JSONL line where type is the empty string', async () => {
+    const path = writeBatch('{"type": "", "data": {}}\n');
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(out.stderr.join('\n')).toMatch(/missing or empty/);
+  });
+});
+
+describe('runPublishBatch — server error fallthrough', () => {
+  it('handles a plain Error from publish() (exit 3, message on stderr)', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps(
+      { availableTypes: [TYPE], publishError: new Error('plain server boom') },
+      out,
+    );
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(3);
+    expect(out.stderr.join('\n')).toContain('plain server boom');
+  });
+
+  it('falls back to "batch index N" when batchIndex is out of bounds for the local list', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps(
+      {
+        availableTypes: [TYPE],
+        publishError: new UnknownEventTypeError('app.user.signed-up.v1', 99),
+      },
+      out,
+    );
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(3);
+    expect(out.stderr.join('\n')).toContain('batch index 99');
+  });
+});
+
+describe('runPublishBatch — source merge edge cases', () => {
+  it('passes through a JSONL line with no source untouched when no CLI flags supplied', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      out,
+    );
+
+    await runPublishBatch(baseOptions(path), deps);
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event).not.toHaveProperty('source');
+  });
+
+  it('uses CLI source verbatim when JSONL line has no source', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      out,
+    );
+
+    await runPublishBatch(
+      { batchPath: path, sourceName: 'cli-tool' },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toEqual({ name: 'cli-tool' });
+  });
+
+  it('uses JSONL source verbatim when no CLI flags supplied', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"name": "wrapper"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      out,
+    );
+
+    await runPublishBatch(baseOptions(path), deps);
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toEqual({ name: 'wrapper' });
+  });
+
+  it('keeps CLI attributes when JSONL source has no attributes bag', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"name": "wrapper"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      out,
+    );
+
+    await runPublishBatch(
+      {
+        batchPath: path,
+        sourceAttributes: ['env=prod'],
+      },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toMatchObject({
+      name: 'wrapper',
+      attributes: { env: 'prod' },
+    });
+  });
+
+  it('keeps JSONL attributes when CLI has no --source-attribute flags', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"attributes": {"region": "eu"}}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      out,
+    );
+
+    await runPublishBatch(
+      { batchPath: path, sourceName: 'cli' },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toMatchObject({
+      name: 'cli',
+      attributes: { region: 'eu' },
+    });
+  });
+});
+
+describe('runPublishBatch — output', () => {
+  it('writes one indented line per returned event id', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
+        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] } },
+      out,
+    );
+
+    await runPublishBatch(baseOptions(path), deps);
+
+    expect(out.stdout).toContain('  e1');
+    expect(out.stdout).toContain('  e2');
+  });
+});
+
 describe('runPublishBatch — empty file', () => {
   it('exits with code 1 and reports an empty-file message on stderr', async () => {
     const path = writeBatch('');

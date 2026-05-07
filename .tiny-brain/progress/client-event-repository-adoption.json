@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T11:06:23.591Z",
+  "lastUpdated": "2026-05-07T11:25:28.828Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -495,7 +495,36 @@
         {
           "id": "task-3-2",
           "description": "Cache layer",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T11:07:15.751Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T11:10:51.023Z",
+              "completedAt": "2026-05-07T11:13:28.307Z",
+              "reviewSha": "101e6b4",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T11:13:28.307Z",
+              "refactorCommitSha": "2749e2dfa4d9571719de0287dafefd2cf804ba3a",
+              "refactorCompletedAt": "2026-05-07T11:16:57.914Z",
+              "refactorCommittedAt": "2026-05-07T11:16:57.914Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T11:16:57.914Z",
+              "completedAt": "2026-05-07T11:24:01.530Z",
+              "reviewSha": "2749e2dfa4d9571719de0287dafefd2cf804ba3a",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T11:24:01.530Z",
+              "refactorCommitSha": "48e6815d5641a337f3f669bf5df6ef8711bc51de",
+              "refactorCompletedAt": "2026-05-07T11:25:28.826Z",
+              "refactorCommittedAt": "2026-05-07T11:25:28.826Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T11:08:49.442Z",
+          "testCommitSha": "531398fb38b82735ff24178c6359a6dac63e9dc2",
+          "redCompletedAt": "2026-05-07T11:08:49.442Z",
+          "commitSha": "101e6b456685e612c5169687745b4e8087d0bf4d",
+          "greenCompletedAt": "2026-05-07T11:10:51.023Z",
+          "completedAt": "2026-05-07T11:25:28.828Z"
         },
         {
           "id": "task-3-3",
@@ -515,10 +544,10 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 1,
-        "remaining": 4,
-        "weightedProgress": 0.2,
-        "nextTask": "Cache layer"
+        "completed": 2,
+        "remaining": 3,
+        "weightedProgress": 0.4,
+        "nextTask": "`client.events.list` + `client.events.describe`"
       }
     },
     {
@@ -625,10 +654,10 @@
     "overallProgress": {
       "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 16,
+      "completedTasks": 17,
       "totalTasks": 32,
-      "percentComplete": 50,
-      "weightedPercentComplete": 16
+      "percentComplete": 53,
+      "weightedPercentComplete": 19
     },
     "workRemaining": {
       "pendingFeatures": [

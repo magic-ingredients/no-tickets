@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T15:55:58.273Z",
+  "lastUpdated": "2026-05-07T16:08:06.771Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -963,7 +963,36 @@
         {
           "id": "task-5-2",
           "description": "Wire tools to underlying client primitives",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T15:56:19.820Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T15:59:42.488Z",
+              "completedAt": "2026-05-07T16:03:14.298Z",
+              "reviewSha": "ad761fa",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T16:03:14.298Z",
+              "refactorCommitSha": "3aab3e9f78e0306090002e2e5724eb0eff9ca75a",
+              "refactorCompletedAt": "2026-05-07T16:05:33.929Z",
+              "refactorCommittedAt": "2026-05-07T16:05:33.929Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T16:05:33.929Z",
+              "completedAt": "2026-05-07T16:07:00.560Z",
+              "reviewSha": "3aab3e9f78e0306090002e2e5724eb0eff9ca75a",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T16:07:00.560Z",
+              "refactorCommitSha": "ce67065d1bafac165d7c41ea0a2738217f6d9525",
+              "refactorCompletedAt": "2026-05-07T16:08:06.770Z",
+              "refactorCommittedAt": "2026-05-07T16:08:06.770Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T15:57:38.527Z",
+          "testCommitSha": "a27f0b612ac693698fa0caf60160c4fe75ed9c17",
+          "redCompletedAt": "2026-05-07T15:57:38.527Z",
+          "commitSha": "ad761fa62e239db8325c064a09b8714cf3a24587",
+          "greenCompletedAt": "2026-05-07T15:59:42.488Z",
+          "completedAt": "2026-05-07T16:08:06.771Z"
         },
         {
           "id": "task-5-3",
@@ -986,10 +1015,10 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 2,
-        "remaining": 3,
-        "weightedProgress": 0.2,
-        "nextTask": "Wire tools to underlying client primitives"
+        "completed": 3,
+        "remaining": 2,
+        "weightedProgress": 0.4,
+        "nextTask": "Structured error mapping"
       }
     }
   ],
@@ -1002,10 +1031,10 @@
     "overallProgress": {
       "completedFeatures": 3,
       "totalFeatures": 5,
-      "completedTasks": 29,
+      "completedTasks": 30,
       "totalTasks": 32,
-      "percentComplete": 91,
-      "weightedPercentComplete": 56
+      "percentComplete": 94,
+      "weightedPercentComplete": 59
     },
     "workRemaining": {
       "pendingFeatures": [],

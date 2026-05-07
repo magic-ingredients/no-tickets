@@ -1,10 +1,9 @@
 import type { CacheFile } from '../../registry/cache.js';
-import type { RefreshResult, AwaitRefreshResult } from '../../registry/refresh.js';
+import type { AwaitRefreshResult } from '../../registry/refresh.js';
 
 export interface DriftNotifyDeps {
   readPriorCache(): CacheFile | null;
   readPostCache(): CacheFile | null;
-  awaitRefresh(): Promise<AwaitRefreshResult>;
   writeErr(line: string): void;
 }
 
@@ -14,10 +13,7 @@ export interface DriftNotifyOptions {
 
 const MAX_LISTED = 3;
 
-function diffNewIds(
-  prior: CacheFile,
-  next: CacheFile,
-): readonly string[] {
+function diffNewIds(prior: CacheFile, next: CacheFile): readonly string[] {
   const priorIds = new Set(prior.types.map((t) => t.id));
   return next.types.map((t) => t.id).filter((id) => !priorIds.has(id));
 }
@@ -27,23 +23,40 @@ function isQuiet(options: DriftNotifyOptions): boolean {
   return process.env['NO_TICKETS_QUIET'] === '1';
 }
 
-/** Print a one-line stderr drift summary when the refresh produced new
+function safeRead(read: () => CacheFile | null): CacheFile | null {
+  // The cache layer returns null on corrupt / unreadable cache files, but a
+  // misbehaving read implementation could still throw. notifyDrift's
+  // contract is "never blocks; never throws to the caller" — swallow
+  // unexpected read errors and treat them as "no cache".
+  try {
+    return read();
+  } catch {
+    return null;
+  }
+}
+
+/** Print a one-line stderr drift summary when a refresh introduced new
  *  event types since the last sync. Suppressed by --quiet or
  *  NO_TICKETS_QUIET=1. Never blocks; never throws to the caller. */
 export async function notifyDrift(
-  refresh: Promise<RefreshResult> | Promise<AwaitRefreshResult>,
+  refresh: Promise<AwaitRefreshResult>,
   options: DriftNotifyOptions,
   deps: DriftNotifyDeps,
 ): Promise<void> {
   if (isQuiet(options)) return;
 
-  const prior = deps.readPriorCache();
+  const prior = safeRead(deps.readPriorCache);
   if (prior === null) return;
 
-  const result = await refresh;
+  let result: AwaitRefreshResult;
+  try {
+    result = await refresh;
+  } catch {
+    return;
+  }
   if (result.status !== 'updated') return;
 
-  const next = deps.readPostCache();
+  const next = safeRead(deps.readPostCache);
   if (next === null) return;
 
   const newIds = diffNewIds(prior, next);

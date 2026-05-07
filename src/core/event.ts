@@ -1,12 +1,6 @@
 import { z } from 'zod';
 import { sourceSchema } from './source.js';
-
-export const subjectRefSchema = z.object({
-  type: z.string().min(1),
-  id: z.string().min(1),
-});
-
-export type SubjectRef = z.infer<typeof subjectRefSchema>;
+import { subjectRefSchema } from './subject.js';
 
 export const eventSchema = z.object({
   type: z.string().min(1),
@@ -19,6 +13,8 @@ export const eventSchema = z.object({
   dedupeKey: z.string().min(1).optional(),
 });
 
-export type Event<T = unknown> = Omit<z.infer<typeof eventSchema>, 'data'> & {
-  data: T;
+// Readonly enforces the PRD's immutability discipline at the type level —
+// callers cannot mutate envelopes after construction.
+export type Event<T = unknown> = Readonly<Omit<z.infer<typeof eventSchema>, 'data'>> & {
+  readonly data: T;
 };

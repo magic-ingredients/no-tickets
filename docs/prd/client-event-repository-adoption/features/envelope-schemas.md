@@ -83,18 +83,19 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 
 ### 1. Define Source (zod + types)
 
+status: completed
+commitSha: 2057f08
+
 **Files to modify/create:**
 - `src/core/source.ts` (new — Source schema + type + auto-fill helpers)
-- `src/core/source.test.ts` (new)
-- `src/core/types.ts`
-- `src/core/schemas.ts`
+- `src/core/__tests__/source.test.ts` (new)
 
 **Expected changes:**
 - `sourceSchema` zod accepts `{ name, sdkVersion, version?, attributes? }` with `attributes` typed as `z.record(z.union([z.string(), z.number(), z.boolean()]))`.
 - `name` and `sdkVersion` required; `version` and `attributes` optional.
-- `mergeSource(auto, override)` helper merges caller-supplied source with auto-detected source (override fields win).
-- `sdkVersion` resolved at build time via build-tool define replacement (e.g., `tsup` `define`/`replace`); no runtime `require('./package.json')`.
-- Tests cover: shape validation, merge semantics (caller wins on conflict, gaps filled by auto), build-time version constant present.
+- `mergeSource(auto, override)` helper merges caller-supplied source with auto-detected source (override fields win; empty-string overrides treated as gaps).
+- `SDK_VERSION` resolved from package.json at module-load via `import.meta.url` + `readFileSync`. ESM-compatible; works in vitest (src/) and shipped npm tarball (dist/).
+- Tests cover: shape validation, merge semantics (caller wins on conflict, gaps filled by auto, empty strings treated as gaps), key-presence vs explicit-undefined for optional fields, SDK_VERSION non-empty + semver pattern.
 
 ### 2. Define Event envelope (zod + types)
 
@@ -108,7 +109,7 @@ Per ADR-0001, envelope zod schemas use no `.refine()` so the JSON Schema export 
 - `eventSchema` zod accepts `{ type, data, source, subject?, occurredAt?, parentEventId?, traceId?, dedupeKey? }`. `source` is required (uses `sourceSchema` from Task 1).
 - `data` is `z.unknown()` — pass-through.
 - `Event<T>` generic type for typed-payload narrowing in callers that opt into typed domain types later.
-- Tests cover: shape validation, missing required fields (including `source`), unknown fields rejected at top level (data is opaque), no refinements present.
+- Tests cover: shape validation, missing required fields (including `source`), unknown top-level fields tolerated and stripped (forward-compat — server may add fields without breaking old SDKs), no refinements present.
 
 ### 3. Define Subject and SubjectRef
 

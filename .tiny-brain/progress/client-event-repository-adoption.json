@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T15:46:28.157Z",
+  "lastUpdated": "2026-05-07T15:55:58.273Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -930,7 +930,35 @@
         {
           "id": "task-5-1",
           "description": "Register tools in the MCP server",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T15:46:55.490Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T15:49:49.007Z",
+              "completedAt": "2026-05-07T15:51:37.756Z",
+              "reviewSha": "b653c17",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:51:37.756Z",
+              "refactorCommitSha": "ae0d7ab0f703457c7506a221427ef09b8505c92f",
+              "refactorCompletedAt": "2026-05-07T15:54:44.860Z",
+              "refactorCommittedAt": "2026-05-07T15:54:44.860Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T15:54:44.860Z",
+              "completedAt": "2026-05-07T15:55:58.272Z",
+              "reviewSha": "ae0d7ab0f703457c7506a221427ef09b8505c92f",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-05-07T15:55:58.272Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-05-07T15:55:58.272Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T15:47:56.302Z",
+          "testCommitSha": "ee3d4f21be31c925fbe80b929663fa5ffb937858",
+          "redCompletedAt": "2026-05-07T15:47:56.302Z",
+          "commitSha": "b653c17d6f14e7135c60d7fa2a7dde8312bd17f2",
+          "greenCompletedAt": "2026-05-07T15:49:49.007Z",
+          "completedAt": "2026-05-07T15:55:58.273Z"
         },
         {
           "id": "task-5-2",
@@ -958,8 +986,10 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 1,
-        "remaining": 4
+        "completed": 2,
+        "remaining": 3,
+        "weightedProgress": 0.2,
+        "nextTask": "Wire tools to underlying client primitives"
       }
     }
   ],
@@ -972,10 +1002,10 @@
     "overallProgress": {
       "completedFeatures": 3,
       "totalFeatures": 5,
-      "completedTasks": 28,
+      "completedTasks": 29,
       "totalTasks": 32,
-      "percentComplete": 88,
-      "weightedPercentComplete": 53
+      "percentComplete": 91,
+      "weightedPercentComplete": 56
     },
     "workRemaining": {
       "pendingFeatures": [],

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectSource } from '../agent-detect.js';
@@ -49,6 +49,12 @@ describe('detectSource', () => {
 
   it('defaults to name: sdk when no CI env vars are set', () => {
     expect(detectSource().name).toBe('sdk');
+  });
+
+  it('omits the attributes key entirely on a bare sdk source (no env vars)', () => {
+    const source = detectSource();
+    expect(source.attributes).toBeUndefined();
+    expect(Object.keys(source)).not.toContain('attributes');
   });
 
   it('returns name: sdk when CI=true is set without a known provider', () => {
@@ -154,11 +160,12 @@ describe('detectSource', () => {
     expect(source.attributes?.workflow).toBe('unit');
   });
 
-  it('omits runId/workflow when env vars are unset', () => {
+  it('omits runId/workflow keys when env vars are unset', () => {
     vi.stubEnv('GITHUB_ACTIONS', 'true');
     const source = detectSource();
-    expect(source.attributes?.runId).toBeUndefined();
-    expect(source.attributes?.workflow).toBeUndefined();
+    expect(source.attributes).toEqual({ provider: 'github-actions' });
+    expect(Object.keys(source.attributes ?? {})).not.toContain('runId');
+    expect(Object.keys(source.attributes ?? {})).not.toContain('workflow');
   });
 
   it('omits machine attribute when NO_TICKETS_INCLUDE_MACHINE is unset', () => {
@@ -209,6 +216,39 @@ describe('detectSource', () => {
     const a = detectSource().attributes?.machine;
     const b = detectSource().attributes?.machine;
     expect(a).toBe(b);
+  });
+
+  it('regenerates salt when existing salt file is empty / whitespace-only', async () => {
+    vi.stubEnv('NO_TICKETS_INCLUDE_MACHINE', '1');
+    const dir = join(tempHome, '.notickets');
+    mkdirSync(dir, { recursive: true });
+    const saltPath = join(dir, '.machine-salt');
+    writeFileSync(saltPath, '   \n\t  ', { mode: 0o600 });
+    expect(detectSource().attributes?.machine).toMatch(/^[0-9a-f]{16}$/);
+    const { readFileSync } = await import('node:fs');
+    const newSalt = readFileSync(saltPath, 'utf-8').trim();
+    expect(newSalt.length).toBeGreaterThan(0);
+  });
+
+  it('writes the salt file with restrictive permissions (0o600 on POSIX)', () => {
+    vi.stubEnv('NO_TICKETS_INCLUDE_MACHINE', '1');
+    detectSource();
+    const saltPath = join(tempHome, '.notickets', '.machine-salt');
+    if (process.platform !== 'win32') {
+      // mode bits — only the lower 9 bits are interesting (rwxrwxrwx)
+      const mode = statSync(saltPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } else {
+      expect(existsSync(saltPath)).toBe(true);
+    }
+  });
+
+  it('falls back to USERPROFILE when HOME is unset (Windows-style env)', () => {
+    vi.stubEnv('NO_TICKETS_INCLUDE_MACHINE', '1');
+    delete process.env['HOME'];
+    vi.stubEnv('USERPROFILE', tempHome);
+    expect(detectSource().attributes?.machine).toMatch(/^[0-9a-f]{16}$/);
+    expect(existsSync(join(tempHome, '.notickets', '.machine-salt'))).toBe(true);
   });
 
   it('does not throw and omits machine when home dir is unwritable', () => {

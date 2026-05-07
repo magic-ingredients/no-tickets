@@ -132,6 +132,13 @@ function readOrCreateMachineSalt(): string {
   if (existsSync(path)) {
     const existing = readFileSync(path, 'utf-8').trim();
     if (existing.length > 0) return existing;
+    // Pre-existing empty/whitespace file: overwrite (no 'wx' flag — race with
+    // a concurrent first-run is not possible if a stale empty file already
+    // exists from an earlier crash).
+    mkdirSync(dir, { recursive: true });
+    const salt = randomBytes(16).toString('hex');
+    writeFileSync(path, salt, { mode: 0o600 });
+    return salt;
   }
   mkdirSync(dir, { recursive: true });
   const salt = randomBytes(16).toString('hex');
@@ -141,7 +148,9 @@ function readOrCreateMachineSalt(): string {
     writeFileSync(path, salt, { mode: 0o600, flag: 'wx' });
     return salt;
   } catch {
-    return readFileSync(path, 'utf-8').trim();
+    const winner = readFileSync(path, 'utf-8').trim();
+    if (winner.length === 0) throw new Error('salt file present but empty after concurrent write');
+    return winner;
   }
 }
 

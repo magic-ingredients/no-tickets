@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T10:27:19.759Z",
+  "lastUpdated": "2026-05-07T10:43:53.234Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -398,7 +398,36 @@
         {
           "id": "task-2-4",
           "description": "Interactions API",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T10:28:03.631Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T10:33:37.972Z",
+              "completedAt": "2026-05-07T10:35:40.613Z",
+              "reviewSha": "1a372b2",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T10:35:40.613Z",
+              "refactorCommitSha": "43d65f1e3f234e46f59ad141d6bf0f392d63a8fd",
+              "refactorCompletedAt": "2026-05-07T10:39:51.936Z",
+              "refactorCommittedAt": "2026-05-07T10:39:51.936Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T10:39:51.936Z",
+              "completedAt": "2026-05-07T10:41:14.041Z",
+              "reviewSha": "43d65f1e3f234e46f59ad141d6bf0f392d63a8fd",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T10:41:14.041Z",
+              "refactorCommitSha": "0d5d60331888723902578a4bf2d35eafebe4e8d7",
+              "refactorCompletedAt": "2026-05-07T10:43:53.232Z",
+              "refactorCommittedAt": "2026-05-07T10:43:53.232Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T10:30:08.301Z",
+          "testCommitSha": "51cf56e397dacf9e01a579f32e01bf64a261ebe9",
+          "redCompletedAt": "2026-05-07T10:30:08.301Z",
+          "commitSha": "1a372b218f950f00ab7f3b960c870dda53f44197",
+          "greenCompletedAt": "2026-05-07T10:33:37.971Z",
+          "completedAt": "2026-05-07T10:43:53.234Z"
         },
         {
           "id": "task-2-5",
@@ -417,10 +446,10 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 4,
-        "remaining": 2,
-        "weightedProgress": 0.5,
-        "nextTask": "Interactions API"
+        "completed": 5,
+        "remaining": 1,
+        "weightedProgress": 0.6666666666666666,
+        "nextTask": "tiny-brain integration cutover (SUPERSEDED — moved to tiny-brain repo)"
       }
     },
     {
@@ -565,23 +594,18 @@
     "overallProgress": {
       "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 14,
+      "completedTasks": 15,
       "totalTasks": 32,
-      "percentComplete": 44,
-      "weightedPercentComplete": 9
+      "percentComplete": 47,
+      "weightedPercentComplete": 13
     },
     "workRemaining": {
       "pendingFeatures": [
         "Registry Introspection + Caching",
         "nt publish / nt event / nt subject / nt action CLIs"
       ],
-      "currentFeatureTasks": 2,
+      "currentFeatureTasks": 1,
       "futureFeatureTasks": 13
-    },
-    "nextAction": {
-      "featureId": "publish-client",
-      "taskId": "task-2-4",
-      "description": "Interactions API"
     },
     "blockers": []
   }

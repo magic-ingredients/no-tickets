@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Client } from './client.js';
 import { publish, __resetAutoSourceCache } from './events.js';
-import { UnknownEventTypeError, EventValidationError, ServerError } from './errors.js';
+import { UnknownEventTypeError, ServerError } from './errors.js';
 import type { Source } from '../core/source.js';
 import * as agentDetect from '../agent-detect.js';
 
@@ -52,7 +52,7 @@ const AUTO_SOURCE: Source = {
 
 beforeEach(() => {
   __resetAutoSourceCache();
-  vi.mocked(agentDetect.detectSource).mockReturnValue(AUTO_SOURCE);
+  vi.mocked(agentDetect.detectSource).mockReset().mockReturnValue(AUTO_SOURCE);
 });
 
 describe('publish — happy path', () => {
@@ -162,12 +162,12 @@ describe('publish — local validation', () => {
     const { fetch: fetchImpl, calls } = recordingFetch([]);
     const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
 
-    const events = [
-      { type: 'app.x.v1', data: {} },
-      { type: '', data: {} },
-    ] as Parameters<typeof publish>[1];
-
-    await expect(publish(client, events)).rejects.toMatchObject({
+    await expect(
+      publish(client, [
+        { type: 'app.x.v1', data: {} },
+        { type: '', data: {} },
+      ]),
+    ).rejects.toMatchObject({
       name: 'EventValidationError',
       batchIndex: 1,
     });
@@ -177,12 +177,12 @@ describe('publish — local validation', () => {
   it('aborts on the FIRST invalid envelope (does not report later ones)', async () => {
     const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: vi.fn() });
 
-    const events = [
-      { type: '', data: {} },
-      { type: '', data: {} },
-    ] as Parameters<typeof publish>[1];
-
-    await expect(publish(client, events)).rejects.toMatchObject({ batchIndex: 0 });
+    await expect(
+      publish(client, [
+        { type: '', data: {} },
+        { type: '', data: {} },
+      ]),
+    ).rejects.toMatchObject({ batchIndex: 0 });
   });
 });
 

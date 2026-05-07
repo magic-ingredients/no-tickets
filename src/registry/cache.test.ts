@@ -7,6 +7,7 @@ import {
   readdirSync,
   rmSync,
   existsSync,
+  statSync,
 } from 'node:fs';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -115,6 +116,29 @@ describe('cachePath', () => {
     expect(p.startsWith(tempHome + sep)).toBe(true);
   });
 
+  it('treats `.git` as a hard wall — walks past `.git` does NOT pick up a higher .notickets', () => {
+    // Layout:
+    //   tempCwd/.notickets/         ← MUST NOT be picked
+    //   tempCwd/project/.git/
+    //   tempCwd/project/sub/        ← cwd
+    //
+    // With the .git guard active, findAncestorNoticketsDir stops at
+    // tempCwd/project and returns null → cachePath uses homeBase().
+    // Without the guard, it walks up past .git and finds tempCwd/.notickets,
+    // resolving to tempCwd/.notickets/.cache/...
+    mkdirSync(join(tempCwd, '.notickets'));
+    const project = join(tempCwd, 'project');
+    mkdirSync(join(project, '.git'), { recursive: true });
+    const cwd = join(project, 'sub');
+    mkdirSync(cwd);
+    cwdSpy.mockReturnValue(cwd);
+
+    const p = cachePath('https://api.example.com');
+
+    expect(p.startsWith(tempCwd + sep + '.notickets')).toBe(false);
+    expect(p.startsWith(tempHome + sep)).toBe(true);
+  });
+
   it('ignores a regular file named ".notickets" (only directories count)', () => {
     writeFileSync(join(tempCwd, '.notickets'), 'not a directory');
 
@@ -201,6 +225,17 @@ describe('writeCache', () => {
     expect(survivors[0]).not.toMatch(/\.tmp$/);
     expect(JSON.parse(readFileSync(p, 'utf-8'))).toEqual(updated);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'writes the cache file with mode 0o600 (owner read/write only)',
+    () => {
+      writeCache('https://api.example.com', SAMPLE_FILE);
+
+      const p = cachePath('https://api.example.com');
+      const mode = statSync(p).mode & 0o777;
+      expect(mode).toBe(0o600);
+    },
+  );
 
   it('rejects a CacheFile with an unknown version (defensive guard against caller bugs)', () => {
     const bad = { ...SAMPLE_FILE, version: 99 } as unknown as CacheFile;

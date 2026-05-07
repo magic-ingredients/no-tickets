@@ -34,7 +34,16 @@ function recordingFetch(responses: Response[]): {
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const method = (init?.method ?? 'GET').toUpperCase();
-    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+    const rawBody = init?.body;
+    let body: unknown = undefined;
+    if (rawBody !== undefined && rawBody !== null) {
+      if (typeof rawBody !== 'string') {
+        throw new Error(
+          `recordingFetch only handles string request bodies, got ${typeof rawBody}`,
+        );
+      }
+      body = JSON.parse(rawBody);
+    }
     calls.push({ url, method, body });
     const response = responses[i++];
     if (!response) throw new Error(`recordingFetch ran out of responses at call ${i}`);
@@ -110,18 +119,15 @@ describe('subjects.get', () => {
     expect(calls[0]?.url).toBe('https://api.example.com/v1/subjects/app%2Fuser/has%20space');
   });
 
-  it('surfaces a 404 from the server as HttpError (not retried)', async () => {
-    const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ status: 404, body: { msg: 'not found' } }),
-      jsonResponse({ status: 404, body: { msg: 'not found' } }),
+  it('surfaces a 404 from the server as HttpError preserving status and body', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
       jsonResponse({ status: 404, body: { msg: 'not found' } }),
     ]);
     const ref: SubjectRef = { type: 'app.user', id: 'missing' };
 
     const failure = subjects.get(client(fetchImpl), ref);
     await expect(failure).rejects.toBeInstanceOf(HttpError);
-    await expect(failure).rejects.toMatchObject({ status: 404 });
-    expect(calls).toHaveLength(1);
+    await expect(failure).rejects.toMatchObject({ status: 404, body: { msg: 'not found' } });
   });
 
   it('rejects an invalid SubjectRef before sending', async () => {
@@ -171,8 +177,18 @@ describe('subjects.list', () => {
     expect(calls[0]?.url).toBe('https://api.example.com/v1/subjects?type=app%2Fuser%26v1');
   });
 
-  it('throws ZodError when the server response is not a Subject array', async () => {
+  it('throws ZodError when the server response is not an array', async () => {
     const { fetch: fetchImpl } = recordingFetch([jsonResponse({ body: { not: 'an array' } })]);
+
+    await expect(
+      subjects.list(client(fetchImpl), { type: 'app.user' }),
+    ).rejects.toBeInstanceOf(ZodError);
+  });
+
+  it('throws ZodError when an array element fails the Subject schema', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ body: [{ type: 'app.user', externalId: 'usr_1' }] }), // missing displayName
+    ]);
 
     await expect(
       subjects.list(client(fetchImpl), { type: 'app.user' }),
@@ -181,16 +197,18 @@ describe('subjects.list', () => {
 });
 
 describe('subjects — round-trip', () => {
-  it('create → get returns the same Subject', async () => {
-    const { fetch: fetchImpl } = recordingFetch([
+  it('threads the externalId from create into the GET URL on a follow-up read', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([
       jsonResponse({ body: SAMPLE_SUBJECT }),
       jsonResponse({ body: SAMPLE_SUBJECT }),
     ]);
     const c = client(fetchImpl);
 
     const created = await subjects.create(c, SAMPLE_SUBJECT);
-    const fetched = await subjects.get(c, { type: created.type, id: created.externalId });
+    await subjects.get(c, { type: created.type, id: created.externalId });
 
-    expect(fetched).toEqual(created);
+    expect(calls[1]?.url).toBe(
+      `https://api.example.com/v1/subjects/${encodeURIComponent(created.type)}/${encodeURIComponent(created.externalId)}`,
+    );
   });
 });

@@ -10,9 +10,7 @@ import {
 const subjectListSchema = z.array(subjectSchema);
 const listQuerySchema = z.object({ type: z.string().min(1) });
 
-export interface SubjectListQuery {
-  readonly type: string;
-}
+export type SubjectListQuery = Readonly<z.infer<typeof listQuerySchema>>;
 
 export const subjects = {
   async create(client: Client, subject: Subject): Promise<Subject> {
@@ -30,7 +28,7 @@ export const subjects = {
 
   async list(client: Client, query: SubjectListQuery): Promise<readonly Subject[]> {
     listQuerySchema.parse(query);
-    const path = `/v1/subjects?type=${encodeURIComponent(query.type)}`;
+    const path = `/v1/subjects?${new URLSearchParams({ type: query.type }).toString()}`;
     const response = await client.request<unknown>('GET', path);
     return subjectListSchema.parse(response);
   },

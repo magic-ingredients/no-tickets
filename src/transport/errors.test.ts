@@ -73,6 +73,26 @@ describe('ServerError', () => {
     const err = new ServerError(500, body);
     expect(err.body).toEqual(body);
   });
+
+  it('includes the status code in the message', () => {
+    const err = new ServerError(503, '');
+    expect(err.message).toContain('503');
+  });
+});
+
+describe('HttpError message', () => {
+  it('includes the status code', () => {
+    const err = new HttpError(418, '');
+    expect(err.message).toContain('418');
+  });
+});
+
+describe('EventValidationError message', () => {
+  it('includes the typeId and batch index', () => {
+    const err = new EventValidationError('app.user.signed-up.v1', 7, []);
+    expect(err.message).toContain('app.user.signed-up.v1');
+    expect(err.message).toContain('7');
+  });
 });
 
 describe('mapResponseError', () => {
@@ -143,6 +163,107 @@ describe('mapResponseError', () => {
     expect(err).toBeInstanceOf(ServerError);
     expect((err as ServerError).status).toBe(503);
     expect((err as ServerError).body).toEqual(body);
+  });
+
+  it('falls through to HttpError on 422 with null body', () => {
+    const err = mapResponseError(422, null);
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(422);
+  });
+
+  it('falls through to HttpError on 422 with primitive body', () => {
+    const err = mapResponseError(422, 42);
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).body).toBe(42);
+  });
+
+  it('falls through to HttpError on 403 with null body', () => {
+    const err = mapResponseError(403, null);
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+  });
+
+  it('does NOT classify a non-422 response as a typed event error even when the body looks like one', () => {
+    const err = mapResponseError(400, {
+      code: 'unknown_event_type',
+      typeId: 'app.user.signed-up.v1',
+      batchIndex: 0,
+    });
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(UnknownEventTypeError);
+    expect((err as HttpError).status).toBe(400);
+  });
+
+  it('does NOT classify a 5xx as PermissionDenied even when the body has a domain field', () => {
+    const err = mapResponseError(500, { domain: 'app.user' });
+    expect(err).toBeInstanceOf(ServerError);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+  });
+
+  it('falls through to HttpError on 422 when typeId is the empty string', () => {
+    const err = mapResponseError(422, {
+      code: 'unknown_event_type',
+      typeId: '',
+      batchIndex: 0,
+    });
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(UnknownEventTypeError);
+  });
+
+  it('falls through to HttpError on 403 when domain is the empty string', () => {
+    const err = mapResponseError(403, { domain: '' });
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+  });
+
+  it('falls through to HttpError on 422 when batchIndex is a string', () => {
+    const err = mapResponseError(422, {
+      code: 'unknown_event_type',
+      typeId: 'app.x.v1',
+      batchIndex: '0',
+    });
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(UnknownEventTypeError);
+  });
+
+  it('drops non-record entries from the issues array', () => {
+    const err = mapResponseError(422, {
+      code: 'event_validation',
+      typeId: 'app.x.v1',
+      batchIndex: 0,
+      issues: [null, 'bad', 42, { path: ['a'], message: 'kept' }],
+    });
+    expect((err as EventValidationError).issues).toEqual([{ path: ['a'], message: 'kept' }]);
+  });
+
+  it('drops issue entries without a string message', () => {
+    const err = mapResponseError(422, {
+      code: 'event_validation',
+      typeId: 'app.x.v1',
+      batchIndex: 0,
+      issues: [{ path: ['a'] }, { message: 42 }, { path: ['b'], message: 'kept' }],
+    });
+    expect((err as EventValidationError).issues).toEqual([{ path: ['b'], message: 'kept' }]);
+  });
+
+  it('treats a non-array issue path as empty', () => {
+    const err = mapResponseError(422, {
+      code: 'event_validation',
+      typeId: 'app.x.v1',
+      batchIndex: 0,
+      issues: [{ path: 'not-an-array', message: 'msg' }],
+    });
+    expect((err as EventValidationError).issues).toEqual([{ path: [], message: 'msg' }]);
+  });
+
+  it('keeps only string and number entries in issue paths', () => {
+    const err = mapResponseError(422, {
+      code: 'event_validation',
+      typeId: 'app.x.v1',
+      batchIndex: 0,
+      issues: [{ path: ['a', true, 1, null, {}], message: 'msg' }],
+    });
+    expect((err as EventValidationError).issues).toEqual([{ path: ['a', 1], message: 'msg' }]);
   });
 
   it('maps unrecognised 4xx to HttpError preserving status and body', () => {

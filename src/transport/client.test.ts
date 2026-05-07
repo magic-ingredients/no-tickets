@@ -72,6 +72,25 @@ describe('Client.request — auth + tracing', () => {
     expect(calls[0]?.url).toBe('https://api.example.com/v1/subjects');
   });
 
+  it('joins baseUrl and path correctly when baseUrl has NO trailing slash', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: {} })]);
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    await client.request('GET', '/v1/subjects');
+
+    expect(calls[0]?.url).toBe('https://api.example.com/v1/subjects');
+  });
+
+  it('does not send a body or content-type header on GET requests', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: {} })]);
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    await client.request('GET', '/v1/subjects');
+
+    expect(calls[0]?.body).toBeUndefined();
+    expect(calls[0]?.headers['content-type']).toBeUndefined();
+  });
+
   it('serialises JSON body and sets content-type', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: {} })]);
     const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
@@ -122,6 +141,8 @@ describe('Client.request — auth + tracing', () => {
       status: 200,
     });
     expect(typeof payload.latencyMs).toBe('number');
+    expect(payload.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(payload.latencyMs).toBeLessThan(5000);
   });
 });
 

@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T05:41:15.069Z",
+  "lastUpdated": "2026-05-07T05:47:13.443Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -84,7 +84,35 @@
         {
           "id": "task-1-3",
           "description": "Define Subject and SubjectRef",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T05:41:53.278Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T05:42:53.239Z",
+              "completedAt": "2026-05-07T05:44:26.528Z",
+              "reviewSha": "1c3af7e",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T05:44:26.528Z",
+              "refactorCommitSha": "04d41287494dfd0db968b4d348c5403a52fe0f12",
+              "refactorCompletedAt": "2026-05-07T05:46:13.436Z",
+              "refactorCommittedAt": "2026-05-07T05:46:13.436Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T05:46:13.437Z",
+              "completedAt": "2026-05-07T05:47:13.442Z",
+              "reviewSha": "04d4128",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-05-07T05:47:13.442Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-05-07T05:47:13.442Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T05:42:28.946Z",
+          "testCommitSha": "f5bbf848941937343701181f82a4fb548920bc3e",
+          "redCompletedAt": "2026-05-07T05:42:28.946Z",
+          "commitSha": "1c3af7e8320b78932bd09400ce27be27ccdc4d2e",
+          "greenCompletedAt": "2026-05-07T05:42:53.239Z",
+          "completedAt": "2026-05-07T05:47:13.443Z"
         },
         {
           "id": "task-1-4",
@@ -114,8 +142,8 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 2,
-        "remaining": 6
+        "completed": 3,
+        "remaining": 5
       }
     },
     {
@@ -301,9 +329,9 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 5,
-      "completedTasks": 3,
+      "completedTasks": 4,
       "totalTasks": 32,
-      "percentComplete": 9
+      "percentComplete": 13
     },
     "workRemaining": {
       "pendingFeatures": [
@@ -312,13 +340,13 @@
         "nt publish / nt event / nt subject / nt action CLIs",
         "MCP Discovery Tools"
       ],
-      "currentFeatureTasks": 6,
+      "currentFeatureTasks": 5,
       "futureFeatureTasks": 24
     },
     "nextAction": {
       "featureId": "envelope-schemas",
-      "taskId": "task-1-3",
-      "description": "Define Subject and SubjectRef"
+      "taskId": "task-1-4",
+      "description": "Define Interaction envelope"
     },
     "blockers": []
   }

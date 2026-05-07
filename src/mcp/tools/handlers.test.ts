@@ -48,8 +48,8 @@ function buildDeps(opts: BuildDepsOptions = {}): {
   runInt: ReturnType<typeof vi.fn>;
 } {
   const list = vi.fn(async () => opts.listResult ?? [TYPE]);
-  const describe = vi.fn(async () =>
-    'describeResult' in opts ? opts.describeResult : TYPE,
+  const describe = vi.fn(async (): Promise<EventTypeSpec | null> =>
+    'describeResult' in opts ? (opts.describeResult ?? null) : TYPE,
   );
   const publish = vi.fn(
     async (): Promise<PublishResponse> =>

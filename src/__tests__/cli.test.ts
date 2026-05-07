@@ -209,7 +209,7 @@ describe('runCli dispatch', () => {
     'action',
   ])('runCli routes "%s" to the "not yet implemented" default branch', async (verb) => {
     await runCli([verb]);
-    const errMessages = errSpy.mock.calls.map((call) => call[0] as string).join('\n');
+    const errMessages = errSpy.mock.calls.map((call: unknown[]) => call[0] as string).join('\n');
     expect(errMessages).toMatch(/not yet implemented/);
     expect(process.exitCode).toBe(1);
   });

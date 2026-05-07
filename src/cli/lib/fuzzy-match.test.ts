@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { fuzzyMatch } from './fuzzy-match.js';
 
 describe('fuzzyMatch', () => {
-  it('returns the candidate first when it is an exact prefix of one entry', () => {
+  it('ranks the closest candidate first by edit distance (a short input matches the long candidate that shares its prefix)', () => {
     const candidates = ['app.user.signed-up.v1', 'engineering.deploy.completed.v1'];
     expect(fuzzyMatch('app.user', candidates, { topN: 3 })[0]).toBe('app.user.signed-up.v1');
   });
@@ -28,18 +28,24 @@ describe('fuzzyMatch', () => {
     expect(matches[0]).toBe('app.user.signed-out.v1');
   });
 
-  it('returns the exact match first when the input matches a candidate', () => {
-    const candidates = ['app.user.signed-up.v1', 'app.user.signed-in.v1'];
+  it('returns the exact match first even when it is NOT first in the input list', () => {
+    // Place exact match at index 1 so a regression that returns input order
+    // can't pass.
+    const candidates = ['app.user.signed-in.v1', 'app.user.signed-up.v1'];
     const matches = fuzzyMatch('app.user.signed-up.v1', candidates, { topN: 3 });
     expect(matches[0]).toBe('app.user.signed-up.v1');
   });
 
-  it('drops candidates that are too distant (relative to the input length)', () => {
-    // "abc" vs "totally.unrelated.event.v1" — overwhelmingly different.
-    // Implementation may filter; we assert the totally-unrelated candidate
-    // does NOT come first.
+  it('ranks the closer candidate ahead of a far-away one', () => {
     const candidates = ['totally.unrelated.event.v1', 'abd'];
     const matches = fuzzyMatch('abc', candidates, { topN: 3 });
     expect(matches[0]).toBe('abd');
+    expect(matches[1]).toBe('totally.unrelated.event.v1');
+  });
+
+  it('breaks ties by input order (stable sort)', () => {
+    // Two candidates with identical distance from "ab".
+    const matches = fuzzyMatch('ab', ['ax', 'ay'], { topN: 2 });
+    expect(matches).toEqual(['ax', 'ay']);
   });
 });

@@ -73,7 +73,9 @@ describe('resolveDataInput', () => {
     await expect(resolveDataInput(`@${filePath}`, stdinDeps([]))).rejects.toThrow(/json/i);
   });
 
-  it('rejects empty input string', async () => {
-    await expect(resolveDataInput('', stdinDeps([]))).rejects.toThrow();
+  it('rejects empty input string with a clear "value required" message (distinct from JSON parse failure)', async () => {
+    await expect(resolveDataInput('', stdinDeps([]))).rejects.toThrow(
+      /requires a value|inline JSON/i,
+    );
   });
 });

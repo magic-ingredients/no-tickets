@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runPublishSingle, type PublishSingleDeps, type PublishSingleOptions } from './single.js';
 import type { EventTypeSpec } from '../../../registry/client.js';
-import type { PublishResponse } from '../../../transport/events.js';
+import type { PublishResponse, PublishEvent } from '../../../transport/events.js';
 
 const TYPE_USER: EventTypeSpec = {
   id: 'app.user.signed-up.v1',
@@ -34,10 +34,12 @@ function buildDeps(opts: BuildDepsOptions, out: RecordedOutput): {
   deps: PublishSingleDeps;
   publish: ReturnType<typeof vi.fn>;
 } {
-  const publish = vi.fn(async () => {
-    if (opts.publishError !== undefined) throw opts.publishError;
-    return opts.publishResult ?? { ingested: 1, deduped: 0, ids: ['evt_1'] };
-  });
+  const publish = vi.fn<(events: readonly PublishEvent[]) => Promise<PublishResponse>>(
+    async () => {
+      if (opts.publishError !== undefined) throw opts.publishError;
+      return opts.publishResult ?? { ingested: 1, deduped: 0, ids: ['evt_1'] };
+    },
+  );
   const deps: PublishSingleDeps = {
     listEvents: vi.fn(async () => opts.availableTypes),
     publish,
@@ -65,8 +67,7 @@ describe('runPublishSingle — happy path', () => {
 
     expect(exit).toBe(0);
     expect(publish).toHaveBeenCalledTimes(1);
-    const callArgs = publish.mock.calls[0];
-    const events = callArgs?.[1];
+    const events = publish.mock.calls[0]?.[0];
     expect(events).toEqual([
       expect.objectContaining({
         type: 'app.user.signed-up.v1',
@@ -90,7 +91,7 @@ describe('runPublishSingle — happy path', () => {
       deps,
     );
 
-    const events = publish.mock.calls[0]?.[1];
+    const events = publish.mock.calls[0]?.[0];
     expect(events?.[0]).toMatchObject({
       subject: { type: 'app.user', id: 'usr_42' },
     });
@@ -108,7 +109,7 @@ describe('runPublishSingle — happy path', () => {
       deps,
     );
 
-    const eventBody = publish.mock.calls[0]?.[1]?.[0];
+    const eventBody = publish.mock.calls[0]?.[0]?.[0];
     expect(eventBody?.subject).toBeUndefined();
   });
 
@@ -125,7 +126,7 @@ describe('runPublishSingle — happy path', () => {
       deps,
     );
 
-    const eventBody = publish.mock.calls[0]?.[1]?.[0];
+    const eventBody = publish.mock.calls[0]?.[0]?.[0];
     expect(eventBody?.source).toMatchObject({
       name: 'tiny-brain',
       attributes: { env: 'prod' },
@@ -190,6 +191,56 @@ describe('runPublishSingle — local validation', () => {
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
     expect(out.stderr.join('\n')).toMatch(/email/);
+  });
+});
+
+describe('runPublishSingle — input guards', () => {
+  it('exits with code 1 when type id is empty (no listEvents call)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+
+    const exit = await runPublishSingle(baseOptions('', '{"email": "a@b.c"}'), deps);
+
+    expect(exit).toBe(1);
+    expect(deps.listEvents).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('exits with code 1 when listEvents fails (cache missing)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const publish = vi.fn();
+    const deps: PublishSingleDeps = {
+      listEvents: vi.fn(async () => {
+        throw new Error('cache missing');
+      }),
+      publish,
+      readStdin: vi.fn(async () => ''),
+      write: (l) => out.stdout.push(l),
+      writeErr: (l) => out.stderr.push(l),
+    };
+
+    const exit = await runPublishSingle(
+      baseOptions('app.user.signed-up.v1', '{}'),
+      deps,
+    );
+
+    expect(exit).toBe(1);
+    expect(out.stderr.join('\n')).toContain('cache missing');
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('exits with code 1 when --data fails to resolve (invalid JSON)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+
+    const exit = await runPublishSingle(
+      baseOptions('app.user.signed-up.v1', '{not json'),
+      deps,
+    );
+
+    expect(exit).toBe(1);
+    expect(out.stderr.join('\n')).toMatch(/json/i);
+    expect(publish).not.toHaveBeenCalled();
   });
 });
 

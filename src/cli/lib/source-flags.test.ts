@@ -33,9 +33,9 @@ describe('parseSourceFlags', () => {
     });
   });
 
-  it('keeps the FIRST occurrence when the same attribute key appears twice (or last wins — pin one)', () => {
-    // The test pins the contract: last value wins, matching command-line
-    // override conventions where later flags supersede earlier ones.
+  it('lets the last value win when the same attribute key appears twice', () => {
+    // Pins the contract: later flags override earlier ones, matching
+    // command-line conventions.
     expect(parseSourceFlags({ attributes: ['env=staging', 'env=prod'] })).toEqual({
       attributes: { env: 'prod' },
     });

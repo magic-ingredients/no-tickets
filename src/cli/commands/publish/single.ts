@@ -1,8 +1,8 @@
-import type { Client } from '../../../transport/client.js';
 import type { PublishEvent, PublishResponse } from '../../../transport/events.js';
 import type { EventTypeSpec } from '../../../registry/client.js';
 import type { JsonSchema } from '../../../lib/example-synth.js';
 import type { SubjectRef } from '../../../core/subject.js';
+import type { Source } from '../../../core/source.js';
 import { resolveDataInput } from '../../lib/data-input.js';
 import { parseSourceFlags } from '../../lib/source-flags.js';
 import { fuzzyMatch } from '../../lib/fuzzy-match.js';
@@ -21,14 +21,10 @@ export interface PublishSingleOptions {
 
 export interface PublishSingleDeps {
   listEvents(): Promise<readonly EventTypeSpec[]>;
-  publish(
-    client: Client,
-    events: readonly PublishEvent[],
-  ): Promise<PublishResponse>;
+  publish(events: readonly PublishEvent[]): Promise<PublishResponse>;
   readStdin(): Promise<string>;
   write(line: string): void;
   writeErr(line: string): void;
-  client?: Client;
 }
 
 const EXIT_OK = 0;
@@ -41,42 +37,75 @@ interface ValidationError {
   readonly message: string;
 }
 
+function asJsonSchema(value: unknown): JsonSchema | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as JsonSchema)
+    : null;
+}
+
+function pathLabel(path: string, key?: string | number): string {
+  if (key === undefined) return path === '' ? '<root>' : path;
+  return path === '' ? String(key) : `${path}.${key}`;
+}
+
 /** Minimal "best-effort" JSON Schema validator.
- *  Handles required-field presence and rough type checks. The server is
- *  authoritative — local validation only catches obvious caller errors. */
-function validateAgainstSchema(data: unknown, schema: JsonSchema, path = ''): ValidationError[] {
+ *  Handles required-field presence and rough type checks; recurses into
+ *  objects and arrays. The server is authoritative — local validation only
+ *  catches obvious caller errors. */
+function validateAgainstSchema(data: unknown, rawSchema: unknown, path = ''): ValidationError[] {
+  const schema = asJsonSchema(rawSchema);
+  if (schema === null) return [];
+
   const errors: ValidationError[] = [];
 
   if (schema.type === 'object') {
     if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-      errors.push({ path: path || '<root>', message: 'expected object' });
+      errors.push({ path: pathLabel(path), message: 'expected object' });
       return errors;
     }
     const obj = data as Record<string, unknown>;
     for (const required of schema.required ?? []) {
       if (!(required in obj)) {
-        const subPath = path === '' ? required : `${path}.${required}`;
-        errors.push({ path: subPath, message: `required field "${required}" is missing` });
+        errors.push({
+          path: pathLabel(path, required),
+          message: `required field "${required}" is missing`,
+        });
       }
     }
     for (const [key, propSchema] of Object.entries(schema.properties ?? {})) {
       if (key in obj) {
-        const subPath = path === '' ? key : `${path}.${key}`;
-        errors.push(...validateAgainstSchema(obj[key], propSchema, subPath));
+        errors.push(...validateAgainstSchema(obj[key], propSchema, pathLabel(path, key)));
       }
+    }
+    return errors;
+  }
+
+  if (schema.type === 'array') {
+    if (!Array.isArray(data)) {
+      errors.push({ path: pathLabel(path), message: 'expected array' });
+      return errors;
+    }
+    if (schema.items !== undefined) {
+      data.forEach((item, idx) => {
+        errors.push(...validateAgainstSchema(item, schema.items, pathLabel(path, idx)));
+      });
     }
     return errors;
   }
 
   if (schema.enum !== undefined && schema.enum.length > 0) {
     if (!schema.enum.some((v) => v === data)) {
-      errors.push({ path: path || '<root>', message: `value must be one of ${schema.enum.map((v) => JSON.stringify(v)).join(', ')}` });
+      errors.push({
+        path: pathLabel(path),
+        message: `value must be one of ${schema.enum.map((v) => JSON.stringify(v)).join(', ')}`,
+      });
+      return errors; // don't double-report with a type error.
     }
+    return errors;
   }
 
-  const typeOk = matchesType(data, schema.type);
-  if (!typeOk) {
-    errors.push({ path: path || '<root>', message: `expected type ${schema.type ?? 'unknown'}` });
+  if (!matchesType(data, schema.type)) {
+    errors.push({ path: pathLabel(path), message: `expected type ${schema.type ?? 'unknown'}` });
   }
 
   return errors;
@@ -155,7 +184,7 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  const validationErrors = validateAgainstSchema(parsedData, typeSpec.schema as JsonSchema);
+  const validationErrors = validateAgainstSchema(parsedData, typeSpec.schema);
   if (validationErrors.length > 0) {
     deps.writeErr(`${options.typeId}: ${validationErrors.length} local validation error(s):`);
     for (const e of validationErrors) {
@@ -164,7 +193,7 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  let source: ReturnType<typeof parseSourceFlags>;
+  let source: Partial<Source> | undefined;
   try {
     source = parseSourceFlags({
       ...(options.sourceName !== undefined && { name: options.sourceName }),
@@ -175,12 +204,11 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
+  const subject = buildSubject(options.subjectType, options.subjectId);
   const event: PublishEvent = {
     type: options.typeId,
     data: parsedData,
-    ...(buildSubject(options.subjectType, options.subjectId) !== undefined && {
-      subject: buildSubject(options.subjectType, options.subjectId)!,
-    }),
+    ...(subject !== undefined && { subject }),
     ...(source !== undefined && { source }),
     ...(options.parent !== undefined && { parentEventId: options.parent }),
     ...(options.trace !== undefined && { traceId: options.trace }),
@@ -189,10 +217,7 @@ export async function runPublishSingle(
 
   let result: PublishResponse;
   try {
-    // The actual Client is wired in by the dispatcher (task 4-8). For the unit
-    // test the publish dep ignores the client value, so passing a placeholder
-    // is fine; runtime uses deps.client when present.
-    result = await deps.publish(deps.client as Client, [event]);
+    result = await deps.publish([event]);
   } catch (err) {
     deps.writeErr(err instanceof Error ? err.message : String(err));
     return EXIT_SERVER;

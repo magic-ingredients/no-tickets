@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T06:29:52.872Z",
+  "lastUpdated": "2026-05-07T07:58:30.750Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -218,7 +218,35 @@
         {
           "id": "task-1-7",
           "description": "Remove push payload schemas",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T06:31:34.390Z",
+          "greenStartedAt": "2026-05-07T06:31:34.390Z",
+          "testCommitSha": "skipped",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T06:41:59.026Z",
+              "completedAt": "2026-05-07T06:46:59.525Z",
+              "reviewSha": "f4bd395",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T06:46:59.525Z",
+              "refactorCommitSha": "c267d23e1b9321177cddcde23e42b004b72a647e",
+              "refactorCompletedAt": "2026-05-07T06:51:23.569Z",
+              "refactorCommittedAt": "2026-05-07T06:51:23.569Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T06:51:23.569Z",
+              "completedAt": "2026-05-07T07:57:08.867Z",
+              "reviewSha": "c267d23",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T07:57:08.867Z",
+              "refactorCommitSha": "fb8cc8a915820ac745b1963c2468527feac54661",
+              "refactorCompletedAt": "2026-05-07T07:58:30.749Z",
+              "refactorCommittedAt": "2026-05-07T07:58:30.749Z"
+            }
+          },
+          "commitSha": "f4bd395ef46b4d4d1c7601bab1bb304c1b7f0a53",
+          "greenCompletedAt": "2026-05-07T06:41:59.026Z",
+          "completedAt": "2026-05-07T07:58:30.750Z"
         },
         {
           "id": "task-1-8",
@@ -228,15 +256,15 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 6,
-        "remaining": 2
+        "completed": 7,
+        "remaining": 1
       }
     },
     {
       "id": "publish-client",
       "number": 2,
       "title": "publish() + Subjects + Interactions HTTP Client",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-2-1",
@@ -261,7 +289,10 @@
         {
           "id": "task-2-5",
           "description": "Remove push command + push HTTP client",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "fb8cc8a",
+          "completedAt": "2026-05-07T07:58:45.458Z",
+          "committedAt": "2026-05-07T07:58:45.458Z"
         },
         {
           "id": "task-2-6",
@@ -272,8 +303,8 @@
       ],
       "taskSummary": {
         "total": 6,
-        "completed": 1,
-        "remaining": 5
+        "completed": 2,
+        "remaining": 4
       }
     },
     {
@@ -371,7 +402,7 @@
       "id": "mcp-discovery-tools",
       "number": 5,
       "title": "MCP Discovery Tools",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-5-1",
@@ -391,7 +422,10 @@
         {
           "id": "task-5-4",
           "description": "Remove old push MCP tool",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "fb8cc8a",
+          "completedAt": "2026-05-07T07:58:52.030Z",
+          "committedAt": "2026-05-07T07:58:52.030Z"
         },
         {
           "id": "task-5-5",
@@ -401,8 +435,8 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 0,
-        "remaining": 5
+        "completed": 1,
+        "remaining": 4
       }
     }
   ],
@@ -415,9 +449,9 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 5,
-      "completedTasks": 7,
+      "completedTasks": 10,
       "totalTasks": 32,
-      "percentComplete": 22
+      "percentComplete": 31
     },
     "workRemaining": {
       "pendingFeatures": [
@@ -426,13 +460,13 @@
         "nt publish / nt event / nt subject / nt action CLIs",
         "MCP Discovery Tools"
       ],
-      "currentFeatureTasks": 2,
+      "currentFeatureTasks": 1,
       "futureFeatureTasks": 24
     },
     "nextAction": {
       "featureId": "envelope-schemas",
-      "taskId": "task-1-7",
-      "description": "Remove push payload schemas"
+      "taskId": "task-1-8",
+      "description": "Sub-path export verification"
     },
     "blockers": []
   }

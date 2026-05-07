@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Client } from '../transport/client.js';
-import { createEvents } from './index.js';
-import { writeCache, cachePath, type CacheFile } from './cache.js';
+import { createEvents, CACHE_MISSING_MESSAGE } from './index.js';
+import { writeCache, cachePath, readCache, type CacheFile } from './cache.js';
 import type { EventTypeSpec } from './client.js';
 
 const TYPE_A: EventTypeSpec = {
@@ -14,6 +14,7 @@ const TYPE_A: EventTypeSpec = {
   action: 'signed-up',
   version: 1,
   schema: { type: 'object', properties: {} },
+  deprecatedAt: null,
 };
 
 const TYPE_B: EventTypeSpec = {
@@ -114,10 +115,20 @@ describe('events.list — cache reads', () => {
     expect(types).toEqual([TYPE_B]);
   });
 
-  it('throws a clear diagnostic when the cache is missing', async () => {
+  it('throws a clear, actionable diagnostic when the cache is missing', async () => {
     const events = createEvents({ client: makeClient() });
 
-    await expect(events.list()).rejects.toThrow(/cache/i);
+    await expect(events.list()).rejects.toThrow(CACHE_MISSING_MESSAGE);
+  });
+
+  it('treats deprecatedAt: null as NOT deprecated (matches PRD example shape)', async () => {
+    // TYPE_A has deprecatedAt: null explicitly. With deprecated: false it
+    // must surface; with deprecated: true it must NOT.
+    writeCache(BASE_URL, buildCache());
+    const events = createEvents({ client: makeClient() });
+
+    expect(await events.list({ deprecated: false })).toEqual([TYPE_A]);
+    expect(await events.list({ deprecated: true })).toEqual([TYPE_B]);
   });
 });
 
@@ -145,6 +156,8 @@ describe('events.list — refresh trigger', () => {
     // If list awaited refresh, this would hang until releaseRefresh().
     const types = await events.list();
     expect(types).toEqual([TYPE_A, TYPE_B]);
+    // Pin the trigger too, so a regression that drops the call is caught.
+    expect(scheduleRefresh).toHaveBeenCalledTimes(1);
 
     releaseRefresh();
   });
@@ -152,6 +165,18 @@ describe('events.list — refresh trigger', () => {
   it('swallows scheduleRefresh rejections so the read returns cleanly (offline-with-cache)', async () => {
     writeCache(BASE_URL, buildCache());
     const scheduleRefresh = vi.fn().mockRejectedValue(new Error('offline'));
+    const events = createEvents({ client: makeClient(), scheduleRefresh });
+
+    const types = await events.list();
+
+    expect(types).toEqual([TYPE_A, TYPE_B]);
+  });
+
+  it('swallows synchronous throws from scheduleRefresh', async () => {
+    writeCache(BASE_URL, buildCache());
+    const scheduleRefresh = vi.fn(() => {
+      throw new Error('sync boom');
+    });
     const events = createEvents({ client: makeClient(), scheduleRefresh });
 
     const types = await events.list();
@@ -215,12 +240,79 @@ describe('events.describe', () => {
     // No cache file should have been written without a known ETag.
     expect(() => readFileSync(cachePath(BASE_URL), 'utf-8')).toThrow();
   });
+
+  it('triggers scheduleRefresh on cache hit', async () => {
+    writeCache(BASE_URL, buildCache());
+    const scheduleRefresh = vi.fn().mockResolvedValue(undefined);
+    const events = createEvents({ client: makeClient(), scheduleRefresh });
+
+    await events.describe(TYPE_A.id);
+
+    expect(scheduleRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('triggers scheduleRefresh on cache miss (after the network call)', async () => {
+    const seed = { ...buildCache(), types: [TYPE_A] };
+    writeCache(BASE_URL, seed);
+    const scheduleRefresh = vi.fn().mockResolvedValue(undefined);
+    const events = createEvents({
+      client: makeClient(jsonFetch(TYPE_B)),
+      scheduleRefresh,
+    });
+
+    await events.describe(TYPE_B.id);
+
+    expect(scheduleRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the writeback when a concurrent refresh already added the type', async () => {
+    // Race scenario: between describe's read and its post-fetch write, the
+    // refresh worker overwrites the cache with a fuller list that already
+    // contains TYPE_B. Describe must NOT clobber that with its own merge.
+    const seed: CacheFile = { ...buildCache(), types: [TYPE_A] };
+    writeCache(BASE_URL, seed);
+
+    let networkCall = 0;
+    const fetchImpl: typeof fetch = async () => {
+      networkCall++;
+      // Simulate the refresh worker landing during the in-flight describe.
+      const refreshed: CacheFile = {
+        ...seed,
+        etag: 'W/"refreshed"',
+        types: [TYPE_A, TYPE_B],
+      };
+      writeCache(BASE_URL, refreshed);
+      return new Response(JSON.stringify(TYPE_B), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const events = createEvents({ client: makeClient(fetchImpl) });
+    const result = await events.describe(TYPE_B.id);
+
+    expect(networkCall).toBe(1);
+    expect(result).toEqual(TYPE_B);
+    // Cache must still carry the refresh worker's ETag; describe must NOT
+    // have rewritten with the stale (pre-fetch) snapshot.
+    const after = readCache(BASE_URL);
+    expect(after?.etag).toBe('W/"refreshed"');
+    expect(after?.types).toEqual([TYPE_A, TYPE_B]);
+  });
 });
 
 describe('events — base path resolution', () => {
   it('uses Client.baseUrl as the cache key (multi-server isolation)', async () => {
-    writeCache(BASE_URL, buildCache());
-    writeCache('https://other.example.com', { ...buildCache(), serverUrl: 'https://other.example.com' });
+    // Distinguishable contents so a broken cache key (e.g. shared file)
+    // would surface as "wrong server's data" rather than just "any data".
+    const aOnly: EventTypeSpec = { ...TYPE_A, id: 'server-a.only.v1' };
+    const bOnly: EventTypeSpec = { ...TYPE_B, id: 'server-b.only.v1' };
+    writeCache(BASE_URL, { ...buildCache(), serverUrl: BASE_URL, types: [aOnly] });
+    writeCache('https://other.example.com', {
+      ...buildCache(),
+      serverUrl: 'https://other.example.com',
+      types: [bOnly],
+    });
 
     const aClient = new Client({ baseUrl: BASE_URL, token: 't', fetch: vi.fn(), source: { name: 'sdk', sdkVersion: 'x' } });
     const bClient = new Client({ baseUrl: 'https://other.example.com', token: 't', fetch: vi.fn(), source: { name: 'sdk', sdkVersion: 'x' } });
@@ -228,9 +320,8 @@ describe('events — base path resolution', () => {
     const a = await createEvents({ client: aClient }).list();
     const b = await createEvents({ client: bClient }).list();
 
-    // Both should succeed — proves cache is keyed per-server.
-    expect(a.length).toBeGreaterThan(0);
-    expect(b.length).toBeGreaterThan(0);
+    expect(a.map((t) => t.id)).toEqual(['server-a.only.v1']);
+    expect(b.map((t) => t.id)).toEqual(['server-b.only.v1']);
   });
 });
 

@@ -19,7 +19,7 @@ export interface CreateEventsDeps {
   readonly scheduleRefresh?: (client: Client) => Promise<unknown>;
 }
 
-const CACHE_MISSING_MESSAGE =
+export const CACHE_MISSING_MESSAGE =
   'Registry cache not found. Populate it with `nt event list` or wait for first refresh.';
 
 function isDeprecated(type: EventTypeSpec): boolean {
@@ -45,7 +45,10 @@ function fireAndForget(
   client: Client,
 ): void {
   if (scheduleRefresh === undefined) return;
-  // Refresh failures must not surface to the read path. Always swallow.
+  // Refresh failures must not surface to the read path. Wrapping with
+  // `Promise.resolve().then(...)` catches both sync throws AND async
+  // rejections from scheduleRefresh — `scheduleRefresh(client).catch(...)`
+  // alone would not catch a synchronous throw.
   Promise.resolve()
     .then(() => scheduleRefresh(client))
     .catch(() => {
@@ -68,16 +71,28 @@ export function createEvents(deps: CreateEventsDeps): EventsApi {
     async describe(typeId: string): Promise<EventTypeSpec | null> {
       const cache = readCache(client.baseUrl);
       const cached = cache?.types.find((t) => t.id === typeId);
-      if (cached !== undefined) return cached;
+      if (cached !== undefined) {
+        fireAndForget(scheduleRefresh, client);
+        return cached;
+      }
 
       const fresh = await getEventType(client, typeId);
-      if (fresh !== null && cache !== null) {
-        const updated: CacheFile = {
-          ...cache,
-          types: [...cache.types, fresh],
-        };
-        writeCache(client.baseUrl, updated);
+      if (fresh !== null) {
+        // Re-read just before write — a concurrent refresh worker may have
+        // overwritten the cache while the network call was in flight. Merge
+        // into the latest snapshot, not the pre-fetch one, and skip the
+        // write if the latest snapshot already contains this type (the
+        // refresh worker found it before us).
+        const latest = readCache(client.baseUrl);
+        if (latest !== null && !latest.types.some((t) => t.id === fresh.id)) {
+          const updated: CacheFile = {
+            ...latest,
+            types: [...latest.types, fresh],
+          };
+          writeCache(client.baseUrl, updated);
+        }
       }
+      fireAndForget(scheduleRefresh, client);
       return fresh;
     },
   };

@@ -1,11 +1,11 @@
 import type { PublishEvent, PublishResponse } from '../../../transport/events.js';
 import type { EventTypeSpec } from '../../../registry/client.js';
-import type { JsonSchema } from '../../../lib/example-synth.js';
 import type { SubjectRef } from '../../../core/subject.js';
 import type { Source } from '../../../core/source.js';
 import { resolveDataInput } from '../../lib/data-input.js';
 import { parseSourceFlags } from '../../lib/source-flags.js';
 import { fuzzyMatch } from '../../lib/fuzzy-match.js';
+import { validateAgainstSchema } from '../../lib/schema-validate.js';
 
 export interface PublishSingleOptions {
   readonly typeId: string;
@@ -31,108 +31,6 @@ const EXIT_OK = 0;
 const EXIT_VALIDATION = 1;
 const EXIT_UNKNOWN_TYPE = 2;
 const EXIT_SERVER = 3;
-
-interface ValidationError {
-  readonly path: string;
-  readonly message: string;
-}
-
-function asJsonSchema(value: unknown): JsonSchema | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as JsonSchema)
-    : null;
-}
-
-function pathLabel(path: string, key?: string | number): string {
-  if (key === undefined) return path === '' ? '<root>' : path;
-  return path === '' ? String(key) : `${path}.${key}`;
-}
-
-/** Minimal "best-effort" JSON Schema validator.
- *  Handles required-field presence and rough type checks; recurses into
- *  objects and arrays. The server is authoritative — local validation only
- *  catches obvious caller errors. */
-function validateAgainstSchema(data: unknown, rawSchema: unknown, path = ''): ValidationError[] {
-  const schema = asJsonSchema(rawSchema);
-  if (schema === null) return [];
-
-  const errors: ValidationError[] = [];
-
-  if (schema.type === 'object') {
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-      errors.push({ path: pathLabel(path), message: 'expected object' });
-      return errors;
-    }
-    const obj = data as Record<string, unknown>;
-    for (const required of schema.required ?? []) {
-      if (!(required in obj)) {
-        errors.push({
-          path: pathLabel(path, required),
-          message: `required field "${required}" is missing`,
-        });
-      }
-    }
-    for (const [key, propSchema] of Object.entries(schema.properties ?? {})) {
-      if (key in obj) {
-        errors.push(...validateAgainstSchema(obj[key], propSchema, pathLabel(path, key)));
-      }
-    }
-    return errors;
-  }
-
-  if (schema.type === 'array') {
-    if (!Array.isArray(data)) {
-      errors.push({ path: pathLabel(path), message: 'expected array' });
-      return errors;
-    }
-    if (schema.items !== undefined) {
-      data.forEach((item, idx) => {
-        errors.push(...validateAgainstSchema(item, schema.items, pathLabel(path, idx)));
-      });
-    }
-    return errors;
-  }
-
-  if (schema.enum !== undefined && schema.enum.length > 0) {
-    if (!schema.enum.some((v) => v === data)) {
-      errors.push({
-        path: pathLabel(path),
-        message: `value must be one of ${schema.enum.map((v) => JSON.stringify(v)).join(', ')}`,
-      });
-      return errors; // don't double-report with a type error.
-    }
-    return errors;
-  }
-
-  if (!matchesType(data, schema.type)) {
-    errors.push({ path: pathLabel(path), message: `expected type ${schema.type ?? 'unknown'}` });
-  }
-
-  return errors;
-}
-
-function matchesType(value: unknown, type: JsonSchema['type']): boolean {
-  switch (type) {
-    case undefined:
-      return true;
-    case 'string':
-      return typeof value === 'string';
-    case 'number':
-      return typeof value === 'number';
-    case 'integer':
-      return typeof value === 'number' && Number.isInteger(value);
-    case 'boolean':
-      return typeof value === 'boolean';
-    case 'null':
-      return value === null;
-    case 'array':
-      return Array.isArray(value);
-    case 'object':
-      return typeof value === 'object' && value !== null && !Array.isArray(value);
-    default:
-      return true;
-  }
-}
 
 function buildSubject(
   subjectType: string | undefined,

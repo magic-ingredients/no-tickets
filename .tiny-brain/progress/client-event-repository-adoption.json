@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T08:57:28.515Z",
+  "lastUpdated": "2026-05-07T09:58:53.290Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -297,7 +297,36 @@
         {
           "id": "task-2-1",
           "description": "HTTP client core",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T09:40:12.066Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T09:44:45.529Z",
+              "completedAt": "2026-05-07T09:46:25.314Z",
+              "reviewSha": "18edc92",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T09:46:25.314Z",
+              "refactorCommitSha": "c4ff2fbeb011d30c3c7f2456fa2aeecab092a540",
+              "refactorCompletedAt": "2026-05-07T09:50:26.052Z",
+              "refactorCommittedAt": "2026-05-07T09:50:26.052Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T09:50:26.052Z",
+              "completedAt": "2026-05-07T09:53:46.027Z",
+              "reviewSha": "c4ff2fbeb011d30c3c7f2456fa2aeecab092a540",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T09:53:46.027Z",
+              "refactorCommitSha": "591d7dbb4a1150af4bff3ec4996ba42f78386ee1",
+              "refactorCompletedAt": "2026-05-07T09:58:53.288Z",
+              "refactorCommittedAt": "2026-05-07T09:58:53.288Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T09:42:44.360Z",
+          "testCommitSha": "90071d702f294180fb3172f40200205b986466dc",
+          "redCompletedAt": "2026-05-07T09:42:44.360Z",
+          "commitSha": "18edc9217ad3745685990c2c3f9dd8bf5647eab8",
+          "greenCompletedAt": "2026-05-07T09:44:45.528Z",
+          "completedAt": "2026-05-07T09:58:53.290Z"
         },
         {
           "id": "task-2-2",
@@ -332,7 +361,9 @@
       "taskSummary": {
         "total": 6,
         "completed": 2,
-        "remaining": 4
+        "remaining": 4,
+        "weightedProgress": 0.16666666666666666,
+        "nextTask": "publish (array body)"
       }
     },
     {
@@ -477,22 +508,23 @@
     "overallProgress": {
       "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 11,
+      "completedTasks": 12,
       "totalTasks": 32,
-      "percentComplete": 34
+      "percentComplete": 38,
+      "weightedPercentComplete": 3
     },
     "workRemaining": {
       "pendingFeatures": [
         "Registry Introspection + Caching",
         "nt publish / nt event / nt subject / nt action CLIs"
       ],
-      "currentFeatureTasks": 5,
+      "currentFeatureTasks": 4,
       "futureFeatureTasks": 13
     },
     "nextAction": {
       "featureId": "publish-client",
-      "taskId": "task-2-1",
-      "description": "HTTP client core"
+      "taskId": "task-2-2",
+      "description": "publish (array body)"
     },
     "blockers": []
   }

@@ -20,10 +20,10 @@ function isDeprecated(type: EventTypeSpec): boolean {
 }
 
 function buildFacadeOptions(options: EventListOptions): EventsListOptions {
-  const facadeOptions: { domain?: string; deprecated?: boolean } = {};
-  if (options.domain !== undefined) facadeOptions.domain = options.domain;
-  if (options.deprecated !== undefined) facadeOptions.deprecated = options.deprecated;
-  return facadeOptions;
+  return {
+    ...(options.domain !== undefined && { domain: options.domain }),
+    ...(options.deprecated !== undefined && { deprecated: options.deprecated }),
+  };
 }
 
 function groupByDomain(types: readonly EventTypeSpec[]): Map<string, EventTypeSpec[]> {
@@ -57,11 +57,10 @@ export async function runEventList(
   }
 
   const groups = groupByDomain(types);
-  const sortedDomains = Array.from(groups.keys()).sort();
+  const sortedEntries = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 
-  for (const domain of sortedDomains) {
+  for (const [domain, groupTypes] of sortedEntries) {
     deps.write(domain);
-    const groupTypes = groups.get(domain) ?? [];
     for (const type of groupTypes) {
       const marker = isDeprecated(type) ? DEPRECATED_MARKER : '';
       deps.write(`${INDENT}${type.id}${marker}`);

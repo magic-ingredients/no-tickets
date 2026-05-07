@@ -4,7 +4,8 @@ import {
   handleDescribeEventType,
   handlePublishEvent,
   type ToolHandlerDeps,
-} from '../tools/handlers.js';
+} from '../discovery.js';
+import * as discovery from '../discovery.js';
 import type { EventTypeSpec } from '../../registry/client.js';
 import type { Subject } from '../../core/subject.js';
 import type { Source } from '../../core/source.js';
@@ -115,6 +116,24 @@ describe('MCP discovery flow — first event in three calls', () => {
 
     const sent = (publish.mock.calls[0]?.[0] as PublishEvent[])[0];
     expect(sent?.data).toEqual(described.example);
+  });
+
+  it('discovery barrel exports the full surface (handlers + tool descriptors + source/error helpers)', () => {
+    const exposed = Object.keys(discovery).sort();
+    // The barrel is the consumer-facing surface — pin it so embedders that
+    // import `from '../mcp/discovery.js'` don't silently lose handlers.
+    expect(exposed).toContain('handleListEventTypes');
+    expect(exposed).toContain('handleDescribeEventType');
+    expect(exposed).toContain('handlePublishEvent');
+    expect(exposed).toContain('handleRunInteraction');
+    expect(exposed).toContain('handleCreateSubject');
+    expect(exposed).toContain('listEventTypesTool');
+    expect(exposed).toContain('describeEventTypeTool');
+    expect(exposed).toContain('publishEventTool');
+    expect(exposed).toContain('runInteractionTool');
+    expect(exposed).toContain('createSubjectTool');
+    expect(exposed).toContain('sourceFromTransport');
+    expect(exposed).toContain('mapErrorToToolResult');
   });
 
   it('agent cannot bypass discovery — describing an unknown id surfaces a clear error before publish is reached', async () => {

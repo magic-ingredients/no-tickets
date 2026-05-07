@@ -66,18 +66,32 @@ describe('@magic-ingredients/no-tickets/schemas subpath exports', () => {
     }
   });
 
-  it('exports envelope schemas (sourceSchema, eventSchema, subjectRefSchema, subjectSchema, interactionRequestSchema, interactionResponseSchema)', async () => {
-    const source = await import('../core/source.js');
-    const event = await import('../core/event.js');
-    const subject = await import('../core/subject.js');
-    const interaction = await import('../core/interaction.js');
+  it('re-exports envelope schemas via the /schemas subpath', async () => {
+    const schemas = await import('../core/schemas.js');
+    const exported = Object.keys(schemas);
 
-    expect(source.sourceSchema).toBeDefined();
-    expect(event.eventSchema).toBeDefined();
-    expect(subject.subjectRefSchema).toBeDefined();
-    expect(subject.subjectSchema).toBeDefined();
-    expect(interaction.interactionRequestSchema).toBeDefined();
-    expect(interaction.interactionResponseSchema).toBeDefined();
+    for (const expected of [
+      'sourceSchema',
+      'eventSchema',
+      'subjectSchema',
+      'subjectRefSchema',
+      'interactionRequestSchema',
+      'interactionResponseSchema',
+      'interactionEventRefSchema',
+      'TYPE_ID_REGEX',
+    ]) {
+      expect(exported, `${expected} should be re-exported from /schemas`).toContain(expected);
+    }
+  });
+});
+
+describe('envelope types subpath', () => {
+  it('re-exports envelope types via the /types subpath', async () => {
+    // Type-only exports don't appear in Object.keys at runtime, but they must
+    // resolve at the type-checking layer. Importing the module compiles only
+    // if the re-exports exist.
+    const types = await import('../core/types.js');
+    expect(types).toBeDefined();
   });
 });
 

@@ -54,3 +54,14 @@ export const taskSchema = z.object({
   status: taskStatusSchema,
 });
 
+// -- Wire-format envelope schemas (re-exported for @magic-ingredients/no-tickets/schemas subpath) --
+
+export { sourceSchema } from './source.js';
+export { eventSchema } from './event.js';
+export { subjectSchema, subjectRefSchema } from './subject.js';
+export {
+  interactionRequestSchema,
+  interactionResponseSchema,
+  interactionEventRefSchema,
+} from './interaction.js';
+export { TYPE_ID_REGEX } from './type-id.js';

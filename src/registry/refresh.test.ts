@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Client } from '../transport/client.js';
-import { createRefreshScheduler, awaitRefresh } from './refresh.js';
+import { createRefreshScheduler, awaitRefresh, scheduleRefresh } from './refresh.js';
 import { writeCache, readCache, type CacheFile } from './cache.js';
 import type { EventTypeSpec } from './client.js';
 
@@ -321,18 +321,38 @@ describe('awaitRefresh', () => {
     await promise;
   });
 
-  it('clears the timer when the refresh resolves first (no leak / late timeout)', async () => {
+  it('clears the timer when the refresh resolves first (kills mutations on the cleanup path)', async () => {
     seedCache();
     const fetchImpl: typeof fetch = async () =>
       jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
 
     const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
-    // Long timeout — would observably delay test if not cleared.
-    const start = Date.now();
     const result = await awaitRefresh(promise, { timeoutMs: 60_000 });
-    const elapsed = Date.now() - start;
 
     expect(result.status).toBe('updated');
-    expect(elapsed).toBeLessThan(2000);
+    // The cleanup path must run exactly once — kills:
+    //   - empty finally block,
+    //   - conditional `if (true)` / `if (false)`,
+    //   - `timer !== undefined` flipped to `===`.
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+
+    clearSpy.mockRestore();
+  });
+});
+
+describe('default scheduleRefresh export', () => {
+  it('is wired to a working singleton (smoke test the production entry point)', async () => {
+    seedCache();
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse({
+        body: { types: [TYPE_A] },
+        headers: { etag: 'W/"singleton-smoke"' },
+      });
+
+    const result = await scheduleRefresh(makeClient(fetchImpl));
+
+    expect(result.status).toBe('updated');
+    expect(result).toMatchObject({ status: expect.any(String) });
   });
 });

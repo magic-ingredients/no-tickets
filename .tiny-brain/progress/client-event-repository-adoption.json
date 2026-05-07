@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T11:45:00.388Z",
+  "lastUpdated": "2026-05-07T11:55:13.810Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -563,7 +563,36 @@
         {
           "id": "task-3-4",
           "description": "Async refresh worker",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T11:45:26.561Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T11:47:42.905Z",
+              "completedAt": "2026-05-07T11:49:22.911Z",
+              "reviewSha": "3c13733",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T11:49:22.911Z",
+              "refactorCommitSha": "6cb3533b4143be14f3c0512b9edc49fee85e727e",
+              "refactorCompletedAt": "2026-05-07T11:52:11.602Z",
+              "refactorCommittedAt": "2026-05-07T11:52:11.602Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T11:52:11.602Z",
+              "completedAt": "2026-05-07T11:54:01.094Z",
+              "reviewSha": "6cb3533b4143be14f3c0512b9edc49fee85e727e",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T11:54:01.094Z",
+              "refactorCommitSha": "78f85c9ab474b520c4cee7d45fc5d03bd9ad6ade",
+              "refactorCompletedAt": "2026-05-07T11:55:13.808Z",
+              "refactorCommittedAt": "2026-05-07T11:55:13.808Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T11:46:46.721Z",
+          "testCommitSha": "e8d72ff5af9f7dd4d1ab922169998c6ee6572261",
+          "redCompletedAt": "2026-05-07T11:46:46.721Z",
+          "commitSha": "3c137333fad33b1d8f5f1825fed31e20d48a01dd",
+          "greenCompletedAt": "2026-05-07T11:47:42.905Z",
+          "completedAt": "2026-05-07T11:55:13.810Z"
         },
         {
           "id": "task-3-5",
@@ -573,10 +602,10 @@
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 3,
-        "remaining": 2,
-        "weightedProgress": 0.6,
-        "nextTask": "Async refresh worker"
+        "completed": 4,
+        "remaining": 1,
+        "weightedProgress": 0.8,
+        "nextTask": "Stale-cache detection"
       }
     },
     {
@@ -683,10 +712,10 @@
     "overallProgress": {
       "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 18,
+      "completedTasks": 19,
       "totalTasks": 32,
-      "percentComplete": 56,
-      "weightedPercentComplete": 22
+      "percentComplete": 59,
+      "weightedPercentComplete": 25
     },
     "workRemaining": {
       "pendingFeatures": [

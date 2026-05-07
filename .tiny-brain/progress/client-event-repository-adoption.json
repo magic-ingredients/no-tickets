@@ -2,11 +2,11 @@
   "id": "client-event-repository-adoption",
   "title": "Client Event Repository Adoption — Envelopes, publish(), Discovery",
   "type": "active",
-  "status": "in_progress",
+  "status": "completed",
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T16:14:15.571Z",
+  "lastUpdated": "2026-05-07T16:22:55.894Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -925,7 +925,7 @@
       "id": "mcp-discovery-tools",
       "number": 5,
       "title": "MCP Discovery Tools",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-5-1",
@@ -1038,15 +1038,42 @@
         {
           "id": "task-5-5",
           "description": "Smoke test the discovery flow",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T16:14:36.168Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T16:17:11.962Z",
+              "completedAt": "2026-05-07T16:19:07.656Z",
+              "reviewSha": "4de77db",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T16:19:07.656Z",
+              "refactorCommitSha": "da06f241fb48cfd59f8c2f32a5ebba1943c342d9",
+              "refactorCompletedAt": "2026-05-07T16:21:38.366Z",
+              "refactorCommittedAt": "2026-05-07T16:21:38.366Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T16:21:38.366Z",
+              "completedAt": "2026-05-07T16:22:55.893Z",
+              "reviewSha": "da06f241fb48cfd59f8c2f32a5ebba1943c342d9",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-05-07T16:22:55.893Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-05-07T16:22:55.893Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T16:15:50.853Z",
+          "testCommitSha": "6df02cbedf60e62e3704351f86eae0dd652101a4",
+          "redCompletedAt": "2026-05-07T16:15:50.853Z",
+          "commitSha": "4de77dbf35581efcda416670aa3686380c06e016",
+          "greenCompletedAt": "2026-05-07T16:17:11.962Z",
+          "completedAt": "2026-05-07T16:22:55.894Z"
         }
       ],
       "taskSummary": {
         "total": 5,
-        "completed": 4,
-        "remaining": 1,
-        "weightedProgress": 0.6,
-        "nextTask": "Smoke test the discovery flow"
+        "completed": 5,
+        "remaining": 0,
+        "weightedProgress": 0.8
       }
     }
   ],
@@ -1057,12 +1084,12 @@
     "feature": 2,
     "featureTitle": "publish() + Subjects + Interactions HTTP Client",
     "overallProgress": {
-      "completedFeatures": 3,
+      "completedFeatures": 4,
       "totalFeatures": 5,
-      "completedTasks": 31,
+      "completedTasks": 32,
       "totalTasks": 32,
-      "percentComplete": 97,
-      "weightedPercentComplete": 63
+      "percentComplete": 100,
+      "weightedPercentComplete": 66
     },
     "workRemaining": {
       "pendingFeatures": [],

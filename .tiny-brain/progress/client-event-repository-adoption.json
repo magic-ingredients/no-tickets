@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T12:03:28.601Z",
+  "lastUpdated": "2026-05-07T14:27:39.840Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -640,12 +640,41 @@
       "id": "registry-aware-cli",
       "number": 4,
       "title": "nt publish / nt event / nt subject / nt action CLIs",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-4-1",
           "description": "nt event list",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T12:04:12.492Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T14:20:23.954Z",
+              "completedAt": "2026-05-07T14:21:55.044Z",
+              "reviewSha": "2bb1511",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T14:21:55.044Z",
+              "refactorCommitSha": "c03e7f63fde82a809708c45f325d3eea2446935d",
+              "refactorCompletedAt": "2026-05-07T14:24:32.131Z",
+              "refactorCommittedAt": "2026-05-07T14:24:32.131Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T14:24:32.131Z",
+              "completedAt": "2026-05-07T14:26:18.829Z",
+              "reviewSha": "c03e7f63fde82a809708c45f325d3eea2446935d",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T14:26:18.829Z",
+              "refactorCommitSha": "3476447c45a284e3bd090563404d50d0aa33cadc",
+              "refactorCompletedAt": "2026-05-07T14:27:39.837Z",
+              "refactorCommittedAt": "2026-05-07T14:27:39.837Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T14:19:28.901Z",
+          "testCommitSha": "3affa850f86a9c37d03ddc69f70db7abfc0602eb",
+          "redCompletedAt": "2026-05-07T14:19:28.901Z",
+          "commitSha": "2bb15119a16d5d1fcb4e1062cc3de6a700f587fa",
+          "greenCompletedAt": "2026-05-07T14:20:23.953Z",
+          "completedAt": "2026-05-07T14:27:39.840Z"
         },
         {
           "id": "task-4-2",
@@ -685,8 +714,10 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 0,
-        "remaining": 8
+        "completed": 1,
+        "remaining": 7,
+        "weightedProgress": 0.125,
+        "nextTask": "nt event describe"
       }
     },
     {
@@ -740,17 +771,15 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 20,
+      "completedTasks": 21,
       "totalTasks": 32,
-      "percentComplete": 63,
-      "weightedPercentComplete": 28
+      "percentComplete": 66,
+      "weightedPercentComplete": 31
     },
     "workRemaining": {
-      "pendingFeatures": [
-        "nt publish / nt event / nt subject / nt action CLIs"
-      ],
+      "pendingFeatures": [],
       "currentFeatureTasks": 1,
-      "futureFeatureTasks": 8
+      "futureFeatureTasks": 0
     },
     "blockers": []
   }

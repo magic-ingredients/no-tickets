@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T05:54:28.530Z",
+  "lastUpdated": "2026-05-07T06:15:36.105Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -150,7 +150,36 @@
         {
           "id": "task-1-5",
           "description": "Type-ID grammar (parse + format)",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T05:55:00.943Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T05:56:03.492Z",
+              "completedAt": "2026-05-07T05:57:30.953Z",
+              "reviewSha": "4bc5a99",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T05:57:30.953Z",
+              "refactorCommitSha": "4ba71b79627c802cb2ab4531f0af8151eeea5dce",
+              "refactorCompletedAt": "2026-05-07T06:11:03.934Z",
+              "refactorCommittedAt": "2026-05-07T06:11:03.934Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T06:11:03.934Z",
+              "completedAt": "2026-05-07T06:13:33.397Z",
+              "reviewSha": "4ba71b7",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T06:13:33.397Z",
+              "refactorCommitSha": "28a23eeef8d50a4c6282fa7582f5545c5565e8dd",
+              "refactorCompletedAt": "2026-05-07T06:15:36.104Z",
+              "refactorCommittedAt": "2026-05-07T06:15:36.104Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T05:55:38.587Z",
+          "testCommitSha": "769e686ee4d56bafc5f87a059ad2c4f03f678e32",
+          "redCompletedAt": "2026-05-07T05:55:38.587Z",
+          "commitSha": "4bc5a993c861abdd0c2e4031a3615a7ca6757575",
+          "greenCompletedAt": "2026-05-07T05:56:03.492Z",
+          "completedAt": "2026-05-07T06:15:36.105Z"
         },
         {
           "id": "task-1-6",
@@ -170,8 +199,8 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 4,
-        "remaining": 4
+        "completed": 5,
+        "remaining": 3
       }
     },
     {
@@ -357,9 +386,9 @@
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 5,
-      "completedTasks": 5,
+      "completedTasks": 6,
       "totalTasks": 32,
-      "percentComplete": 16
+      "percentComplete": 19
     },
     "workRemaining": {
       "pendingFeatures": [
@@ -368,13 +397,13 @@
         "nt publish / nt event / nt subject / nt action CLIs",
         "MCP Discovery Tools"
       ],
-      "currentFeatureTasks": 4,
+      "currentFeatureTasks": 3,
       "futureFeatureTasks": 24
     },
     "nextAction": {
       "featureId": "envelope-schemas",
-      "taskId": "task-1-5",
-      "description": "Type-ID grammar (parse + format)"
+      "taskId": "task-1-6",
+      "description": "Source construction helpers (Session / Actor / PushEnvironment / detectAgent)"
     },
     "blockers": []
   }

@@ -48,7 +48,9 @@ function buildDeps(opts: BuildDepsOptions = {}): {
   runInt: ReturnType<typeof vi.fn>;
 } {
   const list = vi.fn(async () => opts.listResult ?? [TYPE]);
-  const describe = vi.fn(async () => opts.describeResult ?? TYPE);
+  const describe = vi.fn(async () =>
+    'describeResult' in opts ? opts.describeResult : TYPE,
+  );
   const publish = vi.fn(
     async (): Promise<PublishResponse> =>
       opts.publishResult ?? { ingested: 1, deduped: 0, ids: ['evt_1'] },
@@ -76,8 +78,16 @@ function buildDeps(opts: BuildDepsOptions = {}): {
 
 describe('handleListEventTypes', () => {
   it('forwards filters to events.list and maps each spec to a summary tuple', async () => {
+    const DEPLOY: EventTypeSpec = {
+      id: 'engineering.deploy.completed.v1',
+      domain: 'engineering',
+      entity: 'deploy',
+      action: 'completed',
+      version: 1,
+      schema: { type: 'object', properties: {} },
+    };
     const { deps, list } = buildDeps({
-      listResult: [TYPE, { ...TYPE, id: 'engineering.deploy.completed.v1', domain: 'engineering' }],
+      listResult: [TYPE, DEPLOY],
     });
 
     const result = await handleListEventTypes(

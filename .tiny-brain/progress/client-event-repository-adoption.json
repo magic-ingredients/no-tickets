@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T15:26:40.563Z",
+  "lastUpdated": "2026-05-07T15:35:40.589Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -848,7 +848,36 @@
         {
           "id": "task-4-7",
           "description": "Drift notification",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T15:26:58.693Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T15:28:36.431Z",
+              "completedAt": "2026-05-07T15:31:44.520Z",
+              "reviewSha": "fed8b23",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:31:44.520Z",
+              "refactorCommitSha": "5fd35e05854a716cf807a05bb8ad421e1253f0e8",
+              "refactorCompletedAt": "2026-05-07T15:33:36.692Z",
+              "refactorCommittedAt": "2026-05-07T15:33:36.692Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T15:33:36.692Z",
+              "completedAt": "2026-05-07T15:34:52.827Z",
+              "reviewSha": "5fd35e05854a716cf807a05bb8ad421e1253f0e8",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:34:52.827Z",
+              "refactorCommitSha": "5ec7dc6bb95c885b952b839909b0a78c60861300",
+              "refactorCompletedAt": "2026-05-07T15:35:40.588Z",
+              "refactorCommittedAt": "2026-05-07T15:35:40.588Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T15:27:49.255Z",
+          "testCommitSha": "a9392e8e10c876e1bcb49a6aa6684b62caa5c562",
+          "redCompletedAt": "2026-05-07T15:27:49.255Z",
+          "commitSha": "fed8b23e426d698c803875b099d90e3958e9dc6b",
+          "greenCompletedAt": "2026-05-07T15:28:36.430Z",
+          "completedAt": "2026-05-07T15:35:40.589Z"
         },
         {
           "id": "task-4-8",
@@ -858,10 +887,10 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 6,
-        "remaining": 2,
-        "weightedProgress": 0.75,
-        "nextTask": "Drift notification"
+        "completed": 7,
+        "remaining": 1,
+        "weightedProgress": 0.875,
+        "nextTask": "CLI help + docs"
       }
     },
     {
@@ -915,10 +944,10 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 26,
+      "completedTasks": 27,
       "totalTasks": 32,
-      "percentComplete": 81,
-      "weightedPercentComplete": 47
+      "percentComplete": 84,
+      "weightedPercentComplete": 50
     },
     "workRemaining": {
       "pendingFeatures": [],

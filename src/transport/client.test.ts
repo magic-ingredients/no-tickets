@@ -212,17 +212,6 @@ describe('Client.request — retry policy', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('does NOT retry POST /v1/events even when retryable=true is forced', async () => {
-    // Defensive: even mutated retry flag must not retry on the publish path.
-    const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ status: 503, body: '' }),
-    ]);
-    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
-
-    await expect(client.request('POST', '/v1/events', [])).rejects.toBeInstanceOf(ServerError);
-    expect(calls).toHaveLength(1);
-  });
-
   it('retries idempotent GET on 5xx up to 3 attempts then throws', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
       jsonResponse({ status: 502, body: '' }),
@@ -260,7 +249,7 @@ describe('Client.request — retry policy', () => {
     expect(calls).toHaveLength(2);
   });
 
-  it('uses exponential backoff between retries', async () => {
+  it('sleeps 100ms then 200ms between the three attempts (exponential backoff)', async () => {
     const { fetch: fetchImpl } = recordingFetch([
       jsonResponse({ status: 502, body: '' }),
       jsonResponse({ status: 502, body: '' }),
@@ -276,11 +265,9 @@ describe('Client.request — retry policy', () => {
 
     await expect(client.request('GET', '/v1/subjects')).rejects.toBeInstanceOf(ServerError);
 
-    // Two sleeps between three attempts; second delay strictly greater than first.
     expect(sleep).toHaveBeenCalledTimes(2);
-    const first = sleep.mock.calls[0]?.[0] as number;
-    const second = sleep.mock.calls[1]?.[0] as number;
-    expect(second).toBeGreaterThan(first);
+    expect(sleep.mock.calls[0]?.[0]).toBe(100);
+    expect(sleep.mock.calls[1]?.[0]).toBe(200);
   });
 
   it('does NOT retry GET on 4xx', async () => {

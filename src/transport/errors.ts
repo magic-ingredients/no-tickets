@@ -5,6 +5,18 @@ export class TransportError extends Error {
   }
 }
 
+export class HttpError extends TransportError {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(status: number, body: unknown) {
+    super(`request failed with status ${status}`);
+    this.name = 'HttpError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export class UnknownEventTypeError extends TransportError {
   readonly typeId: string;
   readonly batchIndex: number;
@@ -27,7 +39,7 @@ export class EventValidationError extends TransportError {
   readonly batchIndex: number;
   readonly issues: readonly ValidationIssue[];
 
-  constructor(typeId: string, issues: readonly ValidationIssue[], batchIndex: number) {
+  constructor(typeId: string, batchIndex: number, issues: readonly ValidationIssue[]) {
     super(`event "${typeId}" failed validation at batch index ${batchIndex}`);
     this.name = 'EventValidationError';
     this.typeId = typeId;
@@ -63,7 +75,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function asString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 
 function asNumber(v: unknown): number | undefined {
@@ -87,24 +99,26 @@ function asIssues(v: unknown): readonly ValidationIssue[] {
 export function mapResponseError(status: number, body: unknown): TransportError {
   if (status === 422 && isRecord(body)) {
     const code = asString(body['code']);
-    const typeId = asString(body['typeId']) ?? '';
-    const batchIndex = asNumber(body['batchIndex']) ?? 0;
-    if (code === 'unknown_event_type') {
+    const typeId = asString(body['typeId']);
+    const batchIndex = asNumber(body['batchIndex']);
+    if (code === 'unknown_event_type' && typeId !== undefined && batchIndex !== undefined) {
       return new UnknownEventTypeError(typeId, batchIndex);
     }
-    if (code === 'event_validation') {
-      return new EventValidationError(typeId, asIssues(body['issues']), batchIndex);
+    if (code === 'event_validation' && typeId !== undefined && batchIndex !== undefined) {
+      return new EventValidationError(typeId, batchIndex, asIssues(body['issues']));
     }
   }
 
-  if (status === 403) {
-    const domain = isRecord(body) ? asString(body['domain']) ?? '' : '';
-    return new PermissionDeniedError(domain);
+  if (status === 403 && isRecord(body)) {
+    const domain = asString(body['domain']);
+    if (domain !== undefined) {
+      return new PermissionDeniedError(domain);
+    }
   }
 
   if (status >= 500) {
     return new ServerError(status, body);
   }
 
-  return new TransportError(`request failed with status ${status}`);
+  return new HttpError(status, body);
 }

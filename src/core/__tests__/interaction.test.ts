@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   interactionRequestSchema,
   interactionResponseSchema,
+  interactionEventRefSchema,
   type InteractionRequest,
   type InteractionResponse,
 } from '../interaction.js';
@@ -18,9 +19,11 @@ describe('interactionRequestSchema', () => {
     expect(parsed).toEqual(minimalRequest);
   });
 
-  it('accepts a request with subject', () => {
+  it('accepts a request with subject (round-trip)', () => {
     const req = { ...minimalRequest, subject: { type: 'feature', id: 'f-1' } };
-    expect(interactionRequestSchema.parse(req)).toEqual(req);
+    const parsed = interactionRequestSchema.parse(req);
+    expect(parsed).toEqual(req);
+    expect(parsed.subject).toEqual({ type: 'feature', id: 'f-1' });
   });
 
   it('treats input as opaque (any shape)', () => {
@@ -31,11 +34,18 @@ describe('interactionRequestSchema', () => {
       null,
       [],
       true,
+      false,
       undefined,
     ];
     for (const input of cases) {
       expect(() => interactionRequestSchema.parse({ ...minimalRequest, input })).not.toThrow();
     }
+  });
+
+  it('tolerates missing input (z.unknown() — per-interaction schema validates server-side)', () => {
+    const { input, ...rest } = minimalRequest;
+    void input;
+    expect(() => interactionRequestSchema.parse(rest)).not.toThrow();
   });
 
   it('rejects missing id', () => {
@@ -52,14 +62,32 @@ describe('interactionRequestSchema', () => {
     expect(() => interactionRequestSchema.parse({ ...minimalRequest, id: 42 })).toThrow();
   });
 
-  it('rejects invalid subject (missing fields)', () => {
+  it('delegates subject validation to subjectRefSchema (reference equality)', () => {
+    expect(interactionRequestSchema.shape.subject.unwrap()).toBe(subjectRefSchema);
+  });
+
+  it('rejects subject missing type', () => {
+    expect(() =>
+      interactionRequestSchema.parse({ ...minimalRequest, subject: { id: 'f-1' } }),
+    ).toThrow();
+  });
+
+  it('rejects subject missing id', () => {
     expect(() =>
       interactionRequestSchema.parse({ ...minimalRequest, subject: { type: 'feature' } }),
     ).toThrow();
   });
 
-  it('delegates subject validation to subjectRefSchema (reference equality)', () => {
-    expect(interactionRequestSchema.shape.subject.unwrap()).toBe(subjectRefSchema);
+  it('rejects subject with empty-string type', () => {
+    expect(() =>
+      interactionRequestSchema.parse({ ...minimalRequest, subject: { type: '', id: 'f-1' } }),
+    ).toThrow();
+  });
+
+  it('rejects subject with empty-string id', () => {
+    expect(() =>
+      interactionRequestSchema.parse({ ...minimalRequest, subject: { type: 'feature', id: '' } }),
+    ).toThrow();
   });
 
   it('tolerates unknown top-level keys (forward-compat)', () => {
@@ -72,6 +100,7 @@ describe('interactionRequestSchema', () => {
     expect(() => interactionRequestSchema.parse(null)).toThrow();
     expect(() => interactionRequestSchema.parse('string')).toThrow();
     expect(() => interactionRequestSchema.parse(42)).toThrow();
+    expect(() => interactionRequestSchema.parse([])).toThrow();
   });
 
   it('schema is not a ZodEffects (.refine() banned per ADR-0001)', () => {
@@ -92,6 +121,10 @@ describe('interactionRequestSchema', () => {
     const req: InteractionRequest = minimalRequest;
     // @ts-expect-error — readonly
     req.id = 'mut';
+    // @ts-expect-error — readonly
+    req.input = 'mut';
+    // @ts-expect-error — readonly
+    req.subject = { type: 'mut', id: 'mut' };
     expect(req).toBeDefined();
   });
 });
@@ -140,13 +173,45 @@ describe('interactionResponseSchema', () => {
     expect(() => interactionResponseSchema.parse({ events: [{ id: 'e-1' }] })).toThrow();
   });
 
-  it('rejects events with empty-string id or type', () => {
+  it('rejects events with empty-string id', () => {
     expect(() =>
       interactionResponseSchema.parse({ events: [{ id: '', type: 'a.b.c.v1' }] }),
     ).toThrow();
+  });
+
+  it('rejects events with empty-string type', () => {
     expect(() =>
       interactionResponseSchema.parse({ events: [{ id: 'e-1', type: '' }] }),
     ).toThrow();
+  });
+
+  it('delegates inner event-item validation to interactionEventRefSchema (reference equality)', () => {
+    // .array() wraps; .element exposes the item schema.
+    expect(interactionResponseSchema.shape.events.element).toBe(interactionEventRefSchema);
+  });
+
+  it('inner event-item schema is not a ZodEffects', () => {
+    expect(interactionEventRefSchema._def.typeName).toBe('ZodObject');
+  });
+
+  it('tolerates unknown top-level keys on the response (forward-compat)', () => {
+    const parsed = interactionResponseSchema.parse({ ...minimalResponse, futureField: 'allowed' });
+    expect(parsed).toEqual(minimalResponse);
+    expect(Object.keys(parsed)).not.toContain('futureField');
+  });
+
+  it('strips unknown keys on inner event items (forward-compat)', () => {
+    const parsed = interactionResponseSchema.parse({
+      events: [{ id: 'e-1', type: 'a.b.c.v1', futureField: 'allowed' }],
+    });
+    expect(parsed.events[0]).toEqual({ id: 'e-1', type: 'a.b.c.v1' });
+  });
+
+  it('rejects non-object root', () => {
+    expect(() => interactionResponseSchema.parse(null)).toThrow();
+    expect(() => interactionResponseSchema.parse('string')).toThrow();
+    expect(() => interactionResponseSchema.parse(42)).toThrow();
+    expect(() => interactionResponseSchema.parse([])).toThrow();
   });
 
   it('schema is not a ZodEffects (.refine() banned per ADR-0001)', () => {
@@ -155,8 +220,14 @@ describe('interactionResponseSchema', () => {
 
   it('InteractionResponse enforces readonly events at compile time', () => {
     const resp: InteractionResponse = minimalResponse;
-    // @ts-expect-error — readonly array
+    // @ts-expect-error — readonly array property
     resp.events = [];
+    // @ts-expect-error — readonly array (no push)
+    resp.events.push({ id: 'e-x', type: 'a.b.c.v1' });
+    // @ts-expect-error — inner items are readonly
+    resp.events[0]!.id = 'mut';
+    // @ts-expect-error — inner items are readonly
+    resp.events[0]!.type = 'mut';
     expect(resp).toBeDefined();
   });
 });

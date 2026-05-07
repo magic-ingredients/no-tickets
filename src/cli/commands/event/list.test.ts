@@ -133,10 +133,8 @@ describe('runEventList', () => {
     );
     const printed = out.stdout.join('\n');
     expect(printed).toContain(TYPE_DEPRECATED.id);
-    // Deprecated types are marked. Specific marker is implementation-defined,
-    // but the line must include the word "deprecated" somewhere recognisable.
     const deprecatedLine = out.stdout.find((line) => line.includes(TYPE_DEPRECATED.id));
-    expect(deprecatedLine).toMatch(/deprecated/i);
+    expect(deprecatedLine).toBe(`  ${TYPE_DEPRECATED.id} (deprecated)`);
   });
 
   it('does NOT mark non-deprecated types as deprecated', async () => {
@@ -146,7 +144,47 @@ describe('runEventList', () => {
     await runEventList({}, deps);
 
     const userLine = out.stdout.find((line) => line.includes(TYPE_USER.id));
-    expect(userLine).not.toMatch(/deprecated/i);
+    // Pin the EXACT line — two-space indent, type id, no suffix. Catches
+    // both "indent stripped" and "stryker-injected suffix" mutations.
+    expect(userLine).toBe(`  ${TYPE_USER.id}`);
+  });
+
+  it('treats deprecatedAt: null as NOT deprecated (no marker on the line)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const NOT_DEPRECATED_NULL: EventTypeSpec = {
+      ...TYPE_USER,
+      id: 'product.user.session.v1',
+      deprecatedAt: null,
+    };
+    const deps = makeDeps([NOT_DEPRECATED_NULL], out);
+
+    await runEventList({}, deps);
+
+    const line = out.stdout.find((l) => l.includes(NOT_DEPRECATED_NULL.id));
+    expect(line).toBe(`  ${NOT_DEPRECATED_NULL.id}`);
+  });
+
+  it('groups multiple types under the same domain into one header section', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const SECOND_USER_TYPE: EventTypeSpec = {
+      ...TYPE_USER,
+      id: 'product.user.deactivated.v1',
+      action: 'deactivated',
+    };
+    const deps = makeDeps([TYPE_USER, SECOND_USER_TYPE], out);
+
+    await runEventList({}, deps);
+
+    // Exactly one occurrence of the domain header — proves the second type
+    // pushes into the existing group rather than creating a new one.
+    const headers = out.stdout.filter((l) => l === 'people-team');
+    expect(headers).toHaveLength(1);
+    // Both type ids appear under that header.
+    const headerIdx = out.stdout.indexOf('people-team');
+    const firstIdx = out.stdout.findIndex((l) => l.includes(TYPE_USER.id));
+    const secondIdx = out.stdout.findIndex((l) => l.includes(SECOND_USER_TYPE.id));
+    expect(firstIdx).toBeGreaterThan(headerIdx);
+    expect(secondIdx).toBeGreaterThan(headerIdx);
   });
 
   it('prints a clear empty-state message when the cache yields no types', async () => {

@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T14:41:33.304Z",
+  "lastUpdated": "2026-05-07T14:56:52.061Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -713,7 +713,36 @@
         {
           "id": "task-4-3",
           "description": "nt publish <type-id> (single event)",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T14:41:55.647Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T14:46:40.218Z",
+              "completedAt": "2026-05-07T14:48:40.193Z",
+              "reviewSha": "d7a962d",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T14:48:40.193Z",
+              "refactorCommitSha": "e21c1cf1ee3743f787a856f24797d653ea657eaa",
+              "refactorCompletedAt": "2026-05-07T14:52:24.450Z",
+              "refactorCommittedAt": "2026-05-07T14:52:24.450Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T14:52:24.450Z",
+              "completedAt": "2026-05-07T14:55:27.837Z",
+              "reviewSha": "e21c1cf1ee3743f787a856f24797d653ea657eaa",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T14:55:27.837Z",
+              "refactorCommitSha": "1f6e2680d9b109237a2eaa0d4341c35ff47b1765",
+              "refactorCompletedAt": "2026-05-07T14:56:52.060Z",
+              "refactorCommittedAt": "2026-05-07T14:56:52.060Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T14:44:13.070Z",
+          "testCommitSha": "8ccdf9f11b324f7e5593ddbee39a53f99605bbf4",
+          "redCompletedAt": "2026-05-07T14:44:13.070Z",
+          "commitSha": "d7a962d4930f580183d50b501ca64392c808bb9d",
+          "greenCompletedAt": "2026-05-07T14:46:40.218Z",
+          "completedAt": "2026-05-07T14:56:52.061Z"
         },
         {
           "id": "task-4-4",
@@ -743,10 +772,10 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 2,
-        "remaining": 6,
-        "weightedProgress": 0.25,
-        "nextTask": "nt publish <type-id> (single event)"
+        "completed": 3,
+        "remaining": 5,
+        "weightedProgress": 0.375,
+        "nextTask": "nt publish --batch <file.jsonl>"
       }
     },
     {
@@ -800,10 +829,10 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 22,
+      "completedTasks": 23,
       "totalTasks": 32,
-      "percentComplete": 69,
-      "weightedPercentComplete": 34
+      "percentComplete": 72,
+      "weightedPercentComplete": 38
     },
     "workRemaining": {
       "pendingFeatures": [],

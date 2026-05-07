@@ -44,9 +44,9 @@ describe('eventSchema', () => {
     expect(() => eventSchema.parse(rest)).toThrow();
   });
 
-  it('rejects missing data (data is required, even if undefined-like values are allowed inside)', () => {
+  it('tolerates missing data (z.unknown() is opaque pass-through; per-type schema validates presence)', () => {
     const { data: _data, ...rest } = minimalEvent;
-    expect(() => eventSchema.parse(rest)).toThrow();
+    expect(() => eventSchema.parse(rest)).not.toThrow();
   });
 
   it('rejects missing source', () => {

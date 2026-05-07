@@ -524,7 +524,7 @@
     {
       "id": "init-wait-ergonomics",
       "title": "Make `init` wait less hostile when the server doesn't redirect",
-      "status": "completed",
+      "status": "in_progress",
       "severity": "minor",
       "tasks": [
         {
@@ -590,12 +590,13 @@
         {
           "id": "task-3",
           "description": "Ship under v2.0.5",
-          "status": "not_started"
+          "status": "completed",
+          "completedAt": "2026-04-24T08:12:01.723Z"
         }
       ],
       "filePath": ".tiny-brain/fixes/init-wait-ergonomics.md",
-      "reported": "2026-04-24",
-      "resolved": "2026-04-24",
+      "reported": "2026-04-24T08:30:00.000Z",
+      "resolved": "2026-04-24T08:40:00.000Z",
       "archived": true
     },
     {
@@ -883,5 +884,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-24T08:11:04.991Z"
+  "lastSynced": "2026-04-24T08:12:10.777Z"
 }

@@ -1,10 +1,10 @@
 {
   "id": "pnpm-migration",
-  "title": "\"Migrate to pnpm and add GitHub Actions CI\"",
+  "title": "Migrate to pnpm and add GitHub Actions CI",
   "type": "archived",
-  "status": "not_started",
+  "status": "completed",
   "created": "2026-04-15T11:41:09.292Z",
-  "lastUpdated": "2026-04-15T11:41:09.292Z",
+  "lastUpdated": "2026-05-06T20:45:59.307Z",
   "prdId": "pnpm-migration",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/pnpm-migration",
   "author": "Claude Code",
@@ -12,12 +12,11 @@
     "feature": 2,
     "featureTitle": "Add GitHub Actions CI workflow",
     "overallProgress": {
-      "completedFeatures": 0,
+      "completedFeatures": 2,
       "totalFeatures": 2,
-      "completedTasks": 0,
+      "completedTasks": 3,
       "totalTasks": 3,
-      "percentComplete": 0,
-      "weightedPercentComplete": 0
+      "percentComplete": 100
     },
     "nextAction": {
       "featureId": "github-actions-ci",
@@ -36,53 +35,58 @@
   "overview": "",
   "features": [
     {
-      "id": "github-actions-ci",
-      "number": 2,
-      "title": "Add GitHub Actions CI workflow",
-      "description": "",
-      "status": "not_started",
-      "tasks": [
-        {
-          "id": "task-2-1",
-          "description": "Add CI workflow file",
-          "status": "not_started",
-          "createdAt": "2026-04-15T11:41:09.292Z"
-        }
-      ],
-      "taskSummary": {
-        "total": 1,
-        "completed": 0,
-        "remaining": 1,
-        "weightedProgress": 0,
-        "nextTask": "Add CI workflow file"
-      }
-    },
-    {
       "id": "pnpm-swap",
       "number": 1,
       "title": "Replace npm with pnpm",
       "description": "",
-      "status": "not_started",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-1-1",
           "description": "Add pnpm lockfile and packageManager field",
-          "status": "not_started",
-          "createdAt": "2026-04-15T11:41:09.292Z"
+          "status": "completed",
+          "createdAt": "2026-04-15T11:41:09.292Z",
+          "commitSha": "42b413f",
+          "completedAt": "2026-05-06T20:46:02.300Z",
+          "committedAt": "2026-05-06T20:46:02.300Z"
         },
         {
           "id": "task-1-2",
           "description": "Update README and documentation for pnpm",
-          "status": "not_started",
-          "createdAt": "2026-04-15T11:41:09.292Z"
+          "status": "completed",
+          "createdAt": "2026-04-15T11:41:09.292Z",
+          "commitSha": "09ee6de",
+          "completedAt": "2026-05-06T20:46:02.300Z",
+          "committedAt": "2026-05-06T20:46:02.300Z"
         }
       ],
       "taskSummary": {
         "total": 2,
-        "completed": 0,
-        "remaining": 2,
-        "weightedProgress": 0,
-        "nextTask": "Add pnpm lockfile and packageManager field"
+        "completed": 2,
+        "remaining": 0
+      }
+    },
+    {
+      "id": "github-actions-ci",
+      "number": 2,
+      "title": "Add GitHub Actions CI workflow",
+      "description": "",
+      "status": "completed",
+      "tasks": [
+        {
+          "id": "task-2-1",
+          "description": "Add CI workflow file",
+          "status": "completed",
+          "createdAt": "2026-04-15T11:41:09.292Z",
+          "commitSha": "e98b0c9",
+          "completedAt": "2026-05-06T20:46:05.765Z",
+          "committedAt": "2026-05-06T20:46:05.765Z"
+        }
+      ],
+      "taskSummary": {
+        "total": 1,
+        "completed": 1,
+        "remaining": 0
       }
     }
   ],
@@ -94,5 +98,7 @@
     "lastChanges": [],
     "contributors": [],
     "tags": []
-  }
+  },
+  "gitUserName": "Andy Richardson",
+  "gitUserEmail": "rishson@gmail.com"
 }

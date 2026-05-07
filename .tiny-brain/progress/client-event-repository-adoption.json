@@ -2,22 +2,51 @@
   "id": "client-event-repository-adoption",
   "title": "Client Event Repository Adoption — Envelopes, publish(), Discovery",
   "type": "active",
-  "status": "not_started",
+  "status": "in_progress",
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T05:06:01.713Z",
+  "lastUpdated": "2026-05-07T05:20:29.371Z",
   "features": [
     {
       "id": "envelope-schemas",
       "number": 1,
       "title": "Envelope Schemas + SDK Surface Reset",
-      "status": "not_started",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "task-1-1",
           "description": "Define Source (zod + types)",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T05:07:02.846Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T05:11:59.223Z",
+              "completedAt": "2026-05-07T05:13:48.979Z",
+              "reviewSha": "966064a",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T05:13:48.979Z",
+              "refactorCommitSha": "eee028ded11cb12168412fe380a40fc81b6d5cf3",
+              "refactorCompletedAt": "2026-05-07T05:17:25.526Z",
+              "refactorCommittedAt": "2026-05-07T05:17:25.526Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T05:17:25.527Z",
+              "completedAt": "2026-05-07T05:19:38.976Z",
+              "reviewSha": "eee028d",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T05:19:38.976Z",
+              "refactorCommitSha": "2057f08fb4b05c3ac2cd190f0d7efbf269a09046",
+              "refactorCompletedAt": "2026-05-07T05:20:29.371Z",
+              "refactorCommittedAt": "2026-05-07T05:20:29.371Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T05:09:02.463Z",
+          "testCommitSha": "92ca35da6640d94d9190d4f23b6bf4ba079171a2",
+          "redCompletedAt": "2026-05-07T05:09:02.463Z",
+          "commitSha": "966064a59da16d478756f7fb0c88280f1cef6c23",
+          "greenCompletedAt": "2026-05-07T05:11:59.223Z",
+          "completedAt": "2026-05-07T05:20:29.371Z"
         },
         {
           "id": "task-1-2",
@@ -57,8 +86,8 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 0,
-        "remaining": 8
+        "completed": 1,
+        "remaining": 7
       }
     },
     {
@@ -239,12 +268,30 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
+    "feature": 1,
+    "featureTitle": "Envelope Schemas + SDK Surface Reset",
     "overallProgress": {
       "completedFeatures": 0,
       "totalFeatures": 5,
-      "completedTasks": 1,
+      "completedTasks": 2,
       "totalTasks": 32,
-      "percentComplete": 3
-    }
+      "percentComplete": 6
+    },
+    "workRemaining": {
+      "pendingFeatures": [
+        "publish() + Subjects + Interactions HTTP Client",
+        "Registry Introspection + Caching",
+        "nt publish / nt event / nt subject / nt action CLIs",
+        "MCP Discovery Tools"
+      ],
+      "currentFeatureTasks": 7,
+      "futureFeatureTasks": 24
+    },
+    "nextAction": {
+      "featureId": "envelope-schemas",
+      "taskId": "task-1-2",
+      "description": "Define Event envelope (zod + types)"
+    },
+    "blockers": []
   }
 }

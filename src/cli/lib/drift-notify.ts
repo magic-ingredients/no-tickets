@@ -1,0 +1,55 @@
+import type { CacheFile } from '../../registry/cache.js';
+import type { RefreshResult, AwaitRefreshResult } from '../../registry/refresh.js';
+
+export interface DriftNotifyDeps {
+  readPriorCache(): CacheFile | null;
+  readPostCache(): CacheFile | null;
+  awaitRefresh(): Promise<AwaitRefreshResult>;
+  writeErr(line: string): void;
+}
+
+export interface DriftNotifyOptions {
+  readonly quiet?: boolean;
+}
+
+const MAX_LISTED = 3;
+
+function diffNewIds(
+  prior: CacheFile,
+  next: CacheFile,
+): readonly string[] {
+  const priorIds = new Set(prior.types.map((t) => t.id));
+  return next.types.map((t) => t.id).filter((id) => !priorIds.has(id));
+}
+
+function isQuiet(options: DriftNotifyOptions): boolean {
+  if (options.quiet === true) return true;
+  return process.env['NO_TICKETS_QUIET'] === '1';
+}
+
+/** Print a one-line stderr drift summary when the refresh produced new
+ *  event types since the last sync. Suppressed by --quiet or
+ *  NO_TICKETS_QUIET=1. Never blocks; never throws to the caller. */
+export async function notifyDrift(
+  refresh: Promise<RefreshResult> | Promise<AwaitRefreshResult>,
+  options: DriftNotifyOptions,
+  deps: DriftNotifyDeps,
+): Promise<void> {
+  if (isQuiet(options)) return;
+
+  const prior = deps.readPriorCache();
+  if (prior === null) return;
+
+  const result = await refresh;
+  if (result.status !== 'updated') return;
+
+  const next = deps.readPostCache();
+  if (next === null) return;
+
+  const newIds = diffNewIds(prior, next);
+  if (newIds.length === 0) return;
+
+  const visible = newIds.slice(0, MAX_LISTED).join(', ');
+  const suffix = newIds.length > MAX_LISTED ? ', ...' : '';
+  deps.writeErr(`ℹ ${newIds.length} new event types since last sync: ${visible}${suffix}`);
+}

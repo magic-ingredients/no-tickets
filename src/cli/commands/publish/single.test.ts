@@ -192,6 +192,140 @@ describe('runPublishSingle — local validation', () => {
     expect(publish).not.toHaveBeenCalled();
     expect(out.stderr.join('\n')).toMatch(/email/);
   });
+
+  it('rejects an enum violation with a "one of" message', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+
+    const exit = await runPublishSingle(
+      baseOptions('app.user.signed-up.v1', '{"email": "a@b.c", "plan": "enterprise"}'),
+      deps,
+    );
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toContain('plan');
+    expect(out.stderr.join('\n')).toMatch(/one of/);
+  });
+
+  it('validates each item of an array schema; flags the failing index', async () => {
+    const ARRAY_TYPE: EventTypeSpec = {
+      ...TYPE_USER,
+      id: 'app.list.v1',
+      schema: {
+        type: 'object',
+        properties: {
+          tags: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['tags'],
+      },
+    };
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [ARRAY_TYPE] }, out);
+
+    const exit = await runPublishSingle(
+      baseOptions('app.list.v1', '{"tags": ["ok", 42]}'),
+      deps,
+    );
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toContain('tags.1');
+  });
+
+  it('rejects a non-array value at an array-typed field', async () => {
+    const ARRAY_TYPE: EventTypeSpec = {
+      ...TYPE_USER,
+      id: 'app.list.v1',
+      schema: {
+        type: 'object',
+        properties: {
+          tags: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    };
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [ARRAY_TYPE] }, out);
+
+    const exit = await runPublishSingle(
+      baseOptions('app.list.v1', '{"tags": "not-an-array"}'),
+      deps,
+    );
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/expected array/);
+  });
+
+  it.each([
+    ['number', 'count', '{"count": 1}', '{"count": "1"}'],
+    ['integer', 'n', '{"n": 1}', '{"n": "1"}'],
+    ['boolean', 'flag', '{"flag": true}', '{"flag": 1}'],
+    ['null', 'value', '{"value": null}', '{"value": 0}'],
+  ])(
+    'matchesType: %s field accepts the right value and rejects the wrong type',
+    async (schemaType, field, ok, bad) => {
+      const TYPE: EventTypeSpec = {
+        ...TYPE_USER,
+        id: 'app.x.v1',
+        schema: {
+          type: 'object',
+          properties: { [field]: { type: schemaType as 'number' } },
+        },
+      };
+      const okOut: RecordedOutput = { stdout: [], stderr: [] };
+      const okDeps = buildDeps({ availableTypes: [TYPE] }, okOut);
+      const okExit = await runPublishSingle(baseOptions('app.x.v1', ok), okDeps.deps);
+      expect(okExit).toBe(0);
+
+      const badOut: RecordedOutput = { stdout: [], stderr: [] };
+      const badDeps = buildDeps({ availableTypes: [TYPE] }, badOut);
+      const badExit = await runPublishSingle(baseOptions('app.x.v1', bad), badDeps.deps);
+      expect(badExit).toBe(1);
+      expect(badDeps.publish).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('runPublishSingle — optional field omission on the wire', () => {
+  it('omits parentEventId, traceId, dedupeKey, subject, and source when not supplied', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+
+    await runPublishSingle(
+      baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0] ?? {};
+    expect(event).not.toHaveProperty('parentEventId');
+    expect(event).not.toHaveProperty('traceId');
+    expect(event).not.toHaveProperty('dedupeKey');
+    expect(event).not.toHaveProperty('subject');
+    expect(event).not.toHaveProperty('source');
+  });
+
+  it('passes parentEventId, traceId, and dedupeKey through when supplied', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+
+    await runPublishSingle(
+      {
+        ...baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+        parent: 'evt_parent',
+        trace: 'trace_xyz',
+        dedupeKey: 'idempotency_1',
+      },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event).toMatchObject({
+      parentEventId: 'evt_parent',
+      traceId: 'trace_xyz',
+      dedupeKey: 'idempotency_1',
+    });
+  });
 });
 
 describe('runPublishSingle — input guards', () => {

@@ -116,12 +116,25 @@ describe('handleListEventTypes', () => {
     });
   });
 
-  it('omits filters that were not supplied (empty options forwarded as {})', async () => {
+  it('omits filter keys that were not supplied (object has zero own keys)', async () => {
+    // Vitest's `toHaveBeenCalledWith({})` treats { domain: undefined } as
+    // equal to {}, so we can't rely on it to prove buildListOptions is
+    // omitting keys. Inspect the actual call argument.
     const { deps, list } = buildDeps({});
 
     await handleListEventTypes({}, deps);
 
-    expect(list).toHaveBeenCalledWith({});
+    const arg = list.mock.calls[0]?.[0];
+    expect(Object.keys(arg ?? {})).toEqual([]);
+  });
+
+  it('forwards only the keys that are explicitly set', async () => {
+    const { deps, list } = buildDeps({});
+
+    await handleListEventTypes({ domain: 'app.user' }, deps);
+
+    const arg = list.mock.calls[0]?.[0];
+    expect(Object.keys(arg ?? {})).toEqual(['domain']);
   });
 });
 
@@ -150,6 +163,37 @@ describe('handleDescribeEventType', () => {
       handleDescribeEventType({ id: 'app.unknown.v1' }, deps),
     ).rejects.toThrow(/not found/i);
   });
+
+  it('omits dedupe_strategy / retention_days / ui_hints / deprecated_at when the spec lacks them', async () => {
+    const MINIMAL: EventTypeSpec = {
+      id: 'app.minimal.v1',
+      domain: 'app.minimal',
+      entity: 'thing',
+      action: 'happened',
+      version: 1,
+      schema: { type: 'object', properties: {} },
+    };
+    const { deps } = buildDeps({ describeResult: MINIMAL });
+
+    const result = await handleDescribeEventType({ id: 'app.minimal.v1' }, deps);
+
+    expect(result).not.toHaveProperty('dedupe_strategy');
+    expect(result).not.toHaveProperty('retention_days');
+    expect(result).not.toHaveProperty('ui_hints');
+    expect(result).not.toHaveProperty('deprecated_at');
+  });
+
+  it('passes ui_hints through verbatim when the spec carries them', async () => {
+    const WITH_HINTS: EventTypeSpec = {
+      ...TYPE,
+      uiHints: { color: 'green', icon: 'rocket' },
+    };
+    const { deps } = buildDeps({ describeResult: WITH_HINTS });
+
+    const result = await handleDescribeEventType({ id: TYPE.id }, deps);
+
+    expect(result.ui_hints).toEqual({ color: 'green', icon: 'rocket' });
+  });
 });
 
 describe('handlePublishEvent', () => {
@@ -167,8 +211,45 @@ describe('handlePublishEvent', () => {
     expect(publish).toHaveBeenCalledTimes(1);
     const sentEvents = publish.mock.calls[0]?.[0] as PublishEvent[];
     expect(sentEvents).toHaveLength(1);
-    expect(sentEvents[0]?.source).toEqual(MCP_SOURCE);
+    expect(sentEvents[0]).toMatchObject({
+      type: 'app.user.signed-up.v1',
+      data: { email: 'a@b.c' },
+      source: MCP_SOURCE,
+    });
     expect(result).toEqual({ id: 'evt_1', deduped: false });
+  });
+
+  it('an agent-supplied source on the args object is IGNORED — server source still wins', async () => {
+    // Pin the security invariant at runtime, not just at the type level.
+    // A malicious agent that bypasses input-schema validation cannot
+    // forge a Source.
+    const { deps, publish } = buildDeps({});
+
+    const argsWithMaliciousSource = {
+      type: 'app.user.signed-up.v1',
+      data: { email: 'a@b.c' },
+      source: { name: 'fake-agent', sdkVersion: '0', attributes: { client: 'attacker' } },
+    } as unknown as Parameters<typeof handlePublishEvent>[0];
+
+    await handlePublishEvent(argsWithMaliciousSource, deps);
+
+    const sent = (publish.mock.calls[0]?.[0] as PublishEvent[])[0];
+    expect(sent?.source).toEqual(MCP_SOURCE);
+    // The agent's `source` key on args MUST NOT propagate to the wire body.
+    expect(sent?.source).not.toMatchObject({ name: 'fake-agent' });
+  });
+
+  it('throws when the server response is missing the event id (contract violation)', async () => {
+    const { deps } = buildDeps({
+      publishResult: { ingested: 1, deduped: 0, ids: [] },
+    });
+
+    await expect(
+      handlePublishEvent(
+        { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+        deps,
+      ),
+    ).rejects.toThrow(/missing the event id/);
   });
 
   it('passes through optional fields when supplied', async () => {
@@ -230,7 +311,7 @@ describe('handlePublishEvent', () => {
 });
 
 describe('handleRunInteraction', () => {
-  it('forwards id and input; returns events list', async () => {
+  it('forwards id and input strictly; returns events list', async () => {
     const { deps, runInt } = buildDeps({
       interactionResult: {
         events: [
@@ -249,7 +330,10 @@ describe('handleRunInteraction', () => {
       deps,
     );
 
-    expect(runInt).toHaveBeenCalledWith('app.thread.reply', {
+    expect(runInt.mock.calls[0]?.[0]).toBe('app.thread.reply');
+    // toEqual instead of toHaveBeenCalledWith — pin the exact wire body
+    // shape, including the absence of stray keys.
+    expect(runInt.mock.calls[0]?.[1]).toEqual({
       input: { text: 'hi' },
       subject: { type: 'app.user', id: 'usr_1' },
     });

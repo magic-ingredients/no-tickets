@@ -11,7 +11,7 @@ import { synthesiseExample } from '../../lib/example-synth.js';
 
 export interface ToolHandlerDeps {
   readonly events: {
-    list(options: EventsListOptions): Promise<readonly EventTypeSpec[]>;
+    list(options?: EventsListOptions): Promise<readonly EventTypeSpec[]>;
     describe(typeId: string): Promise<EventTypeSpec | null>;
   };
   readonly subjectsCreate: (subject: Subject) => Promise<Subject>;
@@ -134,7 +134,16 @@ export async function handlePublishEvent(
     ...(args.dedupe_key !== undefined && { dedupeKey: args.dedupe_key }),
   };
   const response = await deps.publishEvents([event]);
-  const id = response.ids[0] ?? '';
+  const id = response.ids[0];
+  if (id === undefined) {
+    // Defensive: a 200 from POST /v1/events should always carry exactly one
+    // id when we sent one event. An empty ids array is a server-contract
+    // violation — surface it loudly rather than handing the agent a blank
+    // string it might use as parent_event_id later.
+    throw new Error(
+      'publish_event: server response is missing the event id (expected exactly one for a singular publish)',
+    );
+  }
   const deduped = response.ingested === 0 && response.deduped > 0;
   return { id, deduped };
 }

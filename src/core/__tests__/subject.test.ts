@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { subjectRefSchema, subjectSchema, type Subject, type SubjectRef } from '../subject.js';
 
-function omit<T extends object>(obj: T, key: keyof T): Partial<T> {
-  const copy = { ...obj } as Partial<T>;
-  delete copy[key];
-  return copy;
-}
-
 // -- subjectRefSchema ---------------------------------------------------------
 
 describe('subjectRefSchema', () => {
@@ -39,6 +33,13 @@ describe('subjectRefSchema', () => {
     expect(() => subjectRefSchema.parse({ type: 'feature', id: 42 })).toThrow();
   });
 
+  it('rejects non-object root', () => {
+    expect(() => subjectRefSchema.parse(null)).toThrow();
+    expect(() => subjectRefSchema.parse('string')).toThrow();
+    expect(() => subjectRefSchema.parse(42)).toThrow();
+    expect(() => subjectRefSchema.parse([])).toThrow();
+  });
+
   it('tolerates unknown top-level keys (forward-compat)', () => {
     const parsed = subjectRefSchema.parse({ type: 'feature', id: 'f-1', extra: true });
     expect(parsed).toEqual({ type: 'feature', id: 'f-1' });
@@ -49,10 +50,13 @@ describe('subjectRefSchema', () => {
     expect(subjectRefSchema._def.typeName).toBe('ZodObject');
   });
 
-  it('SubjectRef type is readonly at the type level', () => {
+  it('SubjectRef enforces readonly fields at compile time', () => {
     const ref: SubjectRef = { type: 'feature', id: 'f-1' };
-    // ref.type = 'mut'  // ❌ ts(2540) — readonly enforcement
-    expect(ref.type).toBe('feature');
+    // @ts-expect-error — readonly field
+    ref.type = 'mut';
+    // @ts-expect-error — readonly field
+    ref.id = 'mut';
+    expect(ref).toBeDefined();
   });
 });
 
@@ -84,16 +88,27 @@ describe('subjectSchema', () => {
     });
   });
 
+  it('accepts empty metadata object', () => {
+    const parsed = subjectSchema.parse({ ...minimalSubject, metadata: {} });
+    expect(parsed.metadata).toEqual({});
+  });
+
   it('rejects missing type', () => {
-    expect(() => subjectSchema.parse(omit(minimalSubject, 'type'))).toThrow();
+    const { type, ...rest } = minimalSubject;
+    void type;
+    expect(() => subjectSchema.parse(rest)).toThrow();
   });
 
   it('rejects missing externalId', () => {
-    expect(() => subjectSchema.parse(omit(minimalSubject, 'externalId'))).toThrow();
+    const { externalId, ...rest } = minimalSubject;
+    void externalId;
+    expect(() => subjectSchema.parse(rest)).toThrow();
   });
 
   it('rejects missing displayName', () => {
-    expect(() => subjectSchema.parse(omit(minimalSubject, 'displayName'))).toThrow();
+    const { displayName, ...rest } = minimalSubject;
+    void displayName;
+    expect(() => subjectSchema.parse(rest)).toThrow();
   });
 
   it('rejects empty-string type', () => {
@@ -114,6 +129,17 @@ describe('subjectSchema', () => {
     expect(() => subjectSchema.parse({ ...minimalSubject, metadata: [] })).toThrow();
   });
 
+  it('rejects null metadata', () => {
+    expect(() => subjectSchema.parse({ ...minimalSubject, metadata: null })).toThrow();
+  });
+
+  it('rejects non-object root', () => {
+    expect(() => subjectSchema.parse(null)).toThrow();
+    expect(() => subjectSchema.parse('string')).toThrow();
+    expect(() => subjectSchema.parse(42)).toThrow();
+    expect(() => subjectSchema.parse([])).toThrow();
+  });
+
   it('tolerates unknown top-level keys (forward-compat)', () => {
     const parsed = subjectSchema.parse({ ...minimalSubject, futureField: 'allowed' });
     expect(parsed).toEqual(minimalSubject);
@@ -123,9 +149,21 @@ describe('subjectSchema', () => {
     expect(subjectSchema._def.typeName).toBe('ZodObject');
   });
 
-  it('Subject type is readonly at the type level', () => {
+  it('Subject enforces readonly top-level fields at compile time', () => {
     const subject: Subject = minimalSubject;
-    // subject.type = 'mut'  // ❌ ts(2540) — readonly enforcement
-    expect(subject.type).toBe('engineering_service');
+    // @ts-expect-error — readonly
+    subject.type = 'mut';
+    // @ts-expect-error — readonly
+    subject.externalId = 'mut';
+    // @ts-expect-error — readonly
+    subject.displayName = 'mut';
+    expect(subject).toBeDefined();
+  });
+
+  it('Subject.metadata is deep-readonly at compile time', () => {
+    const subject: Subject = { ...minimalSubject, metadata: { region: 'us-east-1' } };
+    // @ts-expect-error — readonly index signature
+    subject.metadata!.region = 'mut';
+    expect(subject).toBeDefined();
   });
 });

@@ -5,7 +5,10 @@ export const subjectRefSchema = z.object({
   id: z.string().min(1),
 });
 
-export type SubjectRef = Readonly<z.infer<typeof subjectRefSchema>>;
+export type SubjectRef = Readonly<{
+  type: string;
+  id: string;
+}>;
 
 export const subjectSchema = z.object({
   type: z.string().min(1),
@@ -14,4 +17,11 @@ export const subjectSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export type Subject = Readonly<z.infer<typeof subjectSchema>>;
+// Explicit type — z.infer would only freeze the outer object, leaving
+// metadata mutable. PRD requires deep-readonly metadata.
+export type Subject = Readonly<{
+  type: string;
+  externalId: string;
+  displayName: string;
+  metadata?: Readonly<Record<string, unknown>>;
+}>;

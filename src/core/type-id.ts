@@ -18,24 +18,16 @@ export function parseTypeId(input: unknown): TypeIdParts | null {
   if (typeof input !== 'string') return null;
   const match = TYPE_ID_REGEX.exec(input);
   if (match === null) return null;
+  // The four capture groups are guaranteed by the regex on a successful match;
+  // non-null assertions are the type-only narrowing pattern (zero runtime
+  // overhead, no dead defensive branches that mutation testing flags).
   const [, domain, entity, action, versionStr] = match;
-  // Defensive narrowing under noUncheckedIndexedAccess. The regex's four
-  // capture groups guarantee these are defined on a successful match; the
-  // explicit check survives future regex edits that drop a group.
-  if (
-    domain === undefined ||
-    entity === undefined ||
-    action === undefined ||
-    versionStr === undefined
-  ) {
-    return null;
-  }
   const version = Number(versionStr);
   // [1-9]\d* permits arbitrarily long digit strings; reject if Number()
   // can't represent them exactly. Without this guard, parse → format → parse
   // is not stable for very large versions.
   if (!Number.isSafeInteger(version)) return null;
-  return { domain, entity, action, version };
+  return { domain: domain!, entity: entity!, action: action!, version };
 }
 
 export function formatTypeId(parts: TypeIdParts): string {

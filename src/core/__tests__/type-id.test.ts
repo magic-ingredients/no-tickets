@@ -131,6 +131,13 @@ describe('parseTypeId', () => {
     expect(parseTypeId([])).toBeNull();
     expect(parseTypeId(true)).toBeNull();
   });
+
+  it('rejects non-string input even when toString() returns a valid type id', () => {
+    // Without the typeof guard, regex.exec() coerces objects via toString()
+    // and would accept this. The test pins the guard's behaviour.
+    const obj = { toString: () => 'a.b.c.v1' };
+    expect(parseTypeId(obj)).toBeNull();
+  });
 });
 
 describe('formatTypeId', () => {
@@ -206,25 +213,42 @@ describe('formatTypeId', () => {
 });
 
 describe('round-trip stability', () => {
-  const cases: TypeIdParts[] = [
-    { domain: 'engineering', entity: 'deploy', action: 'completed', version: 1 },
-    { domain: 'engineering', entity: 'health', action: 'status_changed', version: 1 },
-    { domain: 'product', entity: 'feature', action: 'created', version: 2 },
-    { domain: 'ai', entity: 'completion', action: 'recorded', version: 100 },
-    { domain: 'a1', entity: 'b2', action: 'c3', version: 1 },
+  const cases: Array<[string, TypeIdParts, string]> = [
+    [
+      'engineering.deploy.completed.v1',
+      { domain: 'engineering', entity: 'deploy', action: 'completed', version: 1 },
+      'engineering.deploy.completed.v1',
+    ],
+    [
+      'engineering.health.status_changed.v1',
+      { domain: 'engineering', entity: 'health', action: 'status_changed', version: 1 },
+      'engineering.health.status_changed.v1',
+    ],
+    [
+      'product.feature.created.v2',
+      { domain: 'product', entity: 'feature', action: 'created', version: 2 },
+      'product.feature.created.v2',
+    ],
+    [
+      'ai.completion.recorded.v100',
+      { domain: 'ai', entity: 'completion', action: 'recorded', version: 100 },
+      'ai.completion.recorded.v100',
+    ],
+    ['a1.b2.c3.v1', { domain: 'a1', entity: 'b2', action: 'c3', version: 1 }, 'a1.b2.c3.v1'],
   ];
 
-  for (const parts of cases) {
-    const id = formatTypeId(parts);
-    it(`construct → format → parse: ${id}`, () => {
-      expect(parseTypeId(id)).toEqual(parts);
+  for (const [label, parts, expected] of cases) {
+    it(`construct → format → parse: ${label}`, () => {
+      const formatted = formatTypeId(parts);
+      expect(formatted).toBe(expected);
+      expect(parseTypeId(formatted)).toEqual(parts);
     });
 
-    it(`parse → format → parse: ${id}`, () => {
-      const parsed = parseTypeId(id);
+    it(`parse → format → parse: ${label}`, () => {
+      const parsed = parseTypeId(expected);
       expect(parsed).not.toBeNull();
       if (parsed === null) return;
-      expect(formatTypeId(parsed)).toBe(id);
+      expect(formatTypeId(parsed)).toBe(expected);
     });
   }
 });
@@ -246,6 +270,11 @@ describe('isTypeId', () => {
     expect(isTypeId(undefined)).toBe(false);
     expect(isTypeId(123)).toBe(false);
     expect(isTypeId({})).toBe(false);
+  });
+
+  it('returns false for non-string input even when toString() returns a valid type id', () => {
+    const obj = { toString: () => 'a.b.c.v1' };
+    expect(isTypeId(obj)).toBe(false);
   });
 
   it('narrows type at the call site', () => {

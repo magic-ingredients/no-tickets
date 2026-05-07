@@ -97,6 +97,37 @@ describe('runSubjectCreate', () => {
     expect(out.stderr.join('\n')).toMatch(/metadata/i);
   });
 
+  it('exits 1 when metadata parses as JSON but is not an object (e.g. an array)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const deps = buildDeps({}, out);
+
+    const exit = await runSubjectCreate(
+      {
+        type: 'app.user',
+        externalId: 'usr_1',
+        displayName: 'Ada',
+        metadata: '[1, 2, 3]',
+      },
+      deps,
+    );
+
+    expect(exit).toBe(1);
+    expect(deps.create).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/must be a JSON object/i);
+  });
+
+  it('prints the created Subject as PRETTY-PRINTED JSON (2-space indent)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const deps = buildDeps({}, out);
+
+    await runSubjectCreate(
+      { type: 'app.user', externalId: 'usr_1', displayName: 'Ada' },
+      deps,
+    );
+
+    expect(out.stdout.join('\n')).toContain(JSON.stringify(SAMPLE, null, 2));
+  });
+
   it('exits 3 on a server error', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const deps = buildDeps({ error: new Error('boom') }, out);
@@ -123,7 +154,7 @@ describe('runSubjectGet', () => {
     expect(out.stdout.join('\n')).toContain('"externalId": "usr_1"');
   });
 
-  it('exits 1 with a "not found" message on HttpError 404', async () => {
+  it('exits 1 with a "<type>/<id>" formatted message on HttpError 404', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const deps = buildDeps(
       { error: new HttpError(404, { msg: 'not found' }) },
@@ -133,7 +164,29 @@ describe('runSubjectGet', () => {
     const exit = await runSubjectGet({ type: 'app.user', id: 'usr_missing' }, deps);
 
     expect(exit).toBe(1);
-    expect(out.stderr.join('\n')).toMatch(/not found/i);
+    expect(out.stderr.join('\n')).toContain('app.user/usr_missing');
+  });
+
+  it('exits 1 without calling deps.get when type is empty', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const deps = buildDeps({}, out);
+
+    const exit = await runSubjectGet({ type: '', id: 'usr_1' }, deps);
+
+    expect(exit).toBe(1);
+    expect(deps.get).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/--type/);
+  });
+
+  it('exits 1 without calling deps.get when id is empty', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const deps = buildDeps({}, out);
+
+    const exit = await runSubjectGet({ type: 'app.user', id: '' }, deps);
+
+    expect(exit).toBe(1);
+    expect(deps.get).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/--id/);
   });
 
   it('exits 3 on a non-404 server error', async () => {
@@ -161,7 +214,7 @@ describe('runSubjectList', () => {
     expect(out.stdout.join('\n')).toContain('"externalId": "usr_1"');
   });
 
-  it('renders a table when --format table is requested', async () => {
+  it('renders a table with one line per subject when --format table is requested', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const deps = buildDeps(
       {
@@ -175,13 +228,34 @@ describe('runSubjectList', () => {
 
     await runSubjectList({ type: 'app.user', format: 'table' }, deps);
 
-    const printed = out.stdout.join('\n');
-    expect(printed).toContain('usr_1');
-    expect(printed).toContain('usr_2');
-    expect(printed).toContain('Ada');
-    expect(printed).toContain('Bob');
-    // Header row exists.
-    expect(printed.toLowerCase()).toMatch(/external/);
+    // First line is the header.
+    expect(out.stdout[0]?.toLowerCase()).toMatch(/external/);
+    // Each subject occupies its own line; assert the externalId is on a
+    // single line that also carries the displayName for that subject.
+    const ada = out.stdout.find((l) => l.includes('usr_1'));
+    expect(ada).toBeDefined();
+    expect(ada).toContain('Ada');
+    const bob = out.stdout.find((l) => l.includes('usr_2'));
+    expect(bob).toBeDefined();
+    expect(bob).toContain('Bob');
+  });
+
+  it('uses pretty-printed JSON for the default format', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const deps = buildDeps({ listResult: [SAMPLE] }, out);
+
+    await runSubjectList({ type: 'app.user' }, deps);
+
+    expect(out.stdout.join('\n')).toBe(JSON.stringify([SAMPLE], null, 2));
+  });
+
+  it('uses pretty-printed JSON when --format is explicitly "json"', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const deps = buildDeps({ listResult: [SAMPLE] }, out);
+
+    await runSubjectList({ type: 'app.user', format: 'json' }, deps);
+
+    expect(out.stdout.join('\n')).toBe(JSON.stringify([SAMPLE], null, 2));
   });
 
   it('handles an empty result with a recognisable empty-state message', async () => {
@@ -193,7 +267,7 @@ describe('runSubjectList', () => {
     expect(out.stdout.join('\n')).toMatch(/no subjects/i);
   });
 
-  it('exits 1 when the type filter is empty', async () => {
+  it('exits 1 with a "--type is required" message when the type filter is empty', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const deps = buildDeps({}, out);
 
@@ -201,5 +275,6 @@ describe('runSubjectList', () => {
 
     expect(exit).toBe(1);
     expect(deps.list).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/--type is required/);
   });
 });

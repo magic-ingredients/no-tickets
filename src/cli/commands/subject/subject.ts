@@ -1,3 +1,10 @@
+// Three subject runners (create / get / list) live in this single file
+// rather than separate files. Each is a thin wrapper over the transport
+// facade with little logic, and grouping them keeps shared types
+// (SubjectDeps, exit codes) close to their consumers. The test file mirrors
+// this layout. The PRD's three-file split was a planning hint; the
+// behaviour is what matters.
+
 import type { Subject, SubjectRef } from '../../../core/subject.js';
 import type { SubjectListQuery } from '../../../transport/subjects.js';
 import { HttpError } from '../../../transport/errors.js';
@@ -72,6 +79,15 @@ export async function runSubjectGet(
   ref: SubjectRef,
   deps: SubjectDeps,
 ): Promise<number> {
+  if (ref.type.length === 0) {
+    deps.writeErr('subject get: --type is required');
+    return EXIT_VALIDATION;
+  }
+  if (ref.id.length === 0) {
+    deps.writeErr('subject get: --id is required');
+    return EXIT_VALIDATION;
+  }
+
   let subject: Subject;
   try {
     subject = await deps.get(ref);
@@ -102,7 +118,7 @@ function renderTable(subjects: readonly Subject[]): string[] {
   );
   const fmt = (cells: string[]): string =>
     cells.map((c, i) => c.padEnd(widths[i] ?? 0)).join('  ');
-  return [fmt(header), fmt(header.map(() => '---')), ...rows.map(fmt)];
+  return [fmt(header), ...rows.map(fmt)];
 }
 
 export async function runSubjectList(

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Client } from '../transport/client.js';
-import { mapResponseError } from '../transport/errors.js';
+import { mapResponseError, MissingEtagError } from '../transport/errors.js';
 
 export const eventTypeSpecSchema = z.object({
   id: z.string().min(1),
@@ -8,11 +8,13 @@ export const eventTypeSpecSchema = z.object({
   entity: z.string().min(1),
   action: z.string().min(1),
   version: z.number().int().positive(),
-  schema: z.record(z.string(), z.unknown()),
+  schema: z
+    .record(z.string(), z.unknown())
+    .refine((s) => Object.keys(s).length > 0, 'schema must not be empty'),
   uiHints: z.record(z.string(), z.unknown()).optional(),
   retentionDays: z.number().int().nonnegative().optional(),
-  dedupeStrategy: z.string().optional(),
-  deprecatedAt: z.string().nullable().optional(),
+  dedupeStrategy: z.string().min(1).optional(),
+  deprecatedAt: z.string().datetime().nullable().optional(),
 });
 
 export type EventTypeSpec = Readonly<z.infer<typeof eventTypeSpecSchema>>;
@@ -20,8 +22,6 @@ export type EventTypeSpec = Readonly<z.infer<typeof eventTypeSpecSchema>>;
 const listResponseSchema = z.object({
   types: z.array(eventTypeSpecSchema),
 });
-
-const idSchema = z.string().min(1);
 
 const LIST_PATH = '/v1/admin/event-types';
 
@@ -44,12 +44,25 @@ function buildListPath(options: ListEventTypesOptions): string {
 }
 
 async function readJson(response: Response): Promise<unknown> {
+  const text = await response.text();
   try {
-    return await response.json();
+    return JSON.parse(text);
   } catch {
     return null;
   }
 }
+
+function requireEtag(response: Response, path: string): string {
+  const etag = response.headers.get('etag');
+  if (etag === null) throw new MissingEtagError(path);
+  return etag;
+}
+
+// Registry list/describe deliberately do NOT retry on 5xx. The PRD frames
+// refresh as async + non-blocking ("If refresh fails, log a debug-level
+// note; never error the user-facing command"), so a transient failure
+// leaves the cache untouched and the next invocation retries naturally.
+// Pinned by the test "does NOT retry on 5xx".
 
 export async function listEventTypes(
   client: Client,
@@ -58,27 +71,26 @@ export async function listEventTypes(
   const headers: Record<string, string> = {};
   if (options.ifNoneMatch !== undefined) headers['if-none-match'] = options.ifNoneMatch;
 
-  const response = await client.fetchRaw('GET', buildListPath(options), { headers });
+  const path = buildListPath(options);
+  const response = await client.fetchRaw('GET', path, { headers });
 
   if (response.status === 304) {
-    return { etag: response.headers.get('etag') ?? '', status: 304 };
+    return { etag: requireEtag(response, path), status: 304 };
   }
 
   if (!response.ok) {
     throw mapResponseError(response.status, await readJson(response));
   }
 
-  const etag = response.headers.get('etag');
-  if (etag === null) {
-    throw new Error('registry list response missing ETag header');
-  }
-
+  const etag = requireEtag(response, path);
   const parsed = listResponseSchema.parse(await response.json());
   return { etag, types: parsed.types };
 }
 
 export async function getEventType(client: Client, id: string): Promise<EventTypeSpec | null> {
-  idSchema.parse(id);
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new TypeError('event type id must be a non-empty string');
+  }
   const path = `${LIST_PATH}/${encodeURIComponent(id)}`;
   const response = await client.fetchRaw('GET', path);
 

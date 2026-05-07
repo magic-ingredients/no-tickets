@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ZodError } from 'zod';
 import { Client } from '../transport/client.js';
-import { HttpError } from '../transport/errors.js';
+import { HttpError, MissingEtagError, ServerError } from '../transport/errors.js';
 import { listEventTypes, getEventType, type EventTypeSpec } from './client.js';
 
 interface RecordedCall {
@@ -59,6 +59,10 @@ const SAMPLE_TYPE: EventTypeSpec = {
   dedupeStrategy: 'natural_key',
   deprecatedAt: null,
 };
+
+function expectAllResponsesConsumed(calls: readonly RecordedCall[], expected: number): void {
+  expect(calls).toHaveLength(expected);
+}
 
 function client(fetchImpl: typeof fetch): Client {
   return new Client({
@@ -124,17 +128,23 @@ describe('listEventTypes', () => {
     expect(result).toEqual({ etag: 'W/"unchanged"', status: 304 });
   });
 
-  it('reflects a permission-filtered response verbatim (does not re-filter client-side)', async () => {
-    // Server already filtered to engineering.* — client passes the array
-    // through unchanged even when domain wasn't requested.
+  it('passes a permission-filtered response verbatim WITHOUT re-applying the requested filter', async () => {
+    // Caller asks for the marketing domain; the server (which scopes by
+    // permission) returns a single engineering.* type the caller can write.
+    // The client must NOT post-filter to "marketing" — it trusts server
+    // scoping. This test fails for any client that re-filters on `domain`.
     const filtered: EventTypeSpec[] = [SAMPLE_TYPE];
-    const { fetch: fetchImpl } = recordingFetch([
+    const { fetch: fetchImpl, calls } = recordingFetch([
       jsonResponse({ body: { types: filtered }, headers: { etag: 'W/"x"' } }),
     ]);
 
-    const result = await listEventTypes(client(fetchImpl));
+    const result = await listEventTypes(client(fetchImpl), { domain: 'marketing' });
 
+    expect(calls[0]?.url).toBe(
+      'https://api.example.com/v1/admin/event-types?domain=marketing',
+    );
     expect('types' in result ? result.types : null).toEqual(filtered);
+    expectAllResponsesConsumed(calls, 1);
   });
 
   it('throws ZodError on a malformed type entry', async () => {
@@ -148,12 +158,22 @@ describe('listEventTypes', () => {
     await expect(listEventTypes(client(fetchImpl))).rejects.toBeInstanceOf(ZodError);
   });
 
-  it('throws when the etag header is missing on a 200 response', async () => {
+  it('throws MissingEtagError when the etag header is absent on a 200 response', async () => {
     // ETag is the cache discriminator — without it the cache layer can't
-    // do conditional refresh. Surface this loudly rather than caching ''.
+    // do conditional refresh. Throw a typed error so the cache layer can
+    // distinguish from generic transport / parse failures.
     const { fetch: fetchImpl } = recordingFetch([jsonResponse({ body: { types: [] } })]);
 
-    await expect(listEventTypes(client(fetchImpl))).rejects.toThrow(/etag/i);
+    await expect(listEventTypes(client(fetchImpl))).rejects.toBeInstanceOf(MissingEtagError);
+  });
+
+  it('throws MissingEtagError on a 304 response without an etag (consistent with the 200 path)', async () => {
+    const r = new Response(null, { status: 304 });
+    const { fetch: fetchImpl } = recordingFetch([r]);
+
+    await expect(listEventTypes(client(fetchImpl), { ifNoneMatch: 'W/"x"' })).rejects.toBeInstanceOf(
+      MissingEtagError,
+    );
   });
 
   it('surfaces non-2xx-non-304 errors via mapResponseError', async () => {
@@ -162,6 +182,15 @@ describe('listEventTypes', () => {
     ]);
 
     await expect(listEventTypes(client(fetchImpl))).rejects.toThrow();
+  });
+
+  it('does NOT retry on 5xx (refresh is async + non-blocking; next invocation retries)', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([
+      jsonResponse({ status: 503, body: { msg: 'unavail' } }),
+    ]);
+
+    await expect(listEventTypes(client(fetchImpl))).rejects.toBeInstanceOf(ServerError);
+    expectAllResponsesConsumed(calls, 1);
   });
 });
 
@@ -198,10 +227,10 @@ describe('getEventType', () => {
     expect(result).toBeNull();
   });
 
-  it('rejects an empty id before sending', async () => {
+  it('throws TypeError on empty id (programming error, not an HTTP error)', async () => {
     const fetchImpl = vi.fn();
 
-    await expect(getEventType(client(fetchImpl), '')).rejects.toBeInstanceOf(ZodError);
+    await expect(getEventType(client(fetchImpl), '')).rejects.toBeInstanceOf(TypeError);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -219,5 +248,39 @@ describe('getEventType', () => {
     ]);
 
     await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
+  });
+
+  it('rejects an empty schema object (PRD: schema is JSON Schema, not {})', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ body: { ...SAMPLE_TYPE, schema: {} } }),
+    ]);
+
+    await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
+  });
+
+  it('rejects a non-ISO-8601 deprecatedAt', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ body: { ...SAMPLE_TYPE, deprecatedAt: 'yesterday' } }),
+    ]);
+
+    await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
+  });
+
+  it('rejects an empty dedupeStrategy string', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ body: { ...SAMPLE_TYPE, dedupeStrategy: '' } }),
+    ]);
+
+    await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
+  });
+
+  it('accepts an ISO-8601 deprecatedAt timestamp', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ body: { ...SAMPLE_TYPE, deprecatedAt: '2026-01-01T00:00:00Z' } }),
+    ]);
+
+    const result = await getEventType(client(fetchImpl), 'x');
+
+    expect(result?.deprecatedAt).toBe('2026-01-01T00:00:00Z');
   });
 });

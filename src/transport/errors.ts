@@ -5,6 +5,13 @@ export class TransportError extends Error {
   }
 }
 
+export class MissingEtagError extends TransportError {
+  constructor(path: string) {
+    super(`registry response from ${path} is missing the ETag header`);
+    this.name = 'MissingEtagError';
+  }
+}
+
 export class HttpError extends TransportError {
   readonly status: number;
   readonly body: unknown;

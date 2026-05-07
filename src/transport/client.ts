@@ -67,21 +67,18 @@ export class Client {
   /** Header-aware escape hatch for callers that need to observe response
    *  status / headers (e.g. ETag, 304). No retries, no body parsing, no
    *  error mapping — caller handles the Response. Auth + URL join still
-   *  applied. */
+   *  applied. GET-only by design: bodyful methods go through `request`. */
   async fetchRaw(
     method: HttpMethod,
     path: string,
-    options: { body?: unknown; headers?: Record<string, string> } = {},
+    options: { headers?: Record<string, string> } = {},
   ): Promise<Response> {
     const url = joinUrl(this.#baseUrl, path);
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.#token}`,
       ...options.headers,
     };
-    if (options.body !== undefined) headers['content-type'] = 'application/json';
-    const init: RequestInit = { method, headers };
-    if (options.body !== undefined) init.body = JSON.stringify(options.body);
-    return this.#fetch(url, init);
+    return this.#fetch(url, { method, headers });
   }
 
   async request<TResponse = unknown>(

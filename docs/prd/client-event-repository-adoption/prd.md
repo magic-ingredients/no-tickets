@@ -1,10 +1,10 @@
 ---
 id: client-event-repository-adoption
 title: "Client Event Repository Adoption — Envelopes, publish(), Discovery"
-version: 1.2.0
+version: 1.2.1
 status: not_started
 created: 2026-04-27
-updated: 2026-05-06
+updated: 2026-05-07
 author: Andy Richardson
 ---
 
@@ -220,7 +220,6 @@ Why singular: the array shape lives at the wire and SDK layers (atomic batch tra
 POST /v1/events
 Authorization: Bearer <push-token>
 Content-Type: application/json
-Idempotency-Key: <opaque>   # optional; behaviour pinned by server PRD (see Retry policy below)
 
 [
   {
@@ -240,13 +239,11 @@ Idempotency-Key: <opaque>   # optional; behaviour pinned by server PRD (see Retr
 ]
 ```
 
-Response: `{ ingested, deduped, ids, errors? }`. Per-event 422s carry `batchIndex` for caller-side identification. Response shape owned by the server PRD; SDK conforms.
+Response: `{ ingested, deduped, ids }`. Per-event 422s carry `batchIndex` for caller-side identification. Response shape owned by the server PRD; SDK conforms.
 
 #### Retry policy
 
-`POST /v1/events` is **not retried by default** in v1. The server PRD has not yet pinned `Idempotency-Key` semantics; without that contract, naive 5xx retries risk double-publishing events without `dedupeKey`. Idempotent operations (`subjects.list/get`, `events.list/describe`) get bounded retries.
-
-When the server PRD confirms `Idempotency-Key` support, the SDK switches to: auto-generate a UUID per `publish` request, send in the `Idempotency-Key` header, retry safely on 5xx. Tracked as a follow-up; the wire shape above already shows the header for forward-compat.
+`POST /v1/events` is **not retried** in v1. Caller-supplied `dedupeKey` is honoured server-side (per the server PRD), which means callers who want at-least-once semantics across their own retries can attach a `dedupeKey` and re-publish safely. Idempotent reads (`subjects.list/get`, `events.list/describe`) get bounded retries on 5xx.
 
 ## Release Criteria
 
@@ -312,7 +309,7 @@ When the server PRD confirms `Idempotency-Key` support, the SDK switches to: aut
 - Permission-scoped listing depends on the server's permission model being in place; if permission-scoping ships late, `nt event list` will show the global catalogue temporarily, with a documented caveat.
 - Subject-type discovery is asymmetric vs event-type discovery in v1 — `nt subject create --type <t>` requires the user to know `<t>` exists out of band. Tracked in a follow-up PRD.
 - Client-side JSON Schema validation is **best-effort**, not authoritative: a stale cache may pass a payload the server rejects (e.g., schema added a new required field). Server validation is the source of truth.
-- `POST /v1/events` is not retried on 5xx in v1 (see Retry policy). Operationally this means a failed publish during a server blip surfaces to the caller; the caller decides whether to retry. Will tighten once `Idempotency-Key` is pinned server-side.
+- `POST /v1/events` is not retried on 5xx (see Retry policy). Operationally this means a failed publish during a server blip surfaces to the caller; the caller decides whether to retry. Callers who want at-least-once semantics across their own retries attach a `dedupeKey` and re-publish — the server honours `dedupeKey` when present and falls back to per-type registered dedupe strategies otherwise.
 
 ## Related work
 

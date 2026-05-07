@@ -40,7 +40,7 @@ The single HTTP module maps server errors to typed exceptions:
 - 422 unknown type → `UnknownEventTypeError(typeId, batchIndex)` — server reports the index of the bad entry within the batch
 - 422 schema mismatch → `EventValidationError(typeId, issues, batchIndex)`
 - 403 → `PermissionDeniedError(domain)`
-- 5xx → `ServerError(status, body)` — **no retries on `POST /v1/events`** in v1 (see Retry policy in PRD); bounded retries for idempotent calls only (`subjects.list/get`, `events.list/describe`).
+- 5xx → `ServerError(status, body)` — **no retries on `POST /v1/events`** (see Retry policy in PRD); bounded retries for idempotent calls only (`subjects.list/get`, `events.list/describe`). Callers who want at-least-once semantics attach a `dedupeKey` and re-publish.
 
 Per-event errors fail the whole batch (the server runs everything in one transaction). The error carries the failing index so callers can identify which event in their batch was the cause.
 

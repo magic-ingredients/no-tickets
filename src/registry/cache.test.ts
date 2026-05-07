@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  existsSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readCache, writeCache, cachePath, type CacheFile } from './cache.js';
@@ -148,7 +156,7 @@ describe('writeCache', () => {
 
     const p = cachePath('https://api.example.com');
     const dir = join(p, '..');
-    const survivors = require('node:fs').readdirSync(dir) as string[];
+    const survivors = readdirSync(dir);
 
     expect(survivors).toHaveLength(1);
     expect(JSON.parse(readFileSync(p, 'utf-8'))).toEqual(updated);

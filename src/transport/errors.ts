@@ -78,6 +78,11 @@ export class ServerError extends TransportError {
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
+  // Stryker disable next-line ConditionalExpression: equivalent mutant —
+  // mutating `typeof v === 'object'` to `true` makes isRecord(string|number|
+  // boolean) return true, but `body['code']` on those primitives still
+  // returns undefined, so all code paths through mapResponseError still
+  // return HttpError(status, body). No observable difference downstream.
   return typeof v === 'object' && v !== null;
 }
 

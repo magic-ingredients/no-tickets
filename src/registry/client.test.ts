@@ -184,6 +184,42 @@ describe('listEventTypes', () => {
     await expect(listEventTypes(client(fetchImpl))).rejects.toThrow();
   });
 
+  it('does NOT send if-none-match when ifNoneMatch is omitted', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([
+      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } }),
+    ]);
+
+    await listEventTypes(client(fetchImpl));
+
+    expect(calls[0]?.headers['if-none-match']).toBeUndefined();
+  });
+
+  it('preserves a non-JSON error body as null on the HttpError', async () => {
+    // readJson must swallow JSON.parse failures and substitute null. Without
+    // this, mapResponseError would never see the response body for non-OK
+    // non-JSON bodies and the branch would be unobservable.
+    const r = new Response('<html>oops</html>', {
+      status: 500,
+      headers: { 'content-type': 'text/html' },
+    });
+    const { fetch: fetchImpl } = recordingFetch([r]);
+
+    const failure = listEventTypes(client(fetchImpl));
+    await expect(failure).rejects.toMatchObject({ status: 500, body: null });
+  });
+
+  it('preserves the parsed JSON error body on the HttpError', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ status: 500, body: { code: 'INTERNAL', requestId: 'r_1' } }),
+    ]);
+
+    const failure = listEventTypes(client(fetchImpl));
+    await expect(failure).rejects.toMatchObject({
+      status: 500,
+      body: { code: 'INTERNAL', requestId: 'r_1' },
+    });
+  });
+
   it('does NOT retry on 5xx (refresh is async + non-blocking; next invocation retries)', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
       jsonResponse({ status: 503, body: { msg: 'unavail' } }),
@@ -230,7 +266,28 @@ describe('getEventType', () => {
   it('throws TypeError on empty id (programming error, not an HTTP error)', async () => {
     const fetchImpl = vi.fn();
 
-    await expect(getEventType(client(fetchImpl), '')).rejects.toBeInstanceOf(TypeError);
+    await expect(getEventType(client(fetchImpl), '')).rejects.toMatchObject({
+      name: 'TypeError',
+      message: expect.stringContaining('non-empty'),
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('throws TypeError on a non-string id (e.g. null)', async () => {
+    const fetchImpl = vi.fn();
+
+    await expect(
+      getEventType(client(fetchImpl), null as unknown as string),
+    ).rejects.toBeInstanceOf(TypeError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('throws TypeError on an undefined id', async () => {
+    const fetchImpl = vi.fn();
+
+    await expect(
+      getEventType(client(fetchImpl), undefined as unknown as string),
+    ).rejects.toBeInstanceOf(TypeError);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -250,12 +307,18 @@ describe('getEventType', () => {
     await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
   });
 
-  it('rejects an empty schema object (PRD: schema is JSON Schema, not {})', async () => {
+  it('rejects an empty schema object with a clear refine message', async () => {
     const { fetch: fetchImpl } = recordingFetch([
       jsonResponse({ body: { ...SAMPLE_TYPE, schema: {} } }),
     ]);
 
-    await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
+    const failure = getEventType(client(fetchImpl), 'x');
+    await expect(failure).rejects.toBeInstanceOf(ZodError);
+    await expect(failure).rejects.toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringMatching(/schema must not be empty/i) }),
+      ]),
+    });
   });
 
   it('rejects a non-ISO-8601 deprecatedAt', async () => {

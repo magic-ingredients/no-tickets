@@ -2,12 +2,31 @@ import { describe, it, expect } from 'vitest';
 import {
   TransportError,
   HttpError,
+  MissingEtagError,
   UnknownEventTypeError,
   EventValidationError,
   PermissionDeniedError,
   ServerError,
   mapResponseError,
 } from './errors.js';
+
+describe('TransportError', () => {
+  it('sets name = "TransportError"', () => {
+    const err = new TransportError('boom');
+    expect(err.name).toBe('TransportError');
+    expect(err.message).toBe('boom');
+  });
+});
+
+describe('MissingEtagError', () => {
+  it('sets name = "MissingEtagError" and includes the path + ETag in the message', () => {
+    const err = new MissingEtagError('/v1/admin/event-types');
+    expect(err).toBeInstanceOf(TransportError);
+    expect(err.name).toBe('MissingEtagError');
+    expect(err.message).toContain('/v1/admin/event-types');
+    expect(err.message).toContain('ETag');
+  });
+});
 
 describe('HttpError', () => {
   it('preserves status and body for unrecognised HTTP errors', () => {
@@ -224,6 +243,31 @@ describe('mapResponseError', () => {
     });
     expect(err).toBeInstanceOf(HttpError);
     expect(err).not.toBeInstanceOf(UnknownEventTypeError);
+  });
+
+  it('falls through to HttpError on 422 unknown_event_type missing batchIndex', () => {
+    const body = { code: 'unknown_event_type', typeId: 'app.x.v1' };
+    const err = mapResponseError(422, body);
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(UnknownEventTypeError);
+  });
+
+  it('falls through to HttpError on 422 event_validation missing typeId', () => {
+    const body = { code: 'event_validation', batchIndex: 0, issues: [] };
+    const err = mapResponseError(422, body);
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err).not.toBeInstanceOf(EventValidationError);
+  });
+
+  it('treats a non-array issues value as empty', () => {
+    const err = mapResponseError(422, {
+      code: 'event_validation',
+      typeId: 'app.x.v1',
+      batchIndex: 0,
+      issues: 'not-an-array',
+    });
+    expect(err).toBeInstanceOf(EventValidationError);
+    expect((err as EventValidationError).issues).toEqual([]);
   });
 
   it('drops non-record entries from the issues array', () => {

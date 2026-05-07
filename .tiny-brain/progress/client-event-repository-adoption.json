@@ -6,7 +6,7 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T15:19:27.248Z",
+  "lastUpdated": "2026-05-07T15:26:40.563Z",
   "features": [
     {
       "id": "envelope-schemas",
@@ -815,7 +815,35 @@
         {
           "id": "task-4-6",
           "description": "nt action",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T15:19:38.547Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T15:21:30.325Z",
+              "completedAt": "2026-05-07T15:23:12.341Z",
+              "reviewSha": "23d7f5e",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T15:23:12.341Z",
+              "refactorCommitSha": "7a43dfef10c9133ad46d32caa57e5b1bfdf90882",
+              "refactorCompletedAt": "2026-05-07T15:25:17.817Z",
+              "refactorCommittedAt": "2026-05-07T15:25:17.817Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T15:25:17.817Z",
+              "completedAt": "2026-05-07T15:26:40.563Z",
+              "reviewSha": "7a43dfef10c9133ad46d32caa57e5b1bfdf90882",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-05-07T15:26:40.563Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-05-07T15:26:40.563Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T15:20:41.100Z",
+          "testCommitSha": "a5d8cc521fb5ddcd3aac6296860d1a1ab644da12",
+          "redCompletedAt": "2026-05-07T15:20:41.100Z",
+          "commitSha": "23d7f5ecdf71e40b6729b2ae96869e5abba010cd",
+          "greenCompletedAt": "2026-05-07T15:21:30.325Z",
+          "completedAt": "2026-05-07T15:26:40.563Z"
         },
         {
           "id": "task-4-7",
@@ -830,10 +858,10 @@
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 5,
-        "remaining": 3,
-        "weightedProgress": 0.625,
-        "nextTask": "nt action"
+        "completed": 6,
+        "remaining": 2,
+        "weightedProgress": 0.75,
+        "nextTask": "Drift notification"
       }
     },
     {
@@ -887,10 +915,10 @@
     "overallProgress": {
       "completedFeatures": 2,
       "totalFeatures": 5,
-      "completedTasks": 25,
+      "completedTasks": 26,
       "totalTasks": 32,
-      "percentComplete": 78,
-      "weightedPercentComplete": 44
+      "percentComplete": 81,
+      "weightedPercentComplete": 47
     },
     "workRemaining": {
       "pendingFeatures": [],

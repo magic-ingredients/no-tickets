@@ -8,18 +8,43 @@ import {
   MissingEtagError,
 } from '../../transport/errors.js';
 
+export type StructuredToolErrorCode =
+  | 'unknown_event_type'
+  | 'event_validation'
+  | 'permission_denied'
+  | 'missing_etag'
+  | 'server_error'
+  | 'http_error'
+  | 'validation_error'
+  | 'internal_error';
+
 export interface StructuredToolError {
-  readonly code: string;
+  readonly code: StructuredToolErrorCode;
   readonly message: string;
   readonly fieldPath?: readonly (string | number)[];
 }
 
-export type StructuredToolResult<T = unknown> =
-  | { readonly ok: true; readonly result: T }
-  | { readonly ok: false; readonly error: StructuredToolError };
+export interface StructuredToolFailure {
+  readonly ok: false;
+  readonly error: StructuredToolError;
+}
 
-function failure(code: string, message: string, fieldPath?: readonly (string | number)[]):
-  StructuredToolResult<never> {
+interface IssueLike {
+  readonly path: readonly (string | number)[];
+}
+
+function firstIssuePath(issues: readonly IssueLike[]): readonly (string | number)[] | undefined {
+  const firstIssue = issues[0];
+  if (firstIssue === undefined) return undefined;
+  if (firstIssue.path.length === 0) return undefined;
+  return firstIssue.path;
+}
+
+function failure(
+  code: StructuredToolErrorCode,
+  message: string,
+  fieldPath?: readonly (string | number)[],
+): StructuredToolFailure {
   return {
     ok: false,
     error: {
@@ -33,18 +58,15 @@ function failure(code: string, message: string, fieldPath?: readonly (string | n
 /** Convert a thrown error into a structured MCP tool result.
  *  Recognises the typed transport errors (Feature 2), MissingEtagError
  *  (Feature 3), and ZodError (local validation / response parsing).
- *  Anything else is mapped to `internal_error`. */
-export function mapErrorToToolResult(err: unknown): StructuredToolResult<never> {
+ *  Anything else is mapped to `internal_error`. Empty-path issues do NOT
+ *  leak as `fieldPath: []` — that key is omitted entirely so callers can
+ *  branch on `'fieldPath' in error`. */
+export function mapErrorToToolResult(err: unknown): StructuredToolFailure {
   if (err instanceof UnknownEventTypeError) {
     return failure('unknown_event_type', err.message);
   }
   if (err instanceof EventValidationError) {
-    const firstIssue = err.issues[0];
-    return failure(
-      'event_validation',
-      err.message,
-      firstIssue !== undefined ? firstIssue.path : undefined,
-    );
+    return failure('event_validation', err.message, firstIssuePath(err.issues));
   }
   if (err instanceof PermissionDeniedError) {
     return failure('permission_denied', err.message);
@@ -59,12 +81,7 @@ export function mapErrorToToolResult(err: unknown): StructuredToolResult<never> 
     return failure('http_error', err.message);
   }
   if (err instanceof ZodError) {
-    const firstIssue = err.issues[0];
-    return failure(
-      'validation_error',
-      err.message,
-      firstIssue !== undefined ? firstIssue.path : undefined,
-    );
+    return failure('validation_error', err.message, firstIssuePath(err.issues));
   }
   if (err instanceof Error) {
     return failure('internal_error', err.message);

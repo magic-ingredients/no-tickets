@@ -11,39 +11,57 @@ import {
 } from '../../transport/errors.js';
 
 describe('mapErrorToToolResult', () => {
-  it('maps UnknownEventTypeError to ok:false with code "unknown_event_type"', () => {
-    const result = mapErrorToToolResult(
-      new UnknownEventTypeError('app.user.signed-up.v1', 0),
-    );
+  it('maps UnknownEventTypeError exhaustively (no extra fields beyond code/message)', () => {
+    const err = new UnknownEventTypeError('app.user.signed-up.v1', 0);
+
+    const result = mapErrorToToolResult(err);
 
     expect(result).toEqual({
       ok: false,
       error: {
         code: 'unknown_event_type',
-        message: expect.stringContaining('app.user.signed-up.v1'),
+        message: err.message,
       },
     });
   });
 
-  it('maps EventValidationError to ok:false with code "event_validation" and the first issue path', () => {
-    const result = mapErrorToToolResult(
-      new EventValidationError('app.user.signed-up.v1', 0, [
-        { path: ['data', 'email'], message: 'required' },
-      ]),
-    );
+  it('maps EventValidationError to event_validation + first issue path', () => {
+    const err = new EventValidationError('app.user.signed-up.v1', 0, [
+      { path: ['data', 'email'], message: 'required' },
+    ]);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('event_validation');
-      expect(result.error.fieldPath).toEqual(['data', 'email']);
-      expect(result.error.message).toContain('app.user.signed-up.v1');
-    }
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'event_validation',
+        message: err.message,
+        fieldPath: ['data', 'email'],
+      },
+    });
   });
 
   it('omits fieldPath when EventValidationError has no issues', () => {
-    const result = mapErrorToToolResult(
-      new EventValidationError('app.x.v1', 0, []),
-    );
+    const err = new EventValidationError('app.x.v1', 0, []);
+
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'event_validation',
+        message: err.message,
+      },
+    });
+  });
+
+  it('omits fieldPath when EventValidationError has an issue with an empty path', () => {
+    const err = new EventValidationError('app.x.v1', 0, [
+      { path: [], message: 'root error' },
+    ]);
+
+    const result = mapErrorToToolResult(err);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -51,48 +69,69 @@ describe('mapErrorToToolResult', () => {
     }
   });
 
-  it('maps PermissionDeniedError to code "permission_denied" with the domain in the message', () => {
-    const result = mapErrorToToolResult(new PermissionDeniedError('app.thread'));
+  it('maps PermissionDeniedError to permission_denied with the domain in the message', () => {
+    const err = new PermissionDeniedError('app.thread');
 
-    expect(result.ok).toBe(false);
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'permission_denied',
+        message: err.message,
+      },
+    });
+    expect(err.message).toContain('app.thread');
+  });
+
+  it('maps ServerError (5xx) to server_error with the status in the message', () => {
+    const err = new ServerError(503, 'unavailable');
+
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'server_error',
+        message: err.message,
+      },
+    });
+    expect(err.message).toContain('503');
+  });
+
+  it('maps HttpError (unmapped 4xx) to http_error WITHOUT leaking the body field', () => {
+    const err = new HttpError(418, { secret: 'tea' });
+
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'http_error',
+        message: err.message,
+      },
+    });
+    expect(err.message).toContain('418');
     if (!result.ok) {
-      expect(result.error.code).toBe('permission_denied');
-      expect(result.error.message).toContain('app.thread');
+      expect(JSON.stringify(result.error)).not.toContain('secret');
     }
   });
 
-  it('maps ServerError (5xx) to code "server_error" with the status in the message', () => {
-    const result = mapErrorToToolResult(new ServerError(503, 'unavailable'));
+  it('maps MissingEtagError to missing_etag', () => {
+    const err = new MissingEtagError('/v1/admin/event-types');
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('server_error');
-      expect(result.error.message).toContain('503');
-    }
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'missing_etag',
+        message: err.message,
+      },
+    });
   });
 
-  it('maps HttpError (unmapped 4xx) to code "http_error" with the status in the message', () => {
-    const result = mapErrorToToolResult(new HttpError(418, 'teapot'));
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('http_error');
-      expect(result.error.message).toContain('418');
-    }
-  });
-
-  it('maps MissingEtagError to code "missing_etag"', () => {
-    const result = mapErrorToToolResult(
-      new MissingEtagError('/v1/admin/event-types'),
-    );
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('missing_etag');
-    }
-  });
-
-  it('maps ZodError (response or local validation) to code "validation_error" with the first path', () => {
+  it('maps ZodError to validation_error with the first issue path', () => {
     const zerr = new ZodError([
       {
         code: 'invalid_type',
@@ -112,23 +151,60 @@ describe('mapErrorToToolResult', () => {
     }
   });
 
-  it('maps a generic Error to code "internal_error" with the original message', () => {
-    const result = mapErrorToToolResult(new Error('boom'));
+  it('omits fieldPath when ZodError has no issues', () => {
+    const zerr = new ZodError([]);
+
+    const result = mapErrorToToolResult(zerr);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe('internal_error');
-      expect(result.error.message).toContain('boom');
+      expect(result.error.code).toBe('validation_error');
+      expect(result.error).not.toHaveProperty('fieldPath');
     }
   });
 
-  it('maps a non-Error throwable (string) to code "internal_error"', () => {
-    const result = mapErrorToToolResult('string thrown');
+  it('omits fieldPath when ZodError issue has an empty path (root-level issue)', () => {
+    const zerr = new ZodError([
+      {
+        code: 'invalid_type',
+        path: [],
+        message: 'root',
+        expected: 'object',
+        received: 'string',
+      } as never,
+    ]);
+
+    const result = mapErrorToToolResult(zerr);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe('internal_error');
-      expect(result.error.message).toContain('string thrown');
+      expect(result.error).not.toHaveProperty('fieldPath');
     }
+  });
+
+  it('maps a generic Error to internal_error with the original message', () => {
+    const err = new Error('boom');
+
+    const result = mapErrorToToolResult(err);
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'internal_error',
+        message: 'boom',
+      },
+    });
+  });
+
+  it('maps a non-Error throwable (string) to internal_error', () => {
+    const result = mapErrorToToolResult('string thrown');
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'internal_error',
+        message: 'string thrown',
+      },
+    });
   });
 });

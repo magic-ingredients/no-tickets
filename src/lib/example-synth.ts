@@ -26,10 +26,22 @@ function placeholderForType(type: JsonSchema['type']): unknown {
   }
 }
 
+function asJsonSchema(value: unknown): JsonSchema | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as JsonSchema)
+    : null;
+}
+
 /** Synthesise a minimal valid example payload from a JSON Schema fragment.
+ *  Accepts `unknown` at the trust boundary so callers don't need to cast;
+ *  malformed inputs collapse to `null`.
+ *
  *  Resolution order per node: default → enum first value → type placeholder.
  *  Recurses into objects and arrays. Unknown shapes → null. */
-export function synthesiseExample(schema: JsonSchema): unknown {
+export function synthesiseExample(rawSchema: unknown): unknown {
+  const schema = asJsonSchema(rawSchema);
+  if (schema === null) return null;
+
   if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
     return schema.default;
   }

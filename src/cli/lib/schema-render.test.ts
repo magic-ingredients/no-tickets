@@ -78,19 +78,34 @@ describe('renderSchema — type annotations', () => {
     expect(tagsLine).toMatch(/array of string/);
   });
 
-  it('annotates plain arrays without items as just "array"', () => {
+  it('annotates plain arrays without items as exactly "array" (no "of <type>" suffix)', () => {
     const lines = renderSchema({
       type: 'object',
       properties: { tags: { type: 'array' } },
     });
 
     const tagsLine = lines.find((l) => l.includes('tags'));
-    expect(tagsLine).toContain('array');
+    expect(tagsLine).toBe('  tags: array');
+  });
+
+  it('annotates an array of enums with the enum signal', () => {
+    const lines = renderSchema({
+      type: 'object',
+      properties: {
+        levels: { type: 'array', items: { enum: ['debug', 'info', 'warn'] } },
+      },
+    });
+
+    const levelsLine = lines.find((l) => l.includes('levels'));
+    expect(levelsLine).toContain('debug');
+    expect(levelsLine).toContain('info');
+    expect(levelsLine).toContain('warn');
+    expect(levelsLine).toContain('array of');
   });
 });
 
 describe('renderSchema — enums', () => {
-  it('annotates enums with their values', () => {
+  it('annotates string enums with type + "one of:" + JSON-encoded values', () => {
     const lines = renderSchema({
       type: 'object',
       properties: {
@@ -99,9 +114,19 @@ describe('renderSchema — enums', () => {
     });
 
     const planLine = lines.find((l) => l.includes('plan'));
-    expect(planLine).toContain('free');
-    expect(planLine).toContain('pro');
-    expect(planLine).toContain('enterprise');
+    expect(planLine).toBe('  plan: string (one of: "free", "pro", "enterprise")');
+  });
+
+  it('falls back to the literal "enum" label when no type is provided', () => {
+    const lines = renderSchema({
+      type: 'object',
+      properties: {
+        mode: { enum: ['fast', 'safe'] },
+      },
+    });
+
+    const modeLine = lines.find((l) => l.includes('mode'));
+    expect(modeLine).toBe('  mode: enum (one of: "fast", "safe")');
   });
 });
 
@@ -110,5 +135,19 @@ describe('renderSchema — empty object', () => {
     const lines = renderSchema({ type: 'object' });
 
     expect(lines.join('\n')).toMatch(/no fields/i);
+  });
+});
+
+describe('renderSchema — non-object trust boundary', () => {
+  it('describes a top-level scalar inline so signal is preserved', () => {
+    const lines = renderSchema({ type: 'string' });
+
+    expect(lines).toEqual(['(value: string)']);
+  });
+
+  it('returns "(no fields)" for a non-object input that carries no useful signal', () => {
+    expect(renderSchema(null)).toEqual(['(no fields)']);
+    expect(renderSchema('not-a-schema')).toEqual(['(no fields)']);
+    expect(renderSchema([{ type: 'string' }])).toEqual(['(no fields)']);
   });
 });

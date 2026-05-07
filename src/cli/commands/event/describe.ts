@@ -1,6 +1,6 @@
 import type { EventTypeSpec } from '../../../registry/client.js';
 import { renderSchema } from '../../lib/schema-render.js';
-import { synthesiseExample, type JsonSchema } from '../../../lib/example-synth.js';
+import { synthesiseExample } from '../../../lib/example-synth.js';
 
 export interface EventDescribeDeps {
   describeEvent(typeId: string): Promise<EventTypeSpec | null>;
@@ -18,7 +18,7 @@ function renderHeader(type: EventTypeSpec, deps: EventDescribeDeps): void {
   }
 }
 
-function renderExample(schema: JsonSchema, deps: EventDescribeDeps): void {
+function renderExample(schema: unknown, deps: EventDescribeDeps): void {
   deps.write('Example:');
   const example = synthesiseExample(schema);
   for (const line of JSON.stringify(example, null, 2).split('\n')) {
@@ -30,7 +30,7 @@ export async function runEventDescribe(
   typeId: string,
   deps: EventDescribeDeps,
 ): Promise<number> {
-  if (typeof typeId !== 'string' || typeId.length === 0) {
+  if (typeId.length === 0) {
     deps.writeErr('event type id must be a non-empty string');
     return 1;
   }
@@ -49,10 +49,10 @@ export async function runEventDescribe(
   }
 
   renderHeader(type, deps);
-  for (const line of renderSchema(type.schema as JsonSchema)) {
+  for (const line of renderSchema(type.schema)) {
     deps.write(line);
   }
   deps.write('');
-  renderExample(type.schema as JsonSchema, deps);
+  renderExample(type.schema, deps);
   return 0;
 }

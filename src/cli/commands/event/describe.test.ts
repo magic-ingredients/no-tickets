@@ -34,23 +34,51 @@ function makeDeps(type: EventTypeSpec | null, output: RecordedOutput): EventDesc
 }
 
 describe('runEventDescribe', () => {
-  it('prints the type id, schema fields, dedupe strategy, retention, and example payload', async () => {
+  it('returns exit 0 on a known type id', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const deps = makeDeps(TYPE, out);
 
     const exitCode = await runEventDescribe('app.user.signed-up.v1', deps);
 
     expect(exitCode).toBe(0);
+  });
+
+  it('prints the type id as a header line', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(TYPE, out));
+
+    expect(out.stdout).toContain(TYPE.id);
+  });
+
+  it('renders the schema (Required + property names visible)', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(TYPE, out));
+
     const printed = out.stdout.join('\n');
-    expect(printed).toContain(TYPE.id);
-    expect(printed).toMatch(/required/i);
-    expect(printed).toContain('email');
-    expect(printed).toContain('plan');
-    // Renders dedupe + retention.
-    expect(printed).toContain('natural_key');
-    expect(printed).toContain('90');
-    // Renders an example block with the synthesised payload.
-    expect(printed).toMatch(/example/i);
+    expect(printed).toMatch(/^Required:$/m);
+    expect(out.stdout.some((l) => l.includes('email'))).toBe(true);
+    expect(out.stdout.some((l) => l.includes('plan'))).toBe(true);
+  });
+
+  it('renders the dedupe strategy with a "Dedupe:" label', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(TYPE, out));
+
+    expect(out.stdout).toContain('Dedupe: natural_key');
+  });
+
+  it('renders the retention period with a "Retention:" label and "days" unit', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(TYPE, out));
+
+    expect(out.stdout).toContain('Retention: 90 days');
+  });
+
+  it('renders an "Example:" block', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(TYPE, out));
+
+    expect(out.stdout).toContain('Example:');
   });
 
   it('prints the synthesised example using JSON.stringify (so callers can copy it)', async () => {

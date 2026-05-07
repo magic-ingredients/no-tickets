@@ -57,6 +57,10 @@ export class Client {
     this.#source = options.source;
   }
 
+  get baseUrl(): string {
+    return this.#baseUrl;
+  }
+
   getSource(): Source {
     if (this.#source === undefined) {
       this.#source = detectSource();

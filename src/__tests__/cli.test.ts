@@ -132,6 +132,16 @@ describe('parseArgs', () => {
     const result = parseArgs(['token', 'create', '--project', '', '--label', 'CI']);
     expect(result.flags).toEqual({ project: true, label: 'CI' });
   });
+
+  it('parses --timeout as a value flag (consumes the next argv entry)', () => {
+    const result = parseArgs(['init', '--timeout', '5000']);
+    expect(result.flags['timeout']).toBe('5000');
+  });
+
+  it('parses --profile as a value flag (consumes the next argv entry)', () => {
+    const result = parseArgs(['status', '--profile', 'prod']);
+    expect(result.flags['profile']).toBe('prod');
+  });
 });
 
 describe('runCli dispatch', () => {
@@ -190,6 +200,26 @@ describe('runCli dispatch', () => {
     expect(commandsBlock).toContain('publish');
     expect(commandsBlock).toContain('subject');
     expect(commandsBlock).toContain('action');
+  });
+
+  it.each([
+    'event',
+    'publish',
+    'subject',
+    'action',
+  ])('runCli routes "%s" to the "not yet implemented" default branch', async (verb) => {
+    await runCli([verb]);
+    const errMessages = errSpy.mock.calls.map((call) => call[0] as string).join('\n');
+    expect(errMessages).toMatch(/not yet implemented/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('--help output mentions the Common options and Environment overrides sections', async () => {
+    await runCli(['--help']);
+    const helpText = logSpy.mock.calls[0]![0] as string;
+    expect(helpText).toContain('Common options:');
+    expect(helpText).toContain('--timeout <ms>');
+    expect(helpText).toContain('Environment overrides:');
   });
 
   it('--help output spells out the event and subject sub-command hints', async () => {

@@ -6,13 +6,13 @@
   "prdId": "client-event-repository-adoption",
   "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/client-event-repository-adoption",
   "created": "2026-04-27T14:39:35.599Z",
-  "lastUpdated": "2026-05-07T07:58:30.750Z",
+  "lastUpdated": "2026-05-07T08:57:28.515Z",
   "features": [
     {
       "id": "envelope-schemas",
       "number": 1,
       "title": "Envelope Schemas + SDK Surface Reset",
-      "status": "in_progress",
+      "status": "completed",
       "tasks": [
         {
           "id": "task-1-1",
@@ -251,13 +251,41 @@
         {
           "id": "task-1-8",
           "description": "Sub-path export verification",
-          "status": "not_started"
+          "status": "completed",
+          "redStartedAt": "2026-05-07T08:00:01.243Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-07T08:03:36.082Z",
+              "completedAt": "2026-05-07T08:05:14.685Z",
+              "reviewSha": "1b5d874",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-07T08:05:14.685Z",
+              "refactorCommitSha": "6b859b5dc274a20de2fbd14dcb2793ba8ff71ded",
+              "refactorCompletedAt": "2026-05-07T08:56:10.657Z",
+              "refactorCommittedAt": "2026-05-07T08:56:10.657Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-07T08:56:10.658Z",
+              "completedAt": "2026-05-07T08:57:28.514Z",
+              "reviewSha": "6b859b5",
+              "verdict": "clean",
+              "refactorStartedAt": "2026-05-07T08:57:28.514Z",
+              "refactorCommitSha": "skipped",
+              "refactorCompletedAt": "2026-05-07T08:57:28.514Z"
+            }
+          },
+          "greenStartedAt": "2026-05-07T08:01:15.750Z",
+          "testCommitSha": "d8c3bddc3e1ff81c42e7f94fdd6405476d9f40d0",
+          "redCompletedAt": "2026-05-07T08:01:15.750Z",
+          "commitSha": "1b5d8749e6f835ca1d1765093c3432c2cbe56401",
+          "greenCompletedAt": "2026-05-07T08:03:36.082Z",
+          "completedAt": "2026-05-07T08:57:28.515Z"
         }
       ],
       "taskSummary": {
         "total": 8,
-        "completed": 7,
-        "remaining": 1
+        "completed": 8,
+        "remaining": 0
       }
     },
     {
@@ -444,29 +472,27 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 1,
-    "featureTitle": "Envelope Schemas + SDK Surface Reset",
+    "feature": 2,
+    "featureTitle": "publish() + Subjects + Interactions HTTP Client",
     "overallProgress": {
-      "completedFeatures": 0,
+      "completedFeatures": 1,
       "totalFeatures": 5,
-      "completedTasks": 10,
+      "completedTasks": 11,
       "totalTasks": 32,
-      "percentComplete": 31
+      "percentComplete": 34
     },
     "workRemaining": {
       "pendingFeatures": [
-        "publish() + Subjects + Interactions HTTP Client",
         "Registry Introspection + Caching",
-        "nt publish / nt event / nt subject / nt action CLIs",
-        "MCP Discovery Tools"
+        "nt publish / nt event / nt subject / nt action CLIs"
       ],
-      "currentFeatureTasks": 1,
-      "futureFeatureTasks": 24
+      "currentFeatureTasks": 5,
+      "futureFeatureTasks": 13
     },
     "nextAction": {
-      "featureId": "envelope-schemas",
-      "taskId": "task-1-8",
-      "description": "Sub-path export verification"
+      "featureId": "publish-client",
+      "taskId": "task-2-1",
+      "description": "HTTP client core"
     },
     "blockers": []
   }

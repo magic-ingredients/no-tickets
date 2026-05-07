@@ -81,6 +81,28 @@ describe('runEventDescribe', () => {
     expect(out.stdout).toContain('Example:');
   });
 
+  it('omits the "Dedupe:" line when the type has no dedupe strategy', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const minimal: EventTypeSpec = {
+      ...TYPE,
+      dedupeStrategy: undefined,
+    };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(minimal, out));
+
+    expect(out.stdout.some((l) => l.startsWith('Dedupe:'))).toBe(false);
+  });
+
+  it('omits the "Retention:" line when the type has no retention setting', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const minimal: EventTypeSpec = {
+      ...TYPE,
+      retentionDays: undefined,
+    };
+    await runEventDescribe('app.user.signed-up.v1', makeDeps(minimal, out));
+
+    expect(out.stdout.some((l) => l.startsWith('Retention:'))).toBe(false);
+  });
+
   it('prints the synthesised example using JSON.stringify (so callers can copy it)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const deps = makeDeps(TYPE, out);

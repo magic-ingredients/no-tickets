@@ -120,4 +120,23 @@ describe('synthesiseExample — fallbacks', () => {
   it('produces null for an unrecognised type', () => {
     expect(synthesiseExample({ type: 'lambda-soup' as unknown as 'string' })).toBeNull();
   });
+
+  it('produces null at the trust boundary for a primitive input', () => {
+    expect(synthesiseExample('not-a-schema')).toBeNull();
+    expect(synthesiseExample(42)).toBeNull();
+    expect(synthesiseExample(true)).toBeNull();
+  });
+
+  it('produces null at the trust boundary for null', () => {
+    expect(synthesiseExample(null)).toBeNull();
+  });
+
+  it('produces null at the trust boundary for array input', () => {
+    expect(synthesiseExample([{ type: 'string' }])).toBeNull();
+  });
+
+  it('falls through to type placeholder when enum is an empty array', () => {
+    expect(synthesiseExample({ type: 'string', enum: [] })).toBe('');
+    expect(synthesiseExample({ type: 'integer', enum: [] })).toBe(0);
+  });
 });

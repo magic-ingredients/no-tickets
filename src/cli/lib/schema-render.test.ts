@@ -145,9 +145,46 @@ describe('renderSchema — non-object trust boundary', () => {
     expect(lines).toEqual(['(value: string)']);
   });
 
+  it('describes a top-level enum-only schema inline', () => {
+    const lines = renderSchema({ enum: ['a', 'b'] });
+
+    expect(lines).toEqual(['(value: enum (one of: "a", "b"))']);
+  });
+
   it('returns "(no fields)" for a non-object input that carries no useful signal', () => {
     expect(renderSchema(null)).toEqual(['(no fields)']);
     expect(renderSchema('not-a-schema')).toEqual(['(no fields)']);
+    expect(renderSchema(42)).toEqual(['(no fields)']);
+    expect(renderSchema(true)).toEqual(['(no fields)']);
     expect(renderSchema([{ type: 'string' }])).toEqual(['(no fields)']);
+  });
+
+  it('returns "(no fields)" for an empty plain object with no type and no enum', () => {
+    // Hits the type-undefined && enum-undefined branch on the non-object path.
+    expect(renderSchema({})).toEqual(['(no fields)']);
+  });
+});
+
+describe('renderSchema — empty properties bag', () => {
+  it('returns "(no fields)" for an object with no properties', () => {
+    expect(renderSchema({ type: 'object' })).toEqual(['(no fields)']);
+  });
+
+  it('returns "(no fields)" for an object with an empty properties bag', () => {
+    expect(renderSchema({ type: 'object', properties: {} })).toEqual(['(no fields)']);
+  });
+});
+
+describe('renderSchema — empty enum array', () => {
+  it('falls through to the bare type when enum is empty', () => {
+    const lines = renderSchema({
+      type: 'object',
+      properties: {
+        plan: { type: 'string', enum: [] },
+      },
+    });
+
+    const planLine = lines.find((l) => l.includes('plan'));
+    expect(planLine).toBe('  plan: string');
   });
 });

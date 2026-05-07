@@ -28,7 +28,7 @@ export async function runAction(
   options: ActionOptions,
   deps: ActionDeps,
 ): Promise<number> {
-  if (options.interactionId.length === 0) {
+  if (options.interactionId.trim().length === 0) {
     deps.writeErr('action: interaction id is required');
     return EXIT_VALIDATION;
   }
@@ -46,7 +46,10 @@ export async function runAction(
       ? { type: options.subjectType, id: options.subjectId }
       : undefined;
 
-  const body = subject !== undefined ? { input, subject } : { input };
+  const body: { input: unknown; subject?: SubjectRef } = {
+    input,
+    ...(subject !== undefined && { subject }),
+  };
 
   let response: InteractionResponse;
   try {

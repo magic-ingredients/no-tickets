@@ -40,4 +40,13 @@ describe('sourceFromTransport', () => {
 
     expect(source.attributes).toEqual({ client: 'unknown' });
   });
+
+  it('drops an empty-string clientVersion (no orphaned blank version)', () => {
+    const source = sourceFromTransport({
+      client: 'claude-code',
+      clientVersion: '',
+    });
+
+    expect(source.attributes).toEqual({ client: 'claude-code' });
+  });
 });

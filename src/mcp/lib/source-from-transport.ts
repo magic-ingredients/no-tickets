@@ -9,12 +9,12 @@ export interface TransportHints {
 /** Build the MCP server-side Source from transport-supplied hints.
  *  Defaults to `{ name: 'mcp', attributes: { client: 'unknown' } }` when no
  *  hints are available; clientVersion is only attached when client is also
- *  present (no orphaned version metadata). */
+ *  supplied (no orphaned version metadata). */
 export function sourceFromTransport(hints: TransportHints): Source {
-  const client =
-    hints.client !== undefined && hints.client.length > 0 ? hints.client : 'unknown';
+  const supplied = hints.client !== undefined && hints.client.length > 0;
+  const client = supplied ? (hints.client as string) : 'unknown';
   const attributes: Record<string, string> = { client };
-  if (client !== 'unknown' && hints.clientVersion !== undefined && hints.clientVersion.length > 0) {
+  if (supplied && hints.clientVersion !== undefined && hints.clientVersion.length > 0) {
     attributes['clientVersion'] = hints.clientVersion;
   }
   return {

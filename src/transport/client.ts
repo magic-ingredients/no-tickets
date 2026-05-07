@@ -1,4 +1,6 @@
 import { mapResponseError, ServerError } from './errors.js';
+import { detectSource } from '../agent-detect.js';
+import type { Source } from '../core/source.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -13,6 +15,9 @@ export interface ClientOptions {
   readonly fetch?: typeof fetch;
   readonly logger?: TransportLogger;
   readonly sleep?: (ms: number) => Promise<void>;
+  /** Override the auto-detected Source. When omitted, detectSource() runs
+   *  lazily on first getSource() call and is cached for the client's lifetime. */
+  readonly source?: Source;
 }
 
 const MAX_ATTEMPTS = 3;
@@ -41,6 +46,7 @@ export class Client {
   readonly #fetch: typeof fetch;
   readonly #logger: TransportLogger | undefined;
   readonly #sleep: (ms: number) => Promise<void>;
+  #source: Source | undefined;
 
   constructor(options: ClientOptions) {
     this.#baseUrl = options.baseUrl;
@@ -48,6 +54,14 @@ export class Client {
     this.#fetch = options.fetch ?? fetch;
     this.#logger = options.logger;
     this.#sleep = options.sleep ?? defaultSleep;
+    this.#source = options.source;
+  }
+
+  getSource(): Source {
+    if (this.#source === undefined) {
+      this.#source = detectSource();
+    }
+    return this.#source;
   }
 
   async request<TResponse = unknown>(

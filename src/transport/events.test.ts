@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, expectTypeOf } from 'vitest';
+import { ZodError } from 'zod';
 import { Client } from './client.js';
-import { publish, __resetAutoSourceCache } from './events.js';
+import { publish, type PublishEvent } from './events.js';
 import { UnknownEventTypeError, ServerError } from './errors.js';
 import type { Source } from '../core/source.js';
 import * as agentDetect from '../agent-detect.js';
@@ -51,7 +52,6 @@ const AUTO_SOURCE: Source = {
 };
 
 beforeEach(() => {
-  __resetAutoSourceCache();
   vi.mocked(agentDetect.detectSource).mockReset().mockReturnValue(AUTO_SOURCE);
 });
 
@@ -100,6 +100,16 @@ describe('publish — happy path', () => {
 
     expect(result.deduped).toBe(5);
   });
+
+  it('short-circuits empty arrays — no HTTP call, returns zeros', async () => {
+    const fetchImpl = vi.fn();
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    const result = await publish(client, []);
+
+    expect(result).toEqual({ ingested: 0, deduped: 0, ids: [] });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });
 
 describe('publish — source auto-fill', () => {
@@ -111,11 +121,10 @@ describe('publish — source auto-fill', () => {
 
     await publish(client, [{ type: 'app.x.v1', data: {} }]);
 
-    const sent = (calls[0]?.body as { source: Source }[])[0];
-    expect(sent?.source).toEqual(AUTO_SOURCE);
+    expect(calls[0]?.body).toMatchObject([{ source: AUTO_SOURCE }]);
   });
 
-  it('caches detectSource across publish calls', async () => {
+  it('caches the detected source on the Client across publish calls', async () => {
     const { fetch: fetchImpl } = recordingFetch([
       jsonResponse({ body: { ingested: 1, deduped: 0, ids: ['a'] } }),
       jsonResponse({ body: { ingested: 1, deduped: 0, ids: ['b'] } }),
@@ -128,7 +137,39 @@ describe('publish — source auto-fill', () => {
     expect(vi.mocked(agentDetect.detectSource)).toHaveBeenCalledTimes(1);
   });
 
-  it('merges caller-supplied partial source over the auto-detected one (caller wins)', async () => {
+  it('runs detectSource once per Client instance (not shared across instances)', async () => {
+    const { fetch: fetchImpl } = recordingFetch([
+      jsonResponse({ body: { ingested: 1, deduped: 0, ids: ['a'] } }),
+      jsonResponse({ body: { ingested: 1, deduped: 0, ids: ['b'] } }),
+    ]);
+    const c1 = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+    const c2 = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    await publish(c1, [{ type: 'app.x.v1', data: {} }]);
+    await publish(c2, [{ type: 'app.x.v1', data: {} }]);
+
+    expect(vi.mocked(agentDetect.detectSource)).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses options.source when provided, skipping detectSource entirely', async () => {
+    const explicit: Source = { name: 'tiny-brain', sdkVersion: '1.2.3' };
+    const { fetch: fetchImpl, calls } = recordingFetch([
+      jsonResponse({ body: { ingested: 1, deduped: 0, ids: ['x'] } }),
+    ]);
+    const client = new Client({
+      baseUrl: 'https://api.example.com',
+      token: 't',
+      fetch: fetchImpl,
+      source: explicit,
+    });
+
+    await publish(client, [{ type: 'app.x.v1', data: {} }]);
+
+    expect(vi.mocked(agentDetect.detectSource)).not.toHaveBeenCalled();
+    expect(calls[0]?.body).toMatchObject([{ source: explicit }]);
+  });
+
+  it('merges caller-supplied partial source over the auto-detected one (caller wins on conflicts)', async () => {
     vi.mocked(agentDetect.detectSource).mockReturnValue({
       name: 'ci',
       sdkVersion: '9.9.9-test',
@@ -151,14 +192,49 @@ describe('publish — source auto-fill', () => {
       },
     ]);
 
-    const sent = (calls[0]?.body as { source: Source }[])[0];
-    expect(sent?.source.name).toBe('tiny-brain');
-    expect(sent?.source.attributes).toEqual({ provider: 'override', runId: '42' });
+    expect(calls[0]?.body).toMatchObject([
+      {
+        source: {
+          name: 'tiny-brain',
+          attributes: { provider: 'override', runId: '42' },
+        },
+      },
+    ]);
+  });
+
+  it('fills name/sdkVersion from auto when caller supplies only attributes (gap-fill)', async () => {
+    vi.mocked(agentDetect.detectSource).mockReturnValue({
+      name: 'ci',
+      sdkVersion: '9.9.9-test',
+      attributes: { provider: 'github-actions' },
+    });
+    const { fetch: fetchImpl, calls } = recordingFetch([
+      jsonResponse({ body: { ingested: 1, deduped: 0, ids: ['x'] } }),
+    ]);
+    const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
+
+    await publish(client, [
+      {
+        type: 'app.x.v1',
+        data: {},
+        source: { attributes: { custom: 'x' } },
+      },
+    ]);
+
+    expect(calls[0]?.body).toMatchObject([
+      {
+        source: {
+          name: 'ci',
+          sdkVersion: '9.9.9-test',
+          attributes: { provider: 'github-actions', custom: 'x' },
+        },
+      },
+    ]);
   });
 });
 
 describe('publish — local validation', () => {
-  it('throws EventValidationError before sending when an envelope is invalid; reports the index', async () => {
+  it('throws EventValidationError before sending; reports the failing index AND maps zod issues', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([]);
     const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
 
@@ -170,6 +246,10 @@ describe('publish — local validation', () => {
     ).rejects.toMatchObject({
       name: 'EventValidationError',
       batchIndex: 1,
+      typeId: '',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['type'], message: expect.any(String) }),
+      ]),
     });
     expect(calls).toHaveLength(0);
   });
@@ -208,7 +288,7 @@ describe('publish — server errors', () => {
     });
   });
 
-  it('does not retry on 5xx (publish makes a single attempt only)', async () => {
+  it('makes a single request to /v1/events on 5xx — regression guard against retry leaking onto publish', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
       jsonResponse({ status: 503, body: '' }),
     ]);
@@ -234,12 +314,25 @@ describe('publish — server errors', () => {
 });
 
 describe('publish — response validation', () => {
-  it('throws when the server response is malformed', async () => {
-    const { fetch: fetchImpl } = recordingFetch([
-      jsonResponse({ body: { ingested: 'not-a-number' } }),
+  it('throws a ZodError on a malformed server response and pins the failing path', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([
+      jsonResponse({ body: { ingested: 'not-a-number', deduped: 0, ids: [] } }),
     ]);
     const client = new Client({ baseUrl: 'https://api.example.com', token: 't', fetch: fetchImpl });
 
-    await expect(publish(client, [{ type: 'app.x.v1', data: {} }])).rejects.toThrow();
+    const result = publish(client, [{ type: 'app.x.v1', data: {} }]);
+
+    await expect(result).rejects.toBeInstanceOf(ZodError);
+    await expect(result).rejects.toMatchObject({
+      issues: expect.arrayContaining([expect.objectContaining({ path: ['ingested'] })]),
+    });
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe('publish — types', () => {
+  it('PublishEvent<T> narrows the data field to T', () => {
+    type Narrow = PublishEvent<{ n: number }>;
+    expectTypeOf<Narrow['data']>().toEqualTypeOf<{ n: number }>();
   });
 });

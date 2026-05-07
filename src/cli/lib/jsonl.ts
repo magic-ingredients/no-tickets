@@ -32,7 +32,9 @@ export async function readJsonl(
   const result: JsonlEntry[] = [];
   const lines = raw.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    // Trim trailing CR for Windows-saved JSONL; treat whitespace-only lines
+    // (incl. lone "\r") as blank rather than letting them reach JSON.parse.
+    const line = (lines[i] ?? '').replace(/\r$/, '').trim();
     if (line.length === 0) continue;
     const lineNumber = i + 1;
     try {

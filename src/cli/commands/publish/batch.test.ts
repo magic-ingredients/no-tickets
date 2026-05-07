@@ -9,7 +9,10 @@ import {
 } from './batch.js';
 import type { EventTypeSpec } from '../../../registry/client.js';
 import type { PublishEvent, PublishResponse } from '../../../transport/events.js';
-import { UnknownEventTypeError } from '../../../transport/errors.js';
+import {
+  UnknownEventTypeError,
+  EventValidationError,
+} from '../../../transport/errors.js';
 
 const TYPE: EventTypeSpec = {
   id: 'app.user.signed-up.v1',
@@ -91,7 +94,16 @@ describe('runPublishBatch — happy path', () => {
     expect(exit).toBe(0);
     expect(publish).toHaveBeenCalledTimes(1);
     const events = publish.mock.calls[0]?.[0];
-    expect(events).toHaveLength(2);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'app.user.signed-up.v1',
+        data: { email: 'a@b.c' },
+      }),
+      expect.objectContaining({
+        type: 'app.user.signed-up.v1',
+        data: { email: 'd@e.f' },
+      }),
+    ]);
     expect(out.stdout.join('\n')).toContain('2 event');
   });
 
@@ -221,5 +233,97 @@ describe('runPublishBatch — server errors map back to JSONL line numbers', () 
 
     expect(exit).toBe(3);
     expect(out.stderr.join('\n')).toMatch(/line 2/);
+  });
+
+  it('translates server batchIndex into the JSONL line on EventValidationError', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
+        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps(
+      {
+        availableTypes: [TYPE],
+        publishError: new EventValidationError(
+          'app.user.signed-up.v1',
+          0,
+          [{ path: ['data', 'email'], message: 'rejected' }],
+        ),
+      },
+      out,
+    );
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(3);
+    expect(out.stderr.join('\n')).toMatch(/line 1/);
+  });
+
+  it('reports JSONL lines correctly when blank lines shift the line/index alignment', async () => {
+    // Blank lines between events mean batchIndex 1 corresponds to line 4,
+    // not line 2. Validates that the implementation maps via the recorded
+    // `line` rather than `batchIndex + 1`.
+    const path = writeBatch(
+      '\n' +
+        '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
+        '\n' +
+        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps(
+      {
+        availableTypes: [TYPE],
+        publishError: new UnknownEventTypeError('app.user.signed-up.v1', 1),
+      },
+      out,
+    );
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(3);
+    expect(out.stderr.join('\n')).toMatch(/line 4/);
+  });
+});
+
+describe('runPublishBatch — empty file', () => {
+  it('exits with code 1 and reports an empty-file message on stderr', async () => {
+    const path = writeBatch('');
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({ availableTypes: [TYPE] }, out);
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/empty/i);
+  });
+});
+
+describe('runPublishBatch — source merge', () => {
+  it('merges CLI --source-attribute keys with JSONL source.attributes (JSONL wins on key conflict)', async () => {
+    const path = writeBatch(
+      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"attributes": {"region": "eu-west-1"}}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps(
+      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      out,
+    );
+
+    await runPublishBatch(
+      {
+        batchPath: path,
+        sourceName: 'tiny-brain',
+        sourceAttributes: ['env=prod', 'region=us-east-1'],
+      },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    // CLI brings env=prod and region=us-east-1; JSONL overrides region.
+    expect(event?.source).toMatchObject({
+      name: 'tiny-brain',
+      attributes: { env: 'prod', region: 'eu-west-1' },
+    });
   });
 });

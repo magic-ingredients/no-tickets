@@ -58,10 +58,23 @@ describe('readJsonl', () => {
     await expect(readJsonl(path, stdinDeps(''))).rejects.toThrow(/line 2/);
   });
 
-  it('throws when the file does not exist', async () => {
-    await expect(
-      readJsonl(join(tempDir, 'missing.jsonl'), stdinDeps('')),
-    ).rejects.toThrow();
+  it('throws with a descriptive message when the file does not exist', async () => {
+    const path = join(tempDir, 'missing.jsonl');
+    await expect(readJsonl(path, stdinDeps(''))).rejects.toThrow(
+      new RegExp(`could not read JSONL file.*${path}`),
+    );
+  });
+
+  it('skips Windows-style CRLF lines and whitespace-only lines without trying to parse them', async () => {
+    // Trailing \r on a Windows file would otherwise reach JSON.parse('\r')
+    // and throw. Real Windows JSONL: every line ends with \r\n.
+    const path = join(tempDir, 'crlf.jsonl');
+    writeFileSync(path, '{"a": 1}\r\n   \r\n{"a": 2}\r\n');
+
+    const result = await readJsonl(path, stdinDeps(''));
+
+    expect(result.map((r) => r.value)).toEqual([{ a: 1 }, { a: 2 }]);
+    expect(result.map((r) => r.line)).toEqual([1, 3]);
   });
 
   it('returns an empty array for an empty file', async () => {

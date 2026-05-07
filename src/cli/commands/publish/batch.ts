@@ -33,16 +33,40 @@ function isObjectRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+function mergeSourceShallow(
+  cliSource: Partial<Source> | undefined,
+  jsonlSource: unknown,
+): Partial<Source> | undefined {
+  const existing = isObjectRecord(jsonlSource) ? (jsonlSource as Partial<Source>) : undefined;
+  if (cliSource === undefined && existing === undefined) return undefined;
+  if (cliSource === undefined) return existing;
+  if (existing === undefined) return cliSource;
+  // JSONL line wins on top-level fields; attributes are key-merged so a CLI
+  // --source-attribute env=prod survives even when the JSONL line carries
+  // its own attributes bag.
+  const cliAttrs = isObjectRecord(cliSource.attributes) ? cliSource.attributes : undefined;
+  const jsonlAttrs = isObjectRecord(existing.attributes) ? existing.attributes : undefined;
+  const attributes =
+    cliAttrs !== undefined || jsonlAttrs !== undefined
+      ? { ...cliAttrs, ...jsonlAttrs }
+      : undefined;
+  return {
+    ...cliSource,
+    ...existing,
+    ...(attributes !== undefined && { attributes }),
+  };
+}
+
 function buildPublishEvent(
   raw: Record<string, unknown>,
   source: Partial<Source> | undefined,
 ): PublishEvent {
-  const event: Record<string, unknown> = { ...raw };
-  if (source !== undefined) {
-    const existing = isObjectRecord(raw['source']) ? raw['source'] : {};
-    event['source'] = { ...source, ...existing };
-  }
-  return event as unknown as PublishEvent;
+  const { source: rawSource, ...rest } = raw;
+  const merged = mergeSourceShallow(source, rawSource);
+  return {
+    ...(rest as PublishEvent),
+    ...(merged !== undefined && { source: merged }),
+  };
 }
 
 export async function runPublishBatch(

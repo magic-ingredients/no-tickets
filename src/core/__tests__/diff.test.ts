@@ -19,7 +19,7 @@ function makeSnapshot(features: readonly FeatureState[]): StateSnapshot {
   return {
     version: 1,
     epics: [{ id: 'test-epic', title: 'Test', status: 'in_progress', features }],
-    pushedAt: '2026-04-05T00:00:00Z',
+    computedAt: '2026-04-05T00:00:00Z',
   };
 }
 
@@ -229,7 +229,7 @@ describe('computeDiff', () => {
         { id: 'e1', title: 'E1', status: 'in_progress', features: [makeFeatureState('f1', { phase: 'development' })] },
         { id: 'e2', title: 'E2', status: 'in_progress', features: [makeFeatureState('f2')] },
       ],
-      pushedAt: '',
+      computedAt: '',
     };
     const curr: StateSnapshot = {
       version: 1,
@@ -237,7 +237,7 @@ describe('computeDiff', () => {
         { id: 'e1', title: 'E1', status: 'in_progress', features: [makeFeatureState('f1', { phase: 'done' })] },
         { id: 'e2', title: 'E2', status: 'in_progress', features: [makeFeatureState('f2')] },
       ],
-      pushedAt: '',
+      computedAt: '',
     };
 
     const delta = computeDiff(prev, curr);

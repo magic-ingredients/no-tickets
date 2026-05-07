@@ -30,7 +30,7 @@ type FlagValue = boolean | string;
 
 /** Flags that consume the following argv entry as their value.
  *  All other flags are parsed as booleans so positional args like
- *  `push --dry-run some-file` are never accidentally swallowed. */
+ *  `init --quiet some-arg` are never accidentally swallowed. */
 const VALUE_FLAGS = new Set<string>(['project', 'label', 'timeout', 'profile']);
 
 interface ParsedArgs {

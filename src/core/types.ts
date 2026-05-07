@@ -104,18 +104,10 @@ export interface EpicState {
   readonly features: readonly FeatureState[];
 }
 
-export interface SessionState {
-  readonly agent: string;
-  readonly agentType: AssigneeType;
-  readonly active: boolean;
-  readonly since: string;
-}
-
 export interface StateSnapshot {
   readonly version: number;
   readonly epics: readonly EpicState[];
-  readonly session?: SessionState;
-  readonly pushedAt: string;
+  readonly computedAt: string;
 }
 
 // -- Sync (delta between snapshots) -------------------------------------------
@@ -130,30 +122,6 @@ export interface SyncDelta {
   readonly updated: readonly FeatureUpdate[];
   readonly removed: readonly string[];
   readonly isEmpty: boolean;
-}
-
-// -- Board (what the dashboard renders) ---------------------------------------
-
-export interface BoardColumn {
-  readonly phase: Phase;
-  readonly features: readonly FeatureState[];
-}
-
-export interface BoardState {
-  readonly projectId: string;
-  readonly columns: readonly BoardColumn[];
-}
-
-// -- Feed (activity events) ---------------------------------------------------
-
-export interface FeedEvent {
-  readonly id: string;
-  readonly eventType: string;
-  readonly actorName: string;
-  readonly actorType: AssigneeType;
-  readonly description: string;
-  readonly featureId?: string;
-  readonly createdAt: string;
 }
 
 // -- Validation ---------------------------------------------------------------

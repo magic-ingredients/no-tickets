@@ -30,7 +30,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'nt-mcp-e2e-'));
-  fetchSpy = vi.fn().mockReturnValue(jsonResponse({ success: true, changesApplied: 1, eventsGenerated: 1 }));
+  fetchSpy = vi.fn().mockReturnValue(jsonResponse({}));
   vi.stubGlobal('fetch', fetchSpy);
   vi.stubEnv('NO_TICKETS_HOME', testDir);
   vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_mcptest');

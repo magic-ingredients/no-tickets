@@ -4,7 +4,7 @@ import type { ParseResult, EpicState, FeatureState, StateSnapshot, Phase } from 
  * Compute a state snapshot from parsed documents.
  * Pure function — accepts an optional timestamp to avoid reading the system clock.
  */
-export function computeState(parsed: ParseResult, pushedAt?: string): StateSnapshot {
+export function computeState(parsed: ParseResult, computedAt?: string): StateSnapshot {
   const epicMap = new Map<string, FeatureState[]>();
 
   // Group features under their parent epic
@@ -42,7 +42,7 @@ export function computeState(parsed: ParseResult, pushedAt?: string): StateSnaps
   return {
     version: 1,
     epics,
-    pushedAt: pushedAt ?? new Date().toISOString(),
+    computedAt: computedAt ?? new Date().toISOString(),
   };
 }
 

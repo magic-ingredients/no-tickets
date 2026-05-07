@@ -58,7 +58,7 @@ describe('buildInitPlan', () => {
     const gitignore = plan.files.find((f) => f.path === '.notickets/.gitignore');
 
     expect(gitignore).toBeDefined();
-    expect(gitignore!.content).toBe('config.json\n.last-push.json\n');
+    expect(gitignore!.content).toBe('config.json\n.cache/\n');
   });
 
   it('includes epic.md with correct frontmatter and sections', () => {

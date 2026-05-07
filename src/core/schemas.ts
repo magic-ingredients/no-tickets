@@ -10,8 +10,6 @@ export const taskStatusSchema = z.enum(['not_started', 'in_progress', 'completed
 
 export const assigneeTypeSchema = z.enum(['human', 'agent']);
 
-export const documentTypeSchema = z.enum(['epic', 'feature', 'fix']);
-
 // -- Date format --------------------------------------------------------------
 
 const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD');

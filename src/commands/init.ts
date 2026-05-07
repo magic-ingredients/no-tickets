@@ -65,7 +65,7 @@ function buildInitPlan(tool: LlmTool, date?: string): InitPlan {
     },
     {
       path: '.notickets/.gitignore',
-      content: 'config.json\n.last-push.json\n',
+      content: 'config.json\n.cache/\n',
     },
     {
       path: `.notickets/${EXAMPLE_EPIC_ID}/epic.md`,

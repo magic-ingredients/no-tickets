@@ -74,8 +74,6 @@ describe('createMcpServer', () => {
     const registeredNames = lastInstance!.registerToolCalls.map((c) => c.name);
 
     expect(registeredNames).toEqual(['validate', 'status']);
-    expect(registeredNames).toHaveLength(2);
-    expect(registeredNames).not.toContain('push');
   });
 
   it('registers each tool with a non-empty description and inputSchema', () => {

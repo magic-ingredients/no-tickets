@@ -103,15 +103,15 @@ describe('computeState', () => {
     expect(snapshot.version).toBe(1);
   });
 
-  it('uses provided pushedAt timestamp', () => {
+  it('uses provided computedAt timestamp', () => {
     const snapshot = computeState({ epics: [], features: [] }, '2026-04-05T12:00:00Z');
-    expect(snapshot.pushedAt).toBe('2026-04-05T12:00:00Z');
+    expect(snapshot.computedAt).toBe('2026-04-05T12:00:00Z');
   });
 
-  it('generates pushedAt when not provided', () => {
+  it('generates computedAt when not provided', () => {
     const snapshot = computeState({ epics: [], features: [] });
-    expect(snapshot.pushedAt).toBeDefined();
-    expect(new Date(snapshot.pushedAt).getTime()).not.toBeNaN();
+    expect(snapshot.computedAt).toBeDefined();
+    expect(new Date(snapshot.computedAt).getTime()).not.toBeNaN();
   });
 
   it('initializes tests to zero', () => {
@@ -162,7 +162,7 @@ describe('computeState', () => {
 
 describe('computeOverallProgress', () => {
   it('returns 0 for empty snapshot', () => {
-    const snapshot: StateSnapshot = { version: 1, epics: [], pushedAt: '' };
+    const snapshot: StateSnapshot = { version: 1, epics: [], computedAt: '' };
     expect(computeOverallProgress(snapshot)).toBe(0);
   });
 
@@ -173,7 +173,7 @@ describe('computeOverallProgress', () => {
         id: 'e', title: 'E', status: 'in_progress',
         features: [{ id: 'f', epicId: 'e', title: 'F', type: 'feature', phase: 'development', tasks: { total: 0, completed: 0 }, tests: { total: 0, passing: 0 } }],
       }],
-      pushedAt: '',
+      computedAt: '',
     };
     expect(computeOverallProgress(snapshot)).toBe(0);
   });
@@ -188,7 +188,7 @@ describe('computeOverallProgress', () => {
           { id: 'f2', epicId: 'e', title: 'F2', type: 'feature', phase: 'done', tasks: { total: 6, completed: 6 }, tests: { total: 0, passing: 0 } },
         ],
       }],
-      pushedAt: '',
+      computedAt: '',
     };
     // 8/10 = 80%
     expect(computeOverallProgress(snapshot)).toBe(80);
@@ -203,7 +203,7 @@ describe('computeOverallProgress', () => {
           { id: 'f1', epicId: 'e', title: 'F1', type: 'feature', phase: 'done', tasks: { total: 3, completed: 5 }, tests: { total: 0, passing: 0 } },
         ],
       }],
-      pushedAt: '',
+      computedAt: '',
     };
     expect(computeOverallProgress(snapshot)).toBe(100);
   });
@@ -217,7 +217,7 @@ describe('computeOverallProgress', () => {
           { id: 'f1', epicId: 'e', title: 'F1', type: 'feature', phase: 'development', tasks: { total: 3, completed: 1 }, tests: { total: 0, passing: 0 } },
         ],
       }],
-      pushedAt: '',
+      computedAt: '',
     };
     // 1/3 = 33.33... → 33
     expect(computeOverallProgress(snapshot)).toBe(33);

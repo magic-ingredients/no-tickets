@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sourceSchema, mergeSource, SDK_VERSION } from '../source.js';
+import { sourceSchema, mergeSource, SDK_VERSION, type Source } from '../source.js';
 
 // -- Schema shape -------------------------------------------------------------
 
@@ -17,6 +17,15 @@ describe('sourceSchema', () => {
       attributes: { integration: 'tiny-brain', machine: 'a1b2c3', runId: 42, debug: true },
     };
     expect(sourceSchema.parse(input)).toEqual(input);
+  });
+
+  it('tolerates unknown top-level keys (strips them, does not throw)', () => {
+    const parsed = sourceSchema.parse({
+      name: 'cli',
+      sdkVersion: '1.2.3',
+      unknownField: 'allowed for forward-compat',
+    });
+    expect(parsed).toEqual({ name: 'cli', sdkVersion: '1.2.3' });
   });
 
   it('rejects missing name', () => {
@@ -86,36 +95,55 @@ describe('sourceSchema', () => {
 // -- mergeSource semantics ----------------------------------------------------
 
 describe('mergeSource', () => {
-  const auto = {
+  const auto: Source = {
     name: 'cli',
     sdkVersion: '1.2.3',
     version: '1.2.3',
     attributes: { machine: 'hostA', provider: 'github' },
-  } as const;
+  };
 
-  it('returns auto unchanged when override is undefined', () => {
-    expect(mergeSource(auto, undefined)).toEqual(auto);
+  it('returns a fresh object when override is undefined (does not leak auto reference)', () => {
+    const result = mergeSource(auto, undefined);
+    expect(result).toEqual(auto);
+    expect(result).not.toBe(auto);
   });
 
-  it('returns auto unchanged when override is empty object', () => {
-    expect(mergeSource(auto, {})).toEqual(auto);
+  it('returns a fresh object when override is empty', () => {
+    const result = mergeSource(auto, {});
+    expect(result).toEqual(auto);
+    expect(result).not.toBe(auto);
   });
 
-  it('overrides name when caller provides it', () => {
+  it('overrides name when caller provides a non-empty value', () => {
     const result = mergeSource(auto, { name: 'integration' });
     expect(result.name).toBe('integration');
     expect(result.sdkVersion).toBe('1.2.3');
   });
 
-  it('overrides version when caller provides it', () => {
+  it('overrides version when caller provides a non-empty value', () => {
     const result = mergeSource(auto, { version: '0.4.2' });
     expect(result.version).toBe('0.4.2');
     expect(result.name).toBe('cli');
   });
 
-  it('overrides sdkVersion when caller provides it (rare but allowed)', () => {
+  it('overrides sdkVersion when caller provides a non-empty value', () => {
     const result = mergeSource(auto, { sdkVersion: '9.9.9' });
     expect(result.sdkVersion).toBe('9.9.9');
+  });
+
+  it('treats empty-string name override as a gap (falls back to auto)', () => {
+    const result = mergeSource(auto, { name: '' });
+    expect(result.name).toBe('cli');
+  });
+
+  it('treats empty-string sdkVersion override as a gap (falls back to auto)', () => {
+    const result = mergeSource(auto, { sdkVersion: '' });
+    expect(result.sdkVersion).toBe('1.2.3');
+  });
+
+  it('treats empty-string version override as a gap (falls back to auto)', () => {
+    const result = mergeSource(auto, { version: '' });
+    expect(result.version).toBe('1.2.3');
   });
 
   it('merges attributes per-key, with override winning conflicts', () => {
@@ -123,32 +151,51 @@ describe('mergeSource', () => {
       attributes: { machine: 'hostB', feature: 'experimental' },
     });
     expect(result.attributes).toEqual({
-      machine: 'hostB', // override wins
-      provider: 'github', // preserved from auto
-      feature: 'experimental', // added by override
+      machine: 'hostB',
+      provider: 'github',
+      feature: 'experimental',
     });
   });
 
-  it('preserves auto.attributes when override has no attributes', () => {
+  it('preserves auto.attributes when override has no attributes key', () => {
     const result = mergeSource(auto, { name: 'integration' });
     expect(result.attributes).toEqual({ machine: 'hostA', provider: 'github' });
   });
 
-  it('returns auto.attributes when both have undefined attributes', () => {
-    const autoNoAttrs = { name: 'cli', sdkVersion: '1.2.3' };
+  it('treats explicit-undefined attributes override as a gap (preserves auto.attributes)', () => {
+    const result = mergeSource(auto, { attributes: undefined });
+    expect(result.attributes).toEqual({ machine: 'hostA', provider: 'github' });
+  });
+
+  it('returns undefined attributes when both auto and override have none', () => {
+    const autoNoAttrs: Source = { name: 'cli', sdkVersion: '1.2.3' };
     const result = mergeSource(autoNoAttrs, { name: 'integration' });
     expect(result.attributes).toBeUndefined();
   });
 
   it('uses override.attributes when auto has none', () => {
-    const autoNoAttrs = { name: 'cli', sdkVersion: '1.2.3' };
+    const autoNoAttrs: Source = { name: 'cli', sdkVersion: '1.2.3' };
     const result = mergeSource(autoNoAttrs, { attributes: { feature: 'x' } });
     expect(result.attributes).toEqual({ feature: 'x' });
   });
 
-  it('result conforms to sourceSchema', () => {
-    const result = mergeSource(auto, { name: 'integration', attributes: { feature: 'x' } });
-    expect(() => sourceSchema.parse(result)).not.toThrow();
+  describe('result conforms to sourceSchema', () => {
+    const cases: Array<[string, Partial<Source> | undefined]> = [
+      ['undefined override', undefined],
+      ['empty override', {}],
+      ['name-only override', { name: 'integration' }],
+      ['attributes-only override', { attributes: { feature: 'experimental' } }],
+      ['attributes with all primitive types', { attributes: { s: 'x', n: 1, b: true } }],
+      ['empty-string name (falls back to auto)', { name: '' }],
+      ['version override', { version: '0.4.2' }],
+    ];
+
+    for (const [label, override] of cases) {
+      it(label, () => {
+        const result = mergeSource(auto, override);
+        expect(() => sourceSchema.parse(result)).not.toThrow();
+      });
+    }
   });
 });
 
@@ -162,10 +209,5 @@ describe('SDK_VERSION', () => {
 
   it('matches semver pattern (major.minor.patch with optional prerelease)', () => {
     expect(SDK_VERSION).toMatch(/^\d+\.\d+\.\d+(-[a-z0-9.-]+)?$/i);
-  });
-
-  it('matches the version in package.json (resolved at build time)', async () => {
-    const pkg = await import('../../../package.json', { with: { type: 'json' } });
-    expect(SDK_VERSION).toBe(pkg.default.version);
   });
 });

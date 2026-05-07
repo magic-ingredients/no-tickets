@@ -1,8 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostname, homedir } from 'node:os';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+
+// Read HOME/USERPROFILE env vars first (testable via env-stubbing) before
+// falling back to os.homedir(). ESM bindings on os.homedir cannot be spied.
+function resolveHome(): string {
+  return process.env['HOME'] ?? process.env['USERPROFILE'] ?? homedir();
+}
 import type { Session, PushEnvironment } from './core/types.js';
 import { type Source, SDK_VERSION } from './core/source.js';
 
@@ -57,44 +62,63 @@ interface CiAttributeBindings {
   readonly workflow?: string;
 }
 
-const CI_ATTRIBUTE_BINDINGS: Record<string, () => CiAttributeBindings> = {
-  GITHUB_ACTIONS: () => ({
-    provider: 'github-actions',
-    runId: process.env['GITHUB_RUN_ID'],
-    workflow: process.env['GITHUB_WORKFLOW'],
-  }),
-  GITLAB_CI: () => ({
-    provider: 'gitlab',
-    runId: process.env['CI_JOB_ID'],
-    workflow: process.env['CI_PIPELINE_NAME'],
-  }),
-  CIRCLECI: () => ({
-    provider: 'circleci',
-    runId: process.env['CIRCLE_BUILD_NUM'],
-    workflow: process.env['CIRCLE_JOB'],
-  }),
-  JENKINS_URL: () => ({
-    provider: 'jenkins',
-    runId: process.env['BUILD_ID'],
-    workflow: process.env['JOB_NAME'],
-  }),
-  BUILDKITE: () => ({
-    provider: 'buildkite',
-    runId: process.env['BUILDKITE_BUILD_ID'],
-    workflow: process.env['BUILDKITE_PIPELINE_NAME'],
-  }),
-  TRAVIS: () => ({
-    provider: 'travis',
-    runId: process.env['TRAVIS_BUILD_ID'],
-    workflow: process.env['TRAVIS_JOB_NAME'],
-  }),
-};
+// Order matters: the first entry whose env var is set wins. GitHub Actions
+// before GitLab so a runner that mistakenly has both vars set is identified
+// as the more specific provider.
+const CI_ATTRIBUTE_BINDINGS: ReadonlyArray<readonly [string, () => CiAttributeBindings]> = [
+  [
+    'GITHUB_ACTIONS',
+    () => ({
+      provider: 'github-actions',
+      runId: process.env['GITHUB_RUN_ID'],
+      workflow: process.env['GITHUB_WORKFLOW'],
+    }),
+  ],
+  [
+    'GITLAB_CI',
+    () => ({
+      provider: 'gitlab',
+      runId: process.env['CI_JOB_ID'],
+      workflow: process.env['CI_PIPELINE_NAME'],
+    }),
+  ],
+  [
+    'CIRCLECI',
+    () => ({
+      provider: 'circleci',
+      runId: process.env['CIRCLE_BUILD_NUM'],
+      workflow: process.env['CIRCLE_JOB'],
+    }),
+  ],
+  [
+    'JENKINS_URL',
+    () => ({
+      provider: 'jenkins',
+      runId: process.env['BUILD_ID'],
+      workflow: process.env['JOB_NAME'],
+    }),
+  ],
+  [
+    'BUILDKITE',
+    () => ({
+      provider: 'buildkite',
+      runId: process.env['BUILDKITE_BUILD_ID'],
+      workflow: process.env['BUILDKITE_PIPELINE_NAME'],
+    }),
+  ],
+  [
+    'TRAVIS',
+    () => ({
+      provider: 'travis',
+      runId: process.env['TRAVIS_BUILD_ID'],
+      workflow: process.env['TRAVIS_JOB_NAME'],
+    }),
+  ],
+];
 
 function detectCiAttributes(): CiAttributeBindings | null {
-  for (const envVar of Object.keys(CI_ATTRIBUTE_BINDINGS)) {
-    if (process.env[envVar]) {
-      return CI_ATTRIBUTE_BINDINGS[envVar]!();
-    }
+  for (const [envVar, binding] of CI_ATTRIBUTE_BINDINGS) {
+    if (process.env[envVar]) return binding();
   }
   return null;
 }
@@ -103,15 +127,22 @@ function detectCiAttributes(): CiAttributeBindings | null {
 // Hostname + salt → SHA-256 hex (truncated). Hostname alone is PII; salted hash
 // is opaque to anyone without the local salt file.
 function readOrCreateMachineSalt(): string {
-  const dir = join(homedir(), '.notickets');
+  const dir = join(resolveHome(), '.notickets');
   const path = join(dir, '.machine-salt');
   if (existsSync(path)) {
-    return readFileSync(path, 'utf-8').trim();
+    const existing = readFileSync(path, 'utf-8').trim();
+    if (existing.length > 0) return existing;
   }
   mkdirSync(dir, { recursive: true });
   const salt = randomBytes(16).toString('hex');
-  writeFileSync(path, salt, { mode: 0o600 });
-  return salt;
+  // Atomic create-or-fail: handles the race where two concurrent first-runs
+  // both reach the write step. Loser re-reads the winner's salt.
+  try {
+    writeFileSync(path, salt, { mode: 0o600, flag: 'wx' });
+    return salt;
+  } catch {
+    return readFileSync(path, 'utf-8').trim();
+  }
 }
 
 function hashedMachine(): string {
@@ -141,7 +172,13 @@ export function detectSource(): Source {
   }
 
   if (process.env['NO_TICKETS_INCLUDE_MACHINE'] === '1') {
-    attributes['machine'] = hashedMachine();
+    // Best-effort: filesystem failures (read-only $HOME, missing perms, ...)
+    // must not break the calling SDK's auto-fill. Drop the attribute silently.
+    try {
+      attributes['machine'] = hashedMachine();
+    } catch {
+      // intentional no-op
+    }
   }
 
   const source: Source = {

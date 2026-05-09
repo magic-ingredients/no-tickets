@@ -43,8 +43,10 @@ export async function resolveInitAuth(options: InitAuthOptions): Promise<InitAut
   }
 
   const code = generateNonce();
+  const appUrl = new URL(options.authUrl).origin;
   const server = await startAuthServer({
     expectedState: code,
+    appUrl,
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
   });
   options.onServerReady?.({ close: server.close });

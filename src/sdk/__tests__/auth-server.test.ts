@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { startAuthServer } from '../auth-server.js';
 
 const NONCE = 'a'.repeat(32);
+const APP_URL = 'https://app-staging.no-tickets.com';
 
 describe('startAuthServer', () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -19,7 +20,7 @@ describe('startAuthServer', () => {
   });
 
   it('starts an HTTP server on a random available port', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
     pendingCallback = callbackPromise;
 
@@ -28,7 +29,7 @@ describe('startAuthServer', () => {
   });
 
   it('resolves with token + email when callback receives matching state', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     const response = await fetch(
@@ -36,16 +37,35 @@ describe('startAuthServer', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toContain('text/plain');
+    expect(response.headers.get('content-type')).toContain('text/html');
     const body = await response.text();
-    expect(body).toBe('Authentication successful. You can close this tab.');
+    expect(body).toMatch(/<svg[\s\S]*<\/svg>/i);
+    expect(body).toContain('CLI authentication successful');
+    expect(body).toContain('You can close this tab');
+    expect(body).toContain('continue to no-tickets');
+    expect(body).toContain(APP_URL);
 
     const result = await callbackPromise;
     expect(result).toEqual({ token: 'nt_session_test123', email: 'alice@example.com' });
   });
 
+  it('escapes the appUrl when rendering the continue link to prevent HTML injection', async () => {
+    const evilApp = 'https://evil.example.com/"><script>x</script>';
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: evilApp });
+    cleanup = close;
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/callback?token=t&email=a%40b.com&state=${NONCE}`,
+    );
+    const body = await response.text();
+    await callbackPromise;
+
+    expect(body).not.toContain('<script>x</script>');
+    expect(body).toContain('&lt;script&gt;');
+  });
+
   it('returns 400 and does not resolve when state does not match the expected nonce', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 100 });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL, timeoutMs: 100 });
     cleanup = close;
 
     const response = await fetch(
@@ -60,7 +80,7 @@ describe('startAuthServer', () => {
   });
 
   it('returns 400 when token param is empty', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
     pendingCallback = callbackPromise;
 
@@ -72,7 +92,7 @@ describe('startAuthServer', () => {
   });
 
   it('returns 400 when email param is missing', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
     pendingCallback = callbackPromise;
 
@@ -84,7 +104,7 @@ describe('startAuthServer', () => {
   });
 
   it('returns 400 when state param is missing', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
     pendingCallback = callbackPromise;
 
@@ -96,7 +116,7 @@ describe('startAuthServer', () => {
   });
 
   it('returns 404 for non-callback paths', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
     pendingCallback = callbackPromise;
 
@@ -106,7 +126,7 @@ describe('startAuthServer', () => {
   });
 
   it('shuts down the server after a successful callback', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     await fetch(
@@ -120,14 +140,14 @@ describe('startAuthServer', () => {
   });
 
   it('rejects the callback promise on timeout', async () => {
-    const { callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 50 });
+    const { callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL, timeoutMs: 50 });
     cleanup = close;
 
     await expect(callbackPromise).rejects.toThrow('timed out');
   });
 
   it('rejects the callback promise when close() is called before any callback', async () => {
-    const { callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
 
     await close();
 
@@ -135,7 +155,7 @@ describe('startAuthServer', () => {
   });
 
   it('uses only the first valid callback and rejects (409) a second one', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     const first = await fetch(
@@ -159,7 +179,7 @@ describe('startAuthServer', () => {
     // small window where keep-alive connections can still deliver a second request.
     // We simulate this by sending the second request immediately after the first.
     // The settled guard should return 409 if the connection is still alive.
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     // First valid callback — server sets settled = true then calls server.close()
@@ -192,7 +212,7 @@ describe('startAuthServer', () => {
   });
 
   it('returns 405 for non-GET methods on /callback', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 100 });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL, timeoutMs: 100 });
     cleanup = close;
     pendingCallback = callbackPromise;
 
@@ -204,7 +224,7 @@ describe('startAuthServer', () => {
   });
 
   it('preserves "+" characters in the email (alice+tag@example.com)', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     const aliasedEmail = 'alice+tag@example.com';
@@ -221,7 +241,7 @@ describe('startAuthServer', () => {
     // Because the server is already torn down, the most likely observable is a
     // connection-level error. The contract we care about is: the promise was
     // rejected by close() and is NOT later overwritten by the callback.
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
 
     await close();
     await expect(callbackPromise).rejects.toThrow('Auth server closed');
@@ -235,7 +255,7 @@ describe('startAuthServer', () => {
   });
 
   it('does not reject after successful callback even if timeout is short', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 100 });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL, timeoutMs: 100 });
     cleanup = close;
 
     await fetch(
@@ -249,7 +269,7 @@ describe('startAuthServer', () => {
   });
 
   it('close() after callback received does not change the resolved value', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
 
     await fetch(
       `http://127.0.0.1:${port}/callback?token=nt_session_keep&email=a%40b.com&state=${NONCE}`,
@@ -265,7 +285,7 @@ describe('startAuthServer', () => {
   });
 
   it('close() can be called safely even after server already shut down', async () => {
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
 
     await fetch(
       `http://127.0.0.1:${port}/callback?token=nt_session_abc&email=a%40b.com&state=${NONCE}`,
@@ -282,7 +302,7 @@ describe('startAuthServer', () => {
     // from "eq < 0" to "eq <= 0", a valid pair like "token=t" (eq > 0) would
     // still be found, but a pair like "=t" would be incorrectly skipped. We
     // verify the parser skips the empty-key pair and still finds valid params.
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     // Manually craft a URL with a leading "=junk" pair before valid params
@@ -301,7 +321,7 @@ describe('startAuthServer', () => {
     // A token containing a literal "?" is encoded as "%3F" in the URL. When the
     // raw parser calls decodeURIComponent on the raw value it becomes "x?foo".
     // We verify this round-trip works correctly.
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL });
     cleanup = close;
 
     // token value contains a literal "?" (percent-encoded as %3F in the URL)
@@ -318,7 +338,7 @@ describe('startAuthServer', () => {
   it('a valid callback arriving after the timeout fires does not resolve the already-rejected promise', async () => {
     // Attach a no-op catch handler immediately to suppress unhandled-rejection
     // warnings that can fire before our explicit rejects.toThrow assertion runs.
-    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, timeoutMs: 50 });
+    const { port, callbackPromise, close } = await startAuthServer({ expectedState: NONCE, appUrl: APP_URL, timeoutMs: 50 });
     callbackPromise.catch(() => {});
     cleanup = close;
 

@@ -17,12 +17,19 @@ resolved: null
 
 This fix covers **Phases 2 and 3** of a four-phase plan.
 
+### Architectural commitment: no SDK in the heavy sense
+
+The roadmap explicitly does **not** ship a multi-language transport-bearing SDK matrix. Three primitives carry the load:
+
+1. **Zod schemas in `no-tickets-service`** — canonical event-type definitions, auto-published as language-native schemas packages (Zod / Pydantic / Go structs). Types and validation only; zero transport code.
+2. **Rust binary (`nt`) — this fix.** Canonical transport. Distributed via every package manager. Handles auth, retries, error mapping, source merging, validation against bundled JSON Schemas. Supports `--stream` mode for warm in-process publishing from per-language wrappers.
+3. **Per-language wrapper packages (~50–80 LOC each)** — pure spawn-glue over the binary. Hide stdio, parse structured errors, return typed Promises/results. They are *not* SDKs; they are syntactic sugar.
+
 ### Rationale
 
-- **Phase 1 — fix the TS surface.** Need a working baseline for CLI publish, shared validation, project registry, and the schema-distribution model before rewriting in Rust.
-- **Phase 2/3 (this fix) — Rust binary, distributed everywhere.** CLI and MCP shouldn't require a Node runtime. *Everyone*, regardless of language, gets first-class CLI/MCP via a single binary distributed through every relevant package manager.
-- **Post-Phase-3 steady state**: everyone uses the Rust binary for CLI/MCP. TS users additionally have the programmatic SDK from Phase 1. Python/Go users in this window either shell out to the binary or hit the HTTP endpoint directly.
-- **Phase 4 — per-language SDKs on demand.** Built only when a language's adoption justifies it. Don't pre-build.
+- **Phase 1 — fix the TS surface.** Need a working baseline for CLI publish, project registry, schema-distribution model, and a transitional TS scaffold for staging-test publishing before rewriting in Rust.
+- **Phase 2/3 (this fix) — Rust binary, distributed everywhere.** CLI and MCP shouldn't require a Node runtime. *Everyone*, regardless of language, gets first-class CLI/MCP via a single binary distributed through every relevant package manager. The TS package this repo currently publishes is reshaped: same name, same `import { publish }` API, but its body becomes `execFile('nt', ...)` (or warm-stream variant). Consumers don't notice the swap.
+- **Phase 4 — per-language wrappers on demand.** Each language gets a ~50-LOC wrapper + a schemas package (codegen-derived from Zod). Built when adoption justifies it.
 
 ### Phase-by-phase user journey by language
 
@@ -30,18 +37,20 @@ This fix covers **Phases 2 and 3** of a four-phase plan.
 |---|---|---|---|
 | **CLI** (`nt publish ...`) | TS-via-npm CLI | **Rust binary (every package manager)** | Rust binary (unchanged) |
 | **MCP server** (agent tool calls) | TS server via npm | **Rust binary** | Rust binary (unchanged) |
-| **Programmatic — TS** (`import { publish }`) | TS SDK | TS SDK (carried over) | Thin TS SDK (matches Python/Go shape) |
-| **Programmatic — Python** | None (use CLI or raw HTTP) | None (use CLI or raw HTTP) | Thin Python SDK *if demanded* |
-| **Programmatic — Go** | None (use CLI or raw HTTP) | None (use CLI or raw HTTP) | Thin Go SDK *if demanded* |
+| **In-code TS** (`import { publish }`) | Transitional TS scaffold | **TS wrapper (~50–80 LOC, spawns binary in `--stream` mode)** — same import path; transparent migration via the npm wrapper | TS wrapper (unchanged) |
+| **In-code Python** | None (raw HTTP or CLI) | None (raw HTTP or CLI) | Python wrapper (~50–80 LOC, `subprocess.Popen` streaming) + Pydantic schemas package |
+| **In-code Go** | None (raw HTTP or CLI) | None (raw HTTP or CLI) | Go wrapper (~50–80 LOC, `exec.Cmd` streaming) + struct schemas package |
+
+The "wrapper" pattern is identical across languages. Only the spawn primitive changes. All three call out to the same Rust binary against the same wire contract.
 
 ### Phase dependencies
 
 | Phase | Fix | What lands | Depends on |
 |---|---|---|---|
-| **1** | `publish-shared-surfaces.md` | TS CLI `publish` wired, shared validation, project registry, npm-bundled Zod schemas | — |
-| **2 (this fix)** | `cross-platform-cli-binary.md` | Full Rust rewrite of CLI + MCP, validating against the JSON Schema build artifact from `no-tickets-service`. TS CLI and MCP retired. | Phase 1 (defines the surface to port) |
-| **3 (this fix)** | same | Multi-channel distribution: cargo, Homebrew, Scoop, deb/rpm, npm wrapper, install script | Phase 2 |
-| **4** | future fix | Thin TS / Python / Go SDKs — same shape across languages. TS package post-Phase 4 = SDK only. | Phase 3 (stable wire/binary contract) — can run in parallel given capacity |
+| **1** | `publish-shared-surfaces.md` | TS CLI `publish` wired (transitional scaffold); Zod schemas extracted to `@magic-ingredients/no-tickets-schemas`; project registry; flag shape | — |
+| **2 (this fix)** | `cross-platform-cli-binary.md` | Full Rust rewrite of CLI + MCP, validating against the JSON Schema build artifact from `no-tickets-service`. **`--stream` mode** for persistent-subprocess wrappers. **Structured-error contract** on stderr. TS CLI and MCP scaffold retired. | Phase 1 (defines the surface to port) |
+| **3 (this fix)** | same | Multi-channel distribution: cargo, Homebrew, Scoop, deb/rpm, npm wrapper, install script. npm wrapper makes existing `import { publish }` keep working — body becomes `execFile('nt', ...)` (or `--stream` variant). | Phase 2 |
+| **4** | future fix | Python + Go schemas packages (codegen from Zod source, server-side pipeline) + Python + Go wrapper packages (~50–80 LOC each). | Phase 3 (stable binary + structured-error contract + `--stream` contract); also depends on server-side codegen pipeline |
 
 ## Issue Summary
 
@@ -128,6 +137,66 @@ Specific items to confirm a Rust rewrite is feasible against current TS surface:
 - [ ] **OAuth callback flow** — `tokio` + `axum` (or `hyper` directly) for the local HTTP listener; cross-platform browser opener (`opener` crate). Confirm 0.0.0.0 binding and timeout semantics match the TS implementation.
 - [ ] **Cross-compile toolchain** — `cross` or `cargo-zigbuild` for arm64, Windows, musl Linux. Confirm CI matrix builds cleanly without per-platform runners (cost driver).
 - [ ] **Auth file format** — keep `~/.notickets/credentials` and `~/.notickets/config.json` byte-compatible with the TS implementation so users can switch back if needed during rollout.
+
+## Public binary contract (consumed by per-language wrappers)
+
+The Rust binary is the integration boundary for every consumer outside the Rust crate — CLI users, MCP clients, and per-language wrappers. Two parts of its surface are explicit deliverables of this fix because every wrapper across languages depends on them.
+
+### Structured-error contract (stderr + exit codes)
+
+The binary exits with a typed status code and writes structured JSON to stderr on failure. Wrappers in any language map exit code → typed exception by parsing stderr.
+
+| Exit code | Class | stderr JSON shape |
+|---|---|---|
+| 0 | success | (none; stdout has the response) |
+| 1 | `validation_error` | `{ error: "validation_error", typeId, batchIndex, issues: [{ path, message }] }` |
+| 2 | `unknown_event_type` | `{ error: "unknown_event_type", typeId, suggestions: [string] }` |
+| 3 | `permission_denied` | `{ error: "permission_denied", domain }` |
+| 4 | `transport_error` | `{ error: "transport_error", message, retriable }` (after retries exhausted) |
+| 5 | `not_authenticated` | `{ error: "not_authenticated", message }` |
+| 6 | `project_not_registered` | `{ error: "project_not_registered", project, knownProjects: [string] }` |
+| 7 | `usage` | `{ error: "usage", message }` (bad flags, missing required args) |
+| 64+ | reserved | future error classes |
+
+This shape MUST stay backward-compatible across binary releases. Wrappers compiled against an old version must continue to function against new binary versions (additive changes only — new exit codes, new fields, never renames or removals).
+
+### `--stream` mode (persistent-subprocess publishing)
+
+Per-event spawn cost is ~50 ms (fast, but compounds at high event rates). To support warm in-process publishing from per-language wrappers, the binary supports a stream mode:
+
+```
+nt publish --stream [--project DEFAULT] [--token-env-var X] [--url Y]
+```
+
+Behavior:
+- **stdin**: one JSON object per line. Each line is `{ id, type, data, project?, subject?, occurredAt?, ... }` — id is a caller-chosen correlation token (any string).
+- **stdout**: one JSON object per line. Each line is `{ id, ok: true, ingested, deduped, ids } | { id, ok: false, error: <typed-error> }` — id matches the request line.
+- **stderr**: reserved for fatal binary-level errors (e.g., bad startup flags). Not used for per-event errors (those go on stdout with `ok: false`).
+- **EOF on stdin**: binary drains in-flight requests, writes remaining responses, exits 0.
+- **stdin closed mid-flight**: binary writes responses for completed requests, exits 0. In-progress requests get `ok: false, error: { error: "transport_aborted" }`.
+
+Cost analysis:
+- First call: ~50 ms (binary cold start)
+- Subsequent calls: ~1 ms (pipe write + read)
+
+This is the same pattern as `git cat-file --batch`, `clangd`, `aspell -a` — the well-trodden way for tools to handle warm state.
+
+### Multi-project per stream
+
+Each stream request line MAY override the default `--project` by including `project` in the JSON. The binary uses per-line override → flag default → `NO_TICKETS_TOKEN` env. Token resolution happens once per project per stream session (cached). This lets a single subprocess serve many projects from one parent — useful for CI orchestrators like tiny-brain.
+
+### Wrapper expectations (informational)
+
+Wrappers ship in this repo (TS) and in the language-specific repos (Python/Go) as part of Phase 4. Their job:
+
+- Spawn-on-first-publish; reuse for subsequent calls
+- Match request id to response by an internal map
+- Handle subprocess crash by re-spawning transparently
+- Kill subprocess on parent exit (POSIX process group inheritance handles this on most platforms; explicit `proc.kill()` on parent's exit handler as safety belt)
+- Parse stderr for fatal errors and `ok: false` payloads on stdout for per-event errors
+- Translate to typed exceptions in the caller's language
+
+These behaviors are informational here; they live in the per-language wrapper packages, not in the binary.
 
 ## Runtime dependencies — design for zero
 
@@ -226,6 +295,43 @@ Port all commands to Rust: `init`, `status`, `publish`, `project link/list/unlin
 
 **Acceptance:**
 - Feature-equivalence smoke matrix (above) passes for every command
+
+### 4a. Structured error contract on stderr + exit codes
+status: not_started
+
+Implement the structured-error contract documented in "Public binary contract" above. Every failure case maps to a typed exit code with a single-line JSON object on stderr. This is the contract per-language wrappers parse; backward compatibility is mandatory.
+
+**Files to modify/create:**
+- `crates/nt-cli/src/error.rs` — typed error variants + serialization
+- `crates/nt-cli/tests/structured-errors.rs` — exit-code + stderr-shape assertions for each error class
+- `docs/binary-error-contract.md` — public contract doc consumers can rely on
+
+**Acceptance:**
+- Each error class produces the documented exit code + stderr JSON shape
+- Adding a new error class is purely additive (new exit code; old ones unchanged)
+- Contract doc lives at a stable URL referenced by per-language wrappers
+
+### 4b. `--stream` mode for warm in-process publishing
+status: not_started
+
+Implement the streaming protocol documented in "Public binary contract": JSONL on stdin → JSONL on stdout, id-correlated, multi-project per session, graceful EOF.
+
+This is what per-language wrappers use to keep the binary alive across many publish calls (~1 ms per event after first spawn vs ~50 ms cold). Same pattern as `git cat-file --batch`, `clangd`, `aspell -a`.
+
+**Files to modify/create:**
+- `crates/nt-cli/src/commands/publish_stream.rs`
+- `crates/nt-cli/tests/stream-mode.rs` — assertions on:
+  - Request/response id correlation
+  - Multi-project per stream (per-line `project` overrides flag default)
+  - EOF drains in-flight + exits 0
+  - Stdin-closed-mid-flight produces `ok: false, transport_aborted` for in-progress
+  - Backpressure (large request, slow consumer): no deadlock
+- `docs/binary-stream-protocol.md` — public protocol doc
+
+**Acceptance:**
+- Ten thousand events streamed through one subprocess in <2 s end-to-end (bounded by network + server, not binary overhead)
+- Per-event overhead measured at <2 ms median on the wrapper side
+- Crash recovery: if the binary panics mid-stream, in-flight responses surface as `ok: false, transport_aborted`; wrapper can re-spawn cleanly
 
 ### 5. Full MCP server surface port
 status: not_started

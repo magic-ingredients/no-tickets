@@ -17,33 +17,46 @@ resolved: null
 
 This fix is **Phase 1** of a four-phase plan for the no-tickets client surface.
 
-### Rationale
+### Architectural commitment: no SDK in the heavy sense
 
-- **Phase 1 — fix the TS surface.** Need a working baseline for CLI publish, shared validation, project registry, and the schema-distribution model before doing anything ambitious.
-- **Phase 2/3 — Rust binary, distributed everywhere.** CLI and MCP shouldn't require a Node runtime. After this, *everyone* (any language, any environment) gets first-class CLI/MCP via a single binary distributed through every relevant package manager.
-- **Post-Phase-3 steady state**: everyone uses the Rust binary for CLI/MCP. TS users *additionally* have the programmatic SDK from Phase 1. Python/Go/Rust/etc. users in this window either shell out to the binary from their code, or hit the HTTP endpoint directly.
-- **Phase 4 — per-language SDKs on demand.** When concrete adoption of (e.g.) Python or Go shows up, that language gets a thin SDK matching the TS SDK's shape. The TS SDK becomes one of three peers, not the only option. Don't pre-build them.
+The roadmap does **not** ship a traditional multi-language SDK matrix. After working through the design, three primitives carry the load — none of them is a transport-bearing SDK:
+
+1. **Zod schemas in `no-tickets-service`** — canonical event-type definitions. Auto-published as language-native schemas packages (Zod for TS, Pydantic for Python, structs for Go). These packages hold *types and validation only* — zero transport code.
+2. **Rust binary (`nt`)** — canonical transport. Distributed via every package manager. Handles auth, retries, error mapping, source merging, validation against bundled JSON Schemas.
+3. **Per-language wrapper packages (~50 LOC each)** — pure spawn-glue over the binary. Hide stdio, parse structured errors, return typed Promises/results. They are *not* SDKs; they are syntactic sugar.
+
+Once core code (validation, transport, error mapping, auth) lives in the Rust binary, an "SDK" is reduced to a 50-line `execFile` wrapper. The 50 ms it saves vs raw spawn is worth it for ergonomics, but doesn't justify a per-language transport stack.
+
+The TS package this repo currently publishes (`@magic-ingredients/no-tickets`) ends up as one of those wrapper packages post-Phase-3 — same name, same `import { publish } from '@magic-ingredients/no-tickets'` API, but the body becomes `execFile('nt', …)`. Consumers don't notice the swap.
+
+### Rationale by phase
+
+- **Phase 1 (this fix)** — wire the TS CLI publish path so staging testing works; extract Zod schemas to a publishable npm package (the canonical types source); land the project registry shape that the Rust binary will inherit. Internal "SDK" code (`Client`, `publish()`, `validateEventLocally`) is **transitional scaffold** — it makes the TS CLI work, but it's not exported as a stable public API. Pruned to internals.
+- **Phase 2/3** — Rust binary replaces the TS CLI/MCP. The transitional TS scaffold gets deleted. The TS package's `bin/` becomes an npm wrapper that downloads the Rust binary; programmatic exports collapse to the spawn wrapper.
+- **Phase 4** — Python and Go wrapper packages (~50 LOC each) plus codegen pipeline for their schemas (Pydantic / Go structs from the same Zod source). Each language ends up with the same shape: schemas package + thin wrapper. Builds when adoption demands; not pre-emptive.
 
 ### Phase-by-phase user journey by language
 
 | Surface used | After Phase 1 | After Phase 3 | After Phase 4 |
 |---|---|---|---|
-| **CLI** (`nt publish ...`) | TS-via-npm CLI | Rust binary (every package manager) | Rust binary (unchanged) |
-| **MCP server** (agent tool calls) | TS server via npm | Rust binary | Rust binary (unchanged) |
-| **Programmatic — TS** (`import { publish }`) | TS SDK | TS SDK (carried over) | Thin TS SDK (matches Python/Go shape) |
-| **Programmatic — Python** | None (use CLI or raw HTTP) | None (use CLI or raw HTTP) | Thin Python SDK *if demanded* |
-| **Programmatic — Go** | None (use CLI or raw HTTP) | None (use CLI or raw HTTP) | Thin Go SDK *if demanded* |
+| **CLI** (`nt publish ...`) | TS-via-npm CLI | **Rust binary** (every package manager) | Rust binary (unchanged) |
+| **MCP server** (agent tool calls) | TS server via npm | **Rust binary** | Rust binary (unchanged) |
+| **In-code TS** (`import { publish }`) | Transitional TS scaffold | TS wrapper (~50 LOC, spawns binary) — same import path; transparent migration via the npm wrapper | TS wrapper (unchanged) |
+| **In-code Python** | None (raw HTTP or CLI) | None (raw HTTP or CLI) | Python wrapper (~50 LOC, `subprocess.run`) + Pydantic schemas package |
+| **In-code Go** | None (raw HTTP or CLI) | None (raw HTTP or CLI) | Go wrapper (~50 LOC, `os/exec`) + struct schemas package |
+
+The "wrapper" pattern is identical across languages; only the spawn primitive changes (`execFile` / `subprocess.run` / `exec.Command`). All three call out to the same Rust binary against the same wire contract.
 
 ### Phase dependencies
 
 | Phase | Fix | What lands | Depends on |
 |---|---|---|---|
-| **1 (this fix)** | `publish-shared-surfaces.md` | TS CLI `publish` wired, validation in SDK shared by CLI/MCP, project registry, `--token` / `--token-stdin` / `--token-env-var` shape, drop CI auto-detection, npm-bundled Zod schemas as source of truth | — |
-| **2** | `cross-platform-cli-binary.md` | Full Rust rewrite of CLI + MCP server. Validates against the JSON Schema build artifact from `no-tickets-service`. TS CLI and MCP code retired. | Phase 1 (defines the surface to port) |
-| **3** | (same fix as Phase 2) | Multi-channel distribution: cargo, Homebrew, Scoop, deb/rpm, npm wrapper (for transparent migration of current `npx no-tickets` users), install script | Phase 2 |
-| **4** | future fix | Thin TS / Python / Go SDKs — same shape across languages. TS package post-Phase 4 = SDK only (CLI/MCP have moved to Rust). | Phase 3 (stable wire/binary contract) — though strictly only the wire contract is needed; can run in parallel if pressing |
+| **1 (this fix)** | `publish-shared-surfaces.md` | TS CLI `publish` wired (transitional scaffold); Zod schemas extracted to `@magic-ingredients/no-tickets-schemas`; project registry; `--token` / `--token-stdin` / `--token-env-var` shape; drop CI auto-detection. Internal "SDK" exports are transitional, not public API. | — |
+| **2** | `cross-platform-cli-binary.md` | Full Rust rewrite of CLI + MCP, validating against JSON Schema build artifact from `no-tickets-service`. TS CLI/MCP scaffold retired. Structured-error contract on stderr. | Phase 1 (defines the surface to port) |
+| **3** | (same fix as Phase 2) | Multi-channel distribution. npm wrapper transparently migrates current `npx no-tickets` users. TS package's `import { publish }` keeps working — body becomes `execFile('nt', …)`. | Phase 2 |
+| **4** | future fix | Python + Go schemas packages (codegen from Zod source, server-side pipeline) + Python + Go wrapper packages (~50 LOC each). | Phase 3 (stable binary + structured-error contract); also depends on server-side codegen pipeline |
 
-Phase 1 ships first because Phase 2 needs a concrete surface to port. 2 unlocks 3 (the binary needs to exist before it can be distributed). 4 can run in parallel with 2/3 if there's enough engineering capacity, but practically benefits from a stable wire/schema contract underneath.
+Phase 1 ships first because Phase 2 needs a concrete surface to port. 2 unlocks 3. 4 can run in parallel with 2/3 if capacity allows; practically benefits from a stable binary + structured-error contract.
 
 ## Issue Summary
 
@@ -72,15 +85,18 @@ no-tickets-service (server repo)
        │
        ├─► server runtime (validate inbound events)
        ├─► /v1/registry/event-types HTTP endpoint (Zod → JSON Schema, served with ETag)
-       └─► auto-publish to npm: @magic-ingredients/no-tickets-schemas
+       ├─► auto-publish to npm: @magic-ingredients/no-tickets-schemas
+       └─► (Phase 4) auto-codegen + publish to PyPI / Go module
 
-This SDK (no-tickets, where we are now)
-  └─► imports @magic-ingredients/no-tickets-schemas as a runtime dependency
-  └─► validateEventLocally reads from bundled Zod schemas — no network
-  └─► getEventType / listEventTypes HTTP code paths kept (used by future non-JS SDKs and by inspection commands like `nt registry list`)
+This SDK repo (no-tickets, where we are now)
+  ├─► (Phase 1) imports @magic-ingredients/no-tickets-schemas as a runtime dependency
+  │   └─► transitional TS CLI uses Zod schemas via `safeParse` for local validation
+  └─► (Phase 3) becomes a thin spawn-wrapper around the Rust binary; @nt-schemas
+      stays as a peer dep so TS users still get types from `import { aiCompletionRecordedV1 } from '@magic-ingredients/no-tickets-schemas'`
 
-Future Go / Python / Rust SDKs
-  └─► fetch from /v1/registry/event-types, cache locally, use idiomatic schema lib
+Per-language schemas packages (types only — zero transport)
+  ├─► Phase 1: TS — @magic-ingredients/no-tickets-schemas (Zod, hand-authored)
+  └─► Phase 4: Python (Pydantic, generated) + Go (structs, generated)
 ```
 
 **Why npm-bundled for JS:**
@@ -233,26 +249,38 @@ The machine-hash feature (`NO_TICKETS_INCLUDE_MACHINE=1`) stays — it's already
 
 ## Tasks
 
-### 1. SDK — extract local validation into `validateEventLocally`
+### 1. Validation — consume `@magic-ingredients/no-tickets-schemas` directly
 status: not_started
 
-Move `src/cli/lib/schema-validate.ts` logic into `src/transport/validate.ts` and export from the SDK barrel. Signature:
+**Note:** earlier draft of this fix proposed an SDK-level `validateEventLocally(event, typeSpec)`. After the architectural decision to drop SDK transport in favour of a Rust binary + per-language wrappers, validation moves into the schemas package itself. The schemas package exports a `byTypeId` map; consumers do `byTypeId[event.type].safeParse(event.data)`. No separate validator wrapper is needed.
+
+Update `src/cli/lib/schema-validate.ts` to be a tiny adapter that converts Zod's `safeParse` result to our `ValidationIssue[]` shape (used by the CLI's error formatting):
 
 ```ts
+import { byTypeId } from '@magic-ingredients/no-tickets-schemas';
+
 export interface ValidationIssue { readonly path: string; readonly message: string; }
+
 export function validateEventLocally(
+  typeId: string,
   data: unknown,
-  typeSpec: { readonly schema: JsonSchema },
-): readonly ValidationIssue[];
+): readonly ValidationIssue[] | { readonly unknownType: true } {
+  const schema = byTypeId[typeId];
+  if (!schema) return { unknownType: true };
+  const result = schema.safeParse(data);
+  if (result.success) return [];
+  return result.error.issues.map((i) => ({
+    path: i.path.join('.'),
+    message: i.message,
+  }));
+}
 ```
 
-CLI and MCP both depend on this. Tests cover happy path + each Zod/JSON-schema rejection shape.
+The MCP handler and CLI both call this. Note: this is intentionally **not exported as public SDK API**. It's a CLI/MCP scaffold internal to this repo. After Phase 2/3, this code is deleted along with the rest of the TS scaffold; consumers using the schemas package directly call Zod's `safeParse` themselves.
 
 **Files to modify/create:**
-- `src/transport/validate.ts` (new)
-- `src/transport/__tests__/validate.test.ts` (new)
-- `src/transport/index.ts` (export)
-- `src/cli/lib/schema-validate.ts` (delete after callers migrate)
+- `src/cli/lib/schema-validate.ts` (rewrite to use `byTypeId` from the schemas package)
+- `src/cli/lib/__tests__/schema-validate.test.ts` (cases: known type valid, known type invalid, unknown type)
 
 ### 2. SDK — project registry loader + `clientForProject` factory
 status: not_started

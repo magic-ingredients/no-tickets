@@ -155,6 +155,41 @@ describe('resolveProjectAuth', () => {
       expect(() => resolveProjectAuth(proto)).toThrow(ProjectNotRegisteredError);
     }
   });
+
+  it('throws on invalid JSON with a path-naming error message', async () => {
+    await writeConfig('{this is :not, valid"json"}');
+
+    // Not ProjectNotRegisteredError — the file exists but is corrupt; we
+    // surface that as a hard error so the user knows to fix the file
+    // rather than treating it as "no projects registered".
+    expect(() => resolveProjectAuth('myapp')).toThrow(/invalid JSON/);
+    expect(() => resolveProjectAuth('myapp')).toThrow(/config\.json/);
+  });
+
+  it('throws when project entry references a profile that exists but is malformed (apiUrl/authUrl missing)', async () => {
+    // Distinct from the dangling-profile case: here the profile key IS
+    // present in profiles{} but its body is missing required URL fields.
+    // The error message should say "malformed", not "not defined".
+    await writeConfig(JSON.stringify({
+      profiles: {
+        broken: { apiUrl: 'https://x' /* authUrl missing */ },
+      },
+      projects: {
+        myapp: { profile: 'broken', pushToken: 'nt_push_x' },
+      },
+    }));
+
+    expect(() => resolveProjectAuth('myapp')).toThrow(/malformed/);
+    expect(() => resolveProjectAuth('myapp')).not.toThrow(/not defined/);
+  });
+
+  it('treats projects: <non-object> in config as "no projects registered"', async () => {
+    // Defensive guard: a malformed `projects: 42` value should not be
+    // indexed via Object.keys / Object.hasOwn as if it were a record.
+    await writeConfig(JSON.stringify({ profiles: {}, projects: 42 }));
+
+    expect(() => resolveProjectAuth('myapp')).toThrow(ProjectNotRegisteredError);
+  });
 });
 
 describe('clientForProject', () => {
@@ -216,5 +251,33 @@ describe('clientForProject', () => {
   it('throws ProjectNotRegisteredError when the project name is unknown', async () => {
     await writeConfig(VALID_CONFIG);
     expect(() => clientForProject('unknown')).toThrow(ProjectNotRegisteredError);
+  });
+
+  it('exercises the production publish path: publish(client, [event]) carries Bearer auth + correct apiUrl', async () => {
+    // Production callers don't use Client#fetchRaw — they go through
+    // publish() → Client#request. Pin that the registry-resolved values
+    // flow through the entire publish pipeline, not just the raw HTTP seam.
+    await writeConfig(VALID_CONFIG);
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ingested: 1, deduped: 0, ids: ['evt-x'] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    const client = clientForProject('myapp', { fetch: fetchSpy });
+
+    const { publish } = await import('../../transport/events.js');
+    await publish(client, [
+      { type: 'product.epic.created.v1', data: { epicId: 'e', projectId: 'p', title: 't' } },
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const [url, init] = fetchSpy.mock.calls[0] as [string | URL, RequestInit];
+    expect(String(url)).toBe('https://api-staging.example.com/v1/events');
+    const headers = new Headers(init.headers as HeadersInit);
+    expect(headers.get('authorization')).toBe('Bearer nt_push_myapp_staging_xxx');
   });
 });

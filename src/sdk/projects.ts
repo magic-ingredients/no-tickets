@@ -29,9 +29,12 @@ interface ProfileEntry {
   readonly authUrl: string;
 }
 
+// Read with `unknown` fields and narrow at use-site — `parsed as ConfigFile`
+// would let a malformed `projects: 42` survive to `Object.keys` / `Object.hasOwn`
+// and then NPE on indexing. The runtime guards downstream do the narrowing.
 interface ConfigFile {
-  readonly profiles?: Readonly<Record<string, ProfileEntry>>;
-  readonly projects?: Readonly<Record<string, ProjectEntry>>;
+  readonly profiles?: unknown;
+  readonly projects?: unknown;
 }
 
 export class ProjectNotRegisteredError extends Error {
@@ -78,6 +81,10 @@ function isProfileEntry(v: unknown): v is ProfileEntry {
   return typeof e['apiUrl'] === 'string' && typeof e['authUrl'] === 'string';
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 export function resolveProjectAuth(name: string): ResolvedProjectAuth {
   const { config, exists } = readConfig();
   if (!exists) {
@@ -87,7 +94,7 @@ export function resolveProjectAuth(name: string): ResolvedProjectAuth {
     );
   }
 
-  const projects = config.projects ?? {};
+  const projects = isRecord(config.projects) ? config.projects : {};
   // Object.hasOwn so prototype names ('toString' / 'hasOwnProperty') don't
   // slip past the missing-entry guard via the prototype chain.
   if (!Object.hasOwn(projects, name)) {
@@ -99,9 +106,9 @@ export function resolveProjectAuth(name: string): ResolvedProjectAuth {
     );
   }
 
-  const entry = projects[name];
+  const entry: unknown = projects[name];
   if (!isProjectEntry(entry)) {
-    const e = (entry ?? {}) as Record<string, unknown>;
+    const e = isRecord(entry) ? entry : {};
     const missing: string[] = [];
     if (typeof e['profile'] !== 'string') missing.push('profile');
     if (typeof e['pushToken'] !== 'string') missing.push('pushToken');
@@ -110,12 +117,22 @@ export function resolveProjectAuth(name: string): ResolvedProjectAuth {
     );
   }
 
-  const profiles = config.profiles ?? {};
-  const profile = profiles[entry.profile];
-  if (profile === undefined || !isProfileEntry(profile)) {
+  const profiles = isRecord(config.profiles) ? config.profiles : {};
+  // No `profile === undefined ||` guard needed — isProfileEntry returns
+  // false for undefined, so the single check covers both "missing" and
+  // "present but malformed" cases. Error message distinguishes them
+  // by inspecting Object.hasOwn.
+  const profile: unknown = profiles[entry.profile];
+  if (!isProfileEntry(profile)) {
+    if (!Object.hasOwn(profiles, entry.profile)) {
+      throw new Error(
+        `project "${name}" references profile "${entry.profile}" but that profile is not defined ` +
+          `in ${configPath()}.`,
+      );
+    }
     throw new Error(
-      `project "${name}" references profile "${entry.profile}" but that profile is not defined ` +
-        `in ${configPath()}.`,
+      `project "${name}" references profile "${entry.profile}" but that profile entry is ` +
+        `malformed in ${configPath()} (apiUrl and authUrl must both be strings).`,
     );
   }
 

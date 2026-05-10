@@ -582,7 +582,34 @@
         {
           "id": "task-2",
           "description": "SDK — project registry loader + `clientForProject` factory",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "39f3554591f717b90a209f82694ce5cb43815904",
+          "testCommitSha": "f4b8715244e7199aa69fb76ee1e61ab9270d6c05",
+          "redStartedAt": "2026-05-10T14:24:49.668Z",
+          "greenStartedAt": "2026-05-10T14:30:49.919Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-10T14:32:13.466Z",
+              "completedAt": "2026-05-10T14:33:48.122Z",
+              "reviewSha": "39f3554",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T14:33:48.122Z",
+              "refactorCommitSha": "cb3d83da9dd1cd7e5bf6d404e22d853af4783ad3",
+              "refactorCompletedAt": "2026-05-10T14:36:38.927Z",
+              "refactorCommittedAt": "2026-05-10T14:36:38.927Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-10T14:36:38.927Z",
+              "completedAt": "2026-05-10T14:38:30.798Z",
+              "reviewSha": "cb3d83da9dd1cd7e5bf6d404e22d853af4783ad3",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T14:38:30.798Z",
+              "refactorCommitSha": "46bf04a3674ec02bc8b939f1a03c0b4cbbf181fb",
+              "refactorCompletedAt": "2026-05-10T14:40:50.694Z",
+              "refactorCommittedAt": "2026-05-10T14:40:50.694Z"
+            }
+          },
+          "completedAt": "2026-05-10T14:40:50.694Z"
         },
         {
           "id": "task-3",
@@ -1087,5 +1114,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-05-10T14:14:47.421Z"
+  "lastSynced": "2026-05-10T14:40:52.166Z"
 }

@@ -113,7 +113,7 @@ describe('resolveProjectAuth', () => {
     expect(() => resolveProjectAuth('myapp')).toThrow(ProjectNotRegisteredError);
   });
 
-  it('throws when project entry references a profile that is not defined', async () => {
+  it('throws when project entry references a profile that is not defined (distinct error from malformed)', async () => {
     await writeConfig(JSON.stringify({
       profiles: {},
       projects: {
@@ -121,7 +121,12 @@ describe('resolveProjectAuth', () => {
       },
     }));
 
-    expect(() => resolveProjectAuth('orphan')).toThrow(/no-such-profile/);
+    // Distinguish "not defined" from "malformed" — both branches mention
+    // the profile name, so /no-such-profile/ alone doesn't pin which one.
+    expect(() => resolveProjectAuth('orphan')).toThrow(/not defined/);
+    expect(() => resolveProjectAuth('orphan')).not.toThrow(/malformed/);
+    // Pin the path-naming guidance so a regression dropping it fails.
+    expect(() => resolveProjectAuth('orphan')).toThrow(/config\.json/);
   });
 
   it('throws when project entry is malformed (missing pushToken)', async () => {
@@ -181,6 +186,10 @@ describe('resolveProjectAuth', () => {
 
     expect(() => resolveProjectAuth('myapp')).toThrow(/malformed/);
     expect(() => resolveProjectAuth('myapp')).not.toThrow(/not defined/);
+    // Pin that the project + profile names both appear so the user can
+    // locate the offending entry without grepping config.json themselves.
+    expect(() => resolveProjectAuth('myapp')).toThrow(/myapp/);
+    expect(() => resolveProjectAuth('myapp')).toThrow(/broken/);
   });
 
   it('treats projects: <non-object> in config as "no projects registered"', async () => {
@@ -189,6 +198,28 @@ describe('resolveProjectAuth', () => {
     await writeConfig(JSON.stringify({ profiles: {}, projects: 42 }));
 
     expect(() => resolveProjectAuth('myapp')).toThrow(ProjectNotRegisteredError);
+  });
+
+  it('treats projects: null in config as "no projects registered"', async () => {
+    // null is typeof 'object' — without the explicit `v !== null` check in
+    // isRecord, Object.keys(null) would throw. Pin the guard.
+    await writeConfig(JSON.stringify({ profiles: {}, projects: null }));
+
+    expect(() => resolveProjectAuth('myapp')).toThrow(ProjectNotRegisteredError);
+  });
+
+  it('treats profiles: null in config as a missing profile (project entry → malformed-or-not-defined)', async () => {
+    // Same guard, profiles side. Without `v !== null`, indexing
+    // null[entry.profile] would throw a TypeError instead of producing
+    // the user-friendly "not defined" / "malformed" message.
+    await writeConfig(JSON.stringify({
+      profiles: null,
+      projects: { myapp: { profile: 'staging', pushToken: 'nt_push_x' } },
+    }));
+
+    // Should not throw a low-level TypeError; should surface the
+    // not-defined error path with the profile name.
+    expect(() => resolveProjectAuth('myapp')).toThrow(/not defined/);
   });
 });
 

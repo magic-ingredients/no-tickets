@@ -44,7 +44,7 @@
     "prepack": "chmod +x bin/no-tickets.js"
   },
   "dependencies": {
-    "@magic-ingredients/no-tickets-schemas": "file:vendor/magic-ingredients-no-tickets-schemas-0.1.0.tgz",
+    "@magic-ingredients/no-tickets-schemas": "^0.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "gray-matter": "^4.0.3",
     "zod": "^3.25.0"

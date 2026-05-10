@@ -10,6 +10,11 @@ import { SDK_VERSION, sourceSchema } from '../core/source.js';
 // 'sdk') own the `source.name` decision, and CI scripts that want CI
 // provenance supply it explicitly via PublishEvent.source.attributes or
 // the CLI's --source-attribute flag.
+//
+// The list is intentionally kept exhaustive (including the provider-specific
+// runId / workflow vars detectSource() no longer reads) so the per-test
+// beforeEach hygiene is uniform: any future test that re-introduces a
+// CI-detection path will run under a known-clean env.
 const CI_ENV_VARS = [
   'CI',
   'GITHUB_ACTIONS',
@@ -82,15 +87,25 @@ describe('detectSource', () => {
       ['TRAVIS', 'true'],
     ];
 
-    it.each(PROVIDERS)('returns name: "sdk" even with %s set', (envVar, value) => {
-      vi.stubEnv(envVar, value);
-      expect(detectSource().name).toBe('sdk');
-    });
+    it.each(PROVIDERS)(
+      'returns name: "sdk" AND omits attributes.provider when %s is set',
+      (envVar, value) => {
+        // Per-provider pin (not just all-at-once) — provider precedence in
+        // the old implementation meant the "all stubbed" check could mask
+        // a half-revert that re-enabled, say, only `circleci`. Each provider
+        // must independently fail to leak `provider` / `runId` / `workflow`.
+        vi.stubEnv(envVar, value);
+        const source = detectSource();
+        expect(source.name).toBe('sdk');
+        expect(source.attributes?.provider).toBeUndefined();
+        expect(source.attributes?.runId).toBeUndefined();
+        expect(source.attributes?.workflow).toBeUndefined();
+      },
+    );
 
-    it('does NOT populate attributes.provider under any known CI env var', () => {
-      // Stub them all at once — if ANY single one slipped a `provider`
-      // attribute through, the assertion fails. The individual it.each
-      // above pins the name-only behavior per provider for legibility.
+    it('does NOT populate attributes.provider under any known CI env var (all-at-once defense)', () => {
+      // Belt-and-braces — even with every provider env var stubbed
+      // simultaneously, no `provider` attribute slips through.
       for (const [envVar, value] of PROVIDERS) {
         vi.stubEnv(envVar, value);
       }

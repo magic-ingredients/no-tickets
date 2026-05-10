@@ -446,13 +446,17 @@ describe('runPublishBatch — source merge edge cases', () => {
     );
 
     const event = publish.mock.calls[0]?.[0]?.[0];
-    expect(event?.source).toMatchObject({
+    expect(event?.source).toEqual({
       name: 'wrapper',
       attributes: { env: 'prod' },
     });
   });
 
-  it('keeps JSONL attributes when CLI has no --source-attribute flags', async () => {
+  it('keeps JSONL attributes when CLI has no flags — surface default "cli" still wins', async () => {
+    // No --source-name is passed; the cli surface default tag must still
+    // appear. The JSONL line carries only `attributes.region`, no top-level
+    // `name`, so mergeSourceShallow falls back to the cli default for name
+    // and merges the attributes bag in.
     const path = writeBatch(
       '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"attributes": {"region": "eu"}}}\n',
     );
@@ -462,13 +466,10 @@ describe('runPublishBatch — source merge edge cases', () => {
       out,
     );
 
-    await runPublishBatch(
-      { batchPath: path, sourceName: 'cli' },
-      deps,
-    );
+    await runPublishBatch(baseOptions(path), deps);
 
     const event = publish.mock.calls[0]?.[0]?.[0];
-    expect(event?.source).toMatchObject({
+    expect(event?.source).toEqual({
       name: 'cli',
       attributes: { region: 'eu' },
     });

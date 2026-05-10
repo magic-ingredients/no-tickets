@@ -95,9 +95,8 @@ export async function runPublishBatch(
   }
   const typeIndex = new Map(availableTypes.map((t) => [t.id, t]));
 
-  // Surface-specific default: stamp `name: 'cli'` on every event. JSONL
-  // lines override on top-level fields (per mergeSourceShallow), CLI flags
-  // override the default `cli` tag (spread order — flagsSource last).
+  // Surface default — spread order pins --source-name as the override;
+  // JSONL lines still override at top-level via mergeSourceShallow.
   let flagsSource: Partial<Source> | undefined;
   try {
     flagsSource = parseSourceFlags({

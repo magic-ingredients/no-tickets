@@ -89,10 +89,7 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  // Surface-specific default: every event published via `nt publish` carries
-  // name: 'cli' so it's distinguishable from MCP / direct-SDK provenance.
-  // --source-name overrides the surface tag (spread order — flagsSource last).
-  // --source-attribute attaches alongside the default cli name.
+  // Surface default — spread order pins --source-name as the override.
   let flagsSource: Partial<Source> | undefined;
   try {
     flagsSource = parseSourceFlags({

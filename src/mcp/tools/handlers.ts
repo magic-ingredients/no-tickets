@@ -12,8 +12,8 @@ import { synthesiseExample } from '../../lib/example-synth.js';
 import {
   UnknownEventTypeError,
   EventValidationError,
-  type ValidationIssue,
 } from '../../transport/errors.js';
+import { isKnownEventType } from '../../cli/lib/schema-validate.js';
 
 export interface ToolHandlerDeps {
   readonly events: {
@@ -147,26 +147,28 @@ export interface PublishEventResult {
 // MCP-side source of truth. The agent gets a structured error and saves
 // a round-trip when its payload is bogus. Mirrors the CLI's exit-code-2 /
 // exit-code-1 split (unknown type vs validation), but expressed as
-// transport-typed errors so error-mapping.ts can convert them to the
-// MCP-wire `unknown_event_type` / `event_validation` codes uniformly.
-// batchIndex is fixed at 0 because publish_event is singular by contract.
-const SINGULAR_BATCH_INDEX = 0;
-
-function validateAgainstBundledSchema(
-  typeId: string,
-  data: unknown,
-): void {
-  const schema = byTypeId[typeId as keyof typeof byTypeId];
-  if (schema === undefined) {
-    throw new UnknownEventTypeError(typeId, SINGULAR_BATCH_INDEX);
+// transport-typed errors so error-mapping.ts converts them uniformly.
+// Reuses isKnownEventType (Object.hasOwn — prototype-chain safe) so
+// `type: "toString"` cannot resolve to Object.prototype.toString.
+// batchIndex is 0 because publish_event is singular by contract.
+function validateAgainstBundledSchema(typeId: string, data: unknown): void {
+  if (!isKnownEventType(typeId)) {
+    throw new UnknownEventTypeError(typeId, 0);
   }
-  const parsed = schema.safeParse(data);
+  const parsed = byTypeId[typeId].safeParse(data);
   if (parsed.success) return;
-  const issues: readonly ValidationIssue[] = parsed.error.issues.map((issue) => ({
-    path: issue.path.filter((p): p is string | number => typeof p === 'string' || typeof p === 'number'),
-    message: issue.message,
-  }));
-  throw new EventValidationError(typeId, SINGULAR_BATCH_INDEX, issues);
+  // Zod types `ZodIssue.path` as `PropertyKey[]` (includes `symbol`) even
+  // though produced paths are always string|number in practice. Narrow
+  // here so ValidationIssue's string|number contract is honoured at the
+  // type level too — without the filter, TS reports a width mismatch.
+  throw new EventValidationError(
+    typeId,
+    0,
+    parsed.error.issues.map((issue) => ({
+      path: issue.path.filter((p): p is string | number => typeof p !== 'symbol'),
+      message: issue.message,
+    })),
+  );
 }
 
 export async function handlePublishEvent(

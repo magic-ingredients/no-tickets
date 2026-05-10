@@ -103,7 +103,7 @@ function firstTypeIdOrFail(listed: ListEventTypesResult): string {
 }
 
 describe('MCP discovery flow — first event in three calls', () => {
-  it('list → describe → publish_event: agent lands its first event with no prior knowledge of the registry', async () => {
+  it('list → describe → publish_event: agent discovers the type, reads the example shape, fills it with real values, and publishes', async () => {
     const { deps, publish } = buildIntegrationDeps();
 
     // 1. list_event_types — agent discovers what types are publishable.

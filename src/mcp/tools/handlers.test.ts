@@ -263,6 +263,25 @@ describe('handlePublishEvent', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
+  // Prototype-chain regression — a `type` argument like "toString" or
+  // "hasOwnProperty" must NOT resolve to `Object.prototype.toString` via
+  // index access. The CLI side has a matching guard; pin the MCP path
+  // here so the two surfaces don't drift. Each prototype name is its own
+  // it() so a single missed property still fails loudly.
+  for (const protoName of ['toString', 'hasOwnProperty', 'valueOf', 'constructor'] as const) {
+    it(`treats prototype name "${protoName}" as an unknown event type (never resolves to Object.prototype)`, async () => {
+      const { deps, publish } = buildDeps({});
+
+      await expect(
+        handlePublishEvent(
+          { project: PROJECT, type: protoName, data: {} },
+          deps,
+        ),
+      ).rejects.toBeInstanceOf(UnknownEventTypeError);
+      expect(publish).not.toHaveBeenCalled();
+    });
+  }
+
   it('rejects an invalid data payload LOCALLY with EventValidationError before any publish call', async () => {
     // Invalid against the bundled Zod schema (missing required fields).
     // The agent must see structured ValidationIssue[]; no HTTP round-trip.
@@ -283,9 +302,13 @@ describe('handlePublishEvent', () => {
     expect(err.typeId).toBe(VALID_TYPE_ID);
     expect(err.batchIndex).toBe(0);
     expect(err.issues.length).toBeGreaterThan(0);
-    // At least one issue points at the missing `projectId` (array path,
-    // preserved from Zod — NOT joined to a string).
-    expect(err.issues.some((i) => i.path.includes('projectId'))).toBe(true);
+    // Pin the array-path shape — NOT a joined string. A regression that
+    // joined paths (matching CLI's display variant) would still pass a
+    // `.includes('projectId')` check, so check the type explicitly.
+    const projectIdIssue = err.issues.find((i) => i.path[0] === 'projectId');
+    expect(projectIdIssue).toBeDefined();
+    expect(Array.isArray(projectIdIssue?.path)).toBe(true);
+    expect(typeof projectIdIssue?.path).not.toBe('string');
     expect(publish).not.toHaveBeenCalled();
   });
 

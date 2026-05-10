@@ -346,19 +346,49 @@ async function handlePublish(
     return;
   }
 
-  // Auth resolution paths, in priority order:
+  // Auth resolution paths:
   //   1. --project <name>: read ~/.notickets/config.json and use the
-  //      registered push token + the profile's apiUrl. The user-friendly
+  //      registered push token + the profile's apiUrl. User-friendly
   //      path for local dev once `nt project link` has been run.
   //   2. NO_TICKETS_TOKEN env + NO_TICKETS_API_URL (via --profile or env):
-  //      single-project CI / one-off override. Unchanged from earlier
-  //      Task 4 scope.
-  // The two are mutually exclusive — combining them would silently drop
-  // one resolved value.
+  //      single-project CI / one-off override.
+  //
+  // Mutual exclusion — combining --project with NO_TICKETS_TOKEN /
+  // --profile is rejected up front. Silent precedence would let a user
+  // who set NO_TICKETS_TOKEN for one project accidentally publish to a
+  // different one via a forgotten --project flag, or vice versa.
+  const projectFlagValue = flags['project'];
   const projectFlag = flagString(flags, 'project');
+
+  // Bare `--project` (no value) yields flags.project === true. Without
+  // this guard we'd fall through to the env-var path, silently
+  // publishing to whichever project NO_TICKETS_TOKEN belongs to — not
+  // what the user asked for.
+  if (projectFlagValue === true) {
+    console.error('publish: --project requires a value (e.g. --project mystaging)');
+    process.exitCode = 1;
+    return;
+  }
+
   let client: Client;
 
   if (projectFlag !== undefined) {
+    if (process.env['NO_TICKETS_TOKEN'] !== undefined && process.env['NO_TICKETS_TOKEN'] !== '') {
+      console.error(
+        'publish: --project and NO_TICKETS_TOKEN are mutually exclusive. ' +
+          'Unset NO_TICKETS_TOKEN, or drop --project to use the env-var path.',
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (flags['profile'] !== undefined) {
+      console.error(
+        'publish: --project and --profile are mutually exclusive. ' +
+          '--project resolves the URL from the registered profile already.',
+      );
+      process.exitCode = 1;
+      return;
+    }
     try {
       client = clientForProject(projectFlag);
     } catch (err) {

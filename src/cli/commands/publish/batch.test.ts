@@ -155,6 +155,46 @@ describe('runPublishBatch — happy path', () => {
   });
 });
 
+describe('runPublishBatch — bundled-Zod validation (no server registry fetch)', () => {
+  it('rejects invalid data via bundled byTypeId without ever calling listEvents', async () => {
+    // The cleanup task moves batch.ts off the server-fetched
+    // EventTypeSpec.schema path and onto the bundled
+    // @magic-ingredients/no-tickets-schemas package — same source of truth
+    // single.ts already uses. After the migration, `deps.listEvents` is
+    // dead: bundled byTypeId IS the local registry, no network needed for
+    // shape validation.
+    const path = writeBatch(
+      // product.epic.created.v1 with missing `projectId` and `title` —
+      // bundled Zod's `min(1)` constraints reject this even though the
+      // server's JSON Schema would also reject it (the point is which
+      // validator is consulted, not whether validation happens).
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1"}}\n',
+    );
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const listEvents = vi.fn(async (): Promise<readonly EventTypeSpec[]> => []);
+    const publish = vi.fn<(events: readonly PublishEvent[]) => Promise<PublishResponse>>(
+      async () => ({ ingested: 0, deduped: 0, ids: [] }),
+    );
+    const deps: PublishBatchDeps = {
+      listEvents,
+      publish,
+      readStdin: vi.fn(async () => ''),
+      write: (l) => out.stdout.push(l),
+      writeErr: (l) => out.stderr.push(l),
+    };
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(listEvents).not.toHaveBeenCalled();
+    // Field path comes through from Zod (array-joined per CLI display
+    // convention); the missing required keys must surface in the report.
+    const printed = out.stderr.join('\n');
+    expect(printed).toMatch(/projectId/);
+  });
+});
+
 describe('runPublishBatch — local validation', () => {
   it('exits with code 1 and reports the JSONL line number on parse failure', async () => {
     const path = writeBatch(

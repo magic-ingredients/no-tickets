@@ -9,6 +9,7 @@ created: 2026-05-09
 updated: 2026-05-10
 reported: 2026-05-09T00:00:00.000Z
 resolved: null
+archived: true
 ---
 
 # Fix: Wire CLI publish, share local validation between CLI/MCP via SDK, unify project-keyed shape
@@ -415,6 +416,20 @@ Keep the `NO_TICKETS_INCLUDE_MACHINE` opt-in machine-hash code path. CI provenan
 - `src/cli/commands/publish/single.ts` — default source for CLI surface
 - `src/cli/commands/publish/single.test.ts`, `batch.test.ts` — update default-source assertions
 - `src/agent-detect.test.ts` — drop CI-provider tests; keep machine-hash tests
+
+### 8. Cleanup — migrate batch.ts to bundled Zod; delete validateAgainstSchema
+status: in_progress
+
+Acceptance criteria item explicitly says: `src/cli/lib/schema-validate.ts deleted` (or at minimum, `validateAgainstSchema` deleted; the bundled-Zod helpers stay). Currently `validateAgainstSchema` is still called from `batch.ts` (against `spec.schema` fetched from the server registry) and from `discovery-flow.test.ts` (asserting the synthesised example passes JSON-Schema validation).
+
+Migrate `batch.ts` to use the same bundled-Zod helpers single.ts uses (`isKnownEventType` + `validateEventLocally`). After that change, `validateAgainstSchema` has no production callers — only the discovery-flow test, which can switch to constructing the validation assertion differently or be dropped if it's no longer load-bearing.
+
+**Files to modify/create:**
+- `src/cli/commands/publish/batch.ts` — replace `validateAgainstSchema(entry.value['data'], spec.schema)` with the bundled-Zod path; drop the `spec.schema` fetch dependency for shape validation (type-existence still gated against `byTypeId`)
+- `src/cli/commands/publish/batch.test.ts` — update test fixtures for the new validator (real type ids from bundled schemas, like single.test.ts)
+- `src/cli/lib/schema-validate.ts` — delete `validateAgainstSchema` + its private helpers (`asJsonSchema`, `matchesType`, `pathLabel`); keep `isKnownEventType` + `validateEventLocally`
+- `src/cli/lib/schema-validate.test.ts` — drop the legacy JSON-Schema cases; keep bundled-Zod cases
+- `src/mcp/__tests__/discovery-flow.test.ts` — drop the `validateAgainstSchema(described.example, described.schema)` assertion (or restate it against bundled Zod, depending on what's most informative)
 
 ## Acceptance Criteria
 

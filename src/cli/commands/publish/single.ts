@@ -54,7 +54,9 @@ export async function runPublishSingle(
   // still surfaces as exit code 2 (unknown_event_type) rather than being
   // masked by an exit code 1 (validation/parse error) when the data is
   // also malformed. Mirrors the original op order; pinned by the
-  // "unknown type wins over bad JSON" regression test.
+  // "unknown type wins over bad JSON" regression test. The guard narrows
+  // typeId from `string` to `EventTypeId`, making the validateEventLocally
+  // call below structurally type-safe — no post-hoc runtime check needed.
   if (!isKnownEventType(options.typeId)) {
     const knownIds = Object.keys(byTypeId);
     const suggestions = fuzzyMatch(options.typeId, knownIds, { topN: 3 });
@@ -65,6 +67,7 @@ export async function runPublishSingle(
     }
     return EXIT_UNKNOWN_TYPE;
   }
+  const knownTypeId = options.typeId; // narrowed to EventTypeId via the guard
 
   let parsedData: unknown;
   try {
@@ -74,18 +77,13 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  // Schema validation against the npm-bundled Zod schemas
-  // (@magic-ingredients/no-tickets-schemas). Type existence is already
-  // verified above, so the only outcome we care about here is the issues
-  // array; { unknownType } cannot occur on this path.
-  const validation = validateEventLocally(options.typeId, parsedData);
-  if ('unknownType' in validation) {
-    // Defensive — shouldn't be reachable given the isKnownEventType guard.
-    return EXIT_UNKNOWN_TYPE;
-  }
-  if (validation.length > 0) {
-    deps.writeErr(`${options.typeId}: ${validation.length} local validation error(s):`);
-    for (const issue of validation) {
+  // Schema validation against the npm-bundled Zod schemas. Type existence
+  // is already proven via isKnownEventType, so validateEventLocally returns
+  // just ValidationIssue[] (no union with { unknownType }).
+  const issues = validateEventLocally(knownTypeId, parsedData);
+  if (issues.length > 0) {
+    deps.writeErr(`${options.typeId}: ${issues.length} local validation error(s):`);
+    for (const issue of issues) {
       deps.writeErr(`  ${issue.path}: ${issue.message}`);
     }
     return EXIT_VALIDATION;

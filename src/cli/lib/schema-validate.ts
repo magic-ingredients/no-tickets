@@ -1,4 +1,4 @@
-import { byTypeId } from '@magic-ingredients/no-tickets-schemas';
+import { byTypeId, type EventTypeId } from '@magic-ingredients/no-tickets-schemas';
 import type { JsonSchema } from '../../lib/example-synth.js';
 
 export interface ValidationError {
@@ -11,33 +11,31 @@ export interface ValidationIssue {
   readonly message: string;
 }
 
-/** Validates an event payload against the bundled schemas package
- *  (`@magic-ingredients/no-tickets-schemas`). Looks up the Zod schema by
- *  type id; returns [] on success, ValidationIssue[] on schema failure, or
- *  { unknownType: true } if the id is not registered.
+/** Type guard — narrows `string` to `EventTypeId` when the id is a
+ *  registered event type in the bundled schemas package. Callers gate
+ *  publish/validation on this cheaply (no data parsing required) so an
+ *  unknown-type error surfaces instead of being masked by a downstream
+ *  JSON-parse or schema failure.
  *
- *  Replaces validateAgainstSchema (which took a runtime-fetched JSON
- *  Schema). Source of truth is now compile-time-pinned via the schemas
- *  package — no per-publish HTTP fetch needed. Server is still
- *  authoritative; this is a fast pre-flight to catch caller errors. */
-/** True iff `typeId` is a registered event type in the bundled schemas
- *  package. Lets callers gate on type-existence cheaply (without parsing
- *  data first) — important because parsing data may itself fail with a
- *  user-input error that masks the more useful "unknown event type"
- *  signal. */
-export function isKnownEventType(typeId: string): boolean {
+ *  Uses Object.hasOwn so prototype names ('toString' / 'hasOwnProperty' /
+ *  'valueOf') don't slip past the guard via the prototype chain. */
+export function isKnownEventType(typeId: string): typeId is EventTypeId {
   return Object.hasOwn(byTypeId, typeId);
 }
 
+/** Validates an event payload against the bundled Zod schema for the
+ *  given (already-narrowed) type id. Returns [] on success, ValidationIssue[]
+ *  on schema failure.
+ *
+ *  Pre-condition: caller has gated the type id via `isKnownEventType` —
+ *  the `EventTypeId` parameter is the narrowed type returned by that guard.
+ *  This makes "unknown event type" structurally impossible at this layer
+ *  and removes the dead branch a post-hoc runtime check would create. */
 export function validateEventLocally(
-  typeId: string,
+  typeId: EventTypeId,
   data: unknown,
-): readonly ValidationIssue[] | { readonly unknownType: true } {
-  // Object.hasOwn — not `typeId in byTypeId` — so that prototype-chain
-  // names like 'toString' / 'hasOwnProperty' fail the unknown-type guard
-  // instead of falling through to a runtime crash on .safeParse.
-  if (!Object.hasOwn(byTypeId, typeId)) return { unknownType: true };
-  const schema = byTypeId[typeId as keyof typeof byTypeId];
+): readonly ValidationIssue[] {
+  const schema = byTypeId[typeId];
   const result = schema.safeParse(data);
   if (result.success) return [];
   return result.error.issues.map((issue) => ({
@@ -83,7 +81,11 @@ function matchesType(value: unknown, type: JsonSchema['type']): boolean {
 /** Best-effort JSON Schema validator: required-field presence + type checks
  *  + enum membership + array-item recursion. Server is authoritative — we
  *  only catch obvious caller errors. Accepts `unknown` at the trust
- *  boundary; non-record schemas degrade to "no errors". */
+ *  boundary; non-record schemas degrade to "no errors".
+ *
+ *  Legacy: still consumed by batch.ts and the MCP discovery-flow smoke
+ *  test; deletion lands once those call sites migrate to the bundled-Zod
+ *  path. */
 export function validateAgainstSchema(
   data: unknown,
   rawSchema: unknown,

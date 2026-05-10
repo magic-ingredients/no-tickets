@@ -83,7 +83,7 @@ describe('runPublishSingle — happy path', () => {
     expect(event?.subject).toEqual({ type: 'app.user', id: 'usr_42' });
   });
 
-  it('omits subject when only one of subject-type/subject-id is provided', async () => {
+  it('omits subject when only subject-type is provided', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps({}, out);
 
@@ -91,6 +91,25 @@ describe('runPublishSingle — happy path', () => {
       {
         ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
         subjectType: 'app.user',
+      },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.subject).toBeUndefined();
+  });
+
+  it('omits subject when only subject-id is provided (covers the inverse half of the AND-guard)', async () => {
+    // Pinned separately because buildSubject's `subjectType !== undefined`
+    // and `subjectId !== undefined` checks are independent — a regression
+    // dropping either half would only fail one direction.
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({}, out);
+
+    await runPublishSingle(
+      {
+        ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
+        subjectId: 'usr_42',
       },
       deps,
     );
@@ -121,7 +140,7 @@ describe('runPublishSingle — happy path', () => {
 });
 
 describe('runPublishSingle — unknown type id', () => {
-  it('exits with code 2 and prints fuzzy-match suggestions to stderr (no publish call)', async () => {
+  it('exits with code 2 and prints fuzzy-match suggestions under a "Did you mean:" header (no publish call)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps({}, out);
 
@@ -133,8 +152,26 @@ describe('runPublishSingle — unknown type id', () => {
 
     expect(exit).toBe(2);
     expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toMatch(/Unknown event type/i);
-    expect(out.stderr.join('\n')).toMatch(/product\.epic\.created\.v1/);
+    const stderr = out.stderr.join('\n');
+    expect(stderr).toMatch(/Unknown event type/i);
+    // Pin the literal header and the suggestion content. Without the
+    // header check, mutating "Did you mean:" → "" still passes; without
+    // the content check, mutating the suggestion list builder also passes.
+    expect(stderr).toContain('Did you mean:');
+    expect(stderr).toMatch(/product\.epic\.created\.v1/);
+  });
+
+  it('caps fuzzy-match suggestions at 3 (topN guard)', async () => {
+    // The byTypeId registry has 11 entries; if topN were unbounded all 11
+    // would print. Pin the upper bound so a regression to topN > 3 fails
+    // here. Indented suggestion lines look like "  <id>".
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps } = buildDeps({}, out);
+
+    await runPublishSingle(baseOptions('a', '{}'), deps);
+
+    const indentedLines = out.stderr.filter((l) => l.startsWith('  '));
+    expect(indentedLines.length).toBeLessThanOrEqual(3);
   });
 
   // Note: fuzzy-match has no quality threshold — with the bundled byTypeId
@@ -146,7 +183,7 @@ describe('runPublishSingle — unknown type id', () => {
 });
 
 describe('runPublishSingle — local validation', () => {
-  it('exits with code 1 and reports the field path when data is missing a required field', async () => {
+  it('exits with code 1 and reports the count + field path when data is missing a required field', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps({}, out);
 
@@ -158,7 +195,15 @@ describe('runPublishSingle — local validation', () => {
 
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toMatch(/projectId/);
+    const stderr = out.stderr.join('\n');
+    // Pin the literal summary line — N local validation error(s):
+    // Without this, a regression that drops the count or rephrases
+    // "validation error(s)" → "schema problems" silently passes.
+    expect(stderr).toMatch(/local validation error\(s\)/);
+    // Pin that the type id is in the header — single.ts prefixes
+    // "<typeId>: N local validation error(s):"
+    expect(stderr).toMatch(/product\.epic\.created\.v1/);
+    expect(stderr).toMatch(/projectId/);
   });
 
   it('exits with code 1 when a string field is empty (.min(1) violation)', async () => {

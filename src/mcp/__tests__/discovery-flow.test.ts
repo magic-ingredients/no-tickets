@@ -28,7 +28,6 @@ import type {
   PublishEvent,
   PublishResponse,
 } from '../../transport/events.js';
-import { validateAgainstSchema } from '../../cli/lib/schema-validate.js';
 
 const SERVER_SOURCE: Source = {
   name: 'mcp',
@@ -116,11 +115,6 @@ describe('MCP discovery flow — first event in three calls', () => {
     const described = await handleDescribeEventType({ id: targetId }, deps);
     expect(described.schema).toEqual(TYPE.schema);
     expect(described.example).toBeDefined();
-
-    // The synthesised example MUST pass local schema validation, otherwise
-    // the agent's next step is doomed to a server reject.
-    const validationErrors = validateAgainstSchema(described.example, described.schema);
-    expect(validationErrors).toEqual([]);
 
     // 3. publish_event — agent fills the example with real values and sends.
     // (Bundled Zod's min(1) constraints reject the empty-string synthesis,

@@ -1,10 +1,9 @@
 import type { PublishEvent, PublishResponse } from '../../../transport/events.js';
-import type { EventTypeSpec } from '../../../registry/client.js';
 import type { Source } from '../../../core/source.js';
 import { UnknownEventTypeError, EventValidationError } from '../../../transport/errors.js';
 import { readJsonl, type JsonlEntry } from '../../lib/jsonl.js';
 import { parseSourceFlags } from '../../lib/source-flags.js';
-import { validateAgainstSchema } from '../../lib/schema-validate.js';
+import { isKnownEventType, validateEventLocally } from '../../lib/schema-validate.js';
 
 export interface PublishBatchOptions {
   readonly batchPath: string;
@@ -13,7 +12,6 @@ export interface PublishBatchOptions {
 }
 
 export interface PublishBatchDeps {
-  listEvents(): Promise<readonly EventTypeSpec[]>;
   publish(events: readonly PublishEvent[]): Promise<PublishResponse>;
   readStdin(): Promise<string>;
   write(line: string): void;
@@ -87,15 +85,6 @@ export async function runPublishBatch(
     return EXIT_VALIDATION;
   }
 
-  let availableTypes: readonly EventTypeSpec[];
-  try {
-    availableTypes = await deps.listEvents();
-  } catch (err) {
-    deps.writeErr(err instanceof Error ? err.message : String(err));
-    return EXIT_VALIDATION;
-  }
-  const typeIndex = new Map(availableTypes.map((t) => [t.id, t]));
-
   // Surface default — spread order pins --source-name as the override;
   // JSONL lines still override at top-level via mergeSourceShallow.
   let flagsSource: Partial<Source> | undefined;
@@ -121,15 +110,17 @@ export async function runPublishBatch(
       deps.writeErr(`line ${entry.line}: missing or empty "type" field`);
       return EXIT_VALIDATION;
     }
-    const spec = typeIndex.get(typeId);
-    if (spec === undefined) {
+    // Bundled byTypeId is the local source of truth — no server fetch
+    // needed for shape validation. isKnownEventType is Object.hasOwn-backed
+    // so prototype names ('toString' / 'hasOwnProperty') can't slip past.
+    if (!isKnownEventType(typeId)) {
       deps.writeErr(`line ${entry.line}: unknown event type "${typeId}"`);
       return EXIT_VALIDATION;
     }
-    const errors = validateAgainstSchema(entry.value['data'], spec.schema);
-    if (errors.length > 0) {
-      deps.writeErr(`line ${entry.line}: ${errors.length} validation error(s):`);
-      for (const e of errors) deps.writeErr(`  ${e.path}: ${e.message}`);
+    const issues = validateEventLocally(typeId, entry.value['data']);
+    if (issues.length > 0) {
+      deps.writeErr(`line ${entry.line}: ${issues.length} validation error(s):`);
+      for (const issue of issues) deps.writeErr(`  ${issue.path}: ${issue.message}`);
       return EXIT_VALIDATION;
     }
     batchEvents.push({

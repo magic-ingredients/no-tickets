@@ -7,25 +7,11 @@ import {
   type PublishBatchDeps,
   type PublishBatchOptions,
 } from './batch.js';
-import type { EventTypeSpec } from '../../../registry/client.js';
 import type { PublishEvent, PublishResponse } from '../../../transport/events.js';
 import {
   UnknownEventTypeError,
   EventValidationError,
 } from '../../../transport/errors.js';
-
-const TYPE: EventTypeSpec = {
-  id: 'app.user.signed-up.v1',
-  domain: 'app.user',
-  entity: 'user',
-  action: 'signed-up',
-  version: 'v1',
-  schema: {
-    type: 'object',
-    properties: { email: { type: 'string' } },
-    required: ['email'],
-  },
-};
 
 interface RecordedOutput {
   readonly stdout: string[];
@@ -33,7 +19,6 @@ interface RecordedOutput {
 }
 
 interface BuildBatchDepsOpts {
-  readonly availableTypes: readonly EventTypeSpec[];
   readonly publishResult?: PublishResponse;
   readonly publishError?: unknown;
 }
@@ -49,7 +34,6 @@ function buildDeps(opts: BuildBatchDepsOpts, out: RecordedOutput): {
     },
   );
   const deps: PublishBatchDeps = {
-    listEvents: vi.fn(async () => opts.availableTypes),
     publish,
     readStdin: vi.fn(async () => ''),
     write: (l) => out.stdout.push(l),
@@ -77,15 +61,12 @@ const baseOptions = (path: string): PublishBatchOptions => ({ batchPath: path })
 describe('runPublishBatch — happy path', () => {
   it('reads JSONL, sends all events in a single publish call, prints summary', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_2", "projectId": "p_1", "title": "demo-2"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      {
-        availableTypes: [TYPE],
-        publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] },
-      },
+      { publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] } },
       out,
     );
 
@@ -96,12 +77,12 @@ describe('runPublishBatch — happy path', () => {
     const events = publish.mock.calls[0]?.[0];
     expect(events).toEqual([
       expect.objectContaining({
-        type: 'app.user.signed-up.v1',
-        data: { email: 'a@b.c' },
+        type: 'product.epic.created.v1',
+        data: { epicId: 'e_1', projectId: 'p_1', title: 'demo' },
       }),
       expect.objectContaining({
-        type: 'app.user.signed-up.v1',
-        data: { email: 'd@e.f' },
+        type: 'product.epic.created.v1',
+        data: { epicId: 'e_2', projectId: 'p_1', title: 'demo-2' },
       }),
     ]);
     expect(out.stdout.join('\n')).toContain('2 event');
@@ -110,9 +91,8 @@ describe('runPublishBatch — happy path', () => {
   it('reads from stdin when --batch is "-"', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const stdin =
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n';
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n';
     const deps: PublishBatchDeps = {
-      listEvents: vi.fn(async () => [TYPE]),
       publish: vi.fn(async () => ({ ingested: 1, deduped: 0, ids: ['x'] })),
       readStdin: vi.fn(async () => stdin),
       write: (l) => out.stdout.push(l),
@@ -127,12 +107,12 @@ describe('runPublishBatch — happy path', () => {
 
   it('applies --source-name + --source-attribute to every event', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_2", "projectId": "p_1", "title": "demo-2"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] } },
+      { publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] } },
       out,
     );
 
@@ -156,53 +136,59 @@ describe('runPublishBatch — happy path', () => {
 });
 
 describe('runPublishBatch — bundled-Zod validation (no server registry fetch)', () => {
-  it('rejects invalid data via bundled byTypeId without ever calling listEvents', async () => {
-    // The cleanup task moves batch.ts off the server-fetched
+  it('rejects invalid data via bundled byTypeId; PublishBatchDeps no longer carries listEvents', async () => {
+    // The cleanup task moved batch.ts off the server-fetched
     // EventTypeSpec.schema path and onto the bundled
     // @magic-ingredients/no-tickets-schemas package — same source of truth
-    // single.ts already uses. After the migration, `deps.listEvents` is
-    // dead: bundled byTypeId IS the local registry, no network needed for
-    // shape validation.
+    // single.ts already uses. As a result, `listEvents` is gone from the
+    // deps interface entirely; bundled byTypeId IS the local registry, no
+    // network needed for shape validation. This test pins both halves:
+    //   1. Invalid data fails locally with the line + field path reported.
+    //   2. The deps shape compiles WITHOUT a listEvents method (a regression
+    //      that re-introduced the server fetch would have to add it back).
     const path = writeBatch(
       // product.epic.created.v1 with missing `projectId` and `title` —
-      // bundled Zod's `min(1)` constraints reject this even though the
-      // server's JSON Schema would also reject it (the point is which
-      // validator is consulted, not whether validation happens).
+      // bundled Zod's `min(1)` constraints reject this.
       '{"type": "product.epic.created.v1", "data": {"epicId": "e_1"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const listEvents = vi.fn(async (): Promise<readonly EventTypeSpec[]> => []);
-    const publish = vi.fn<(events: readonly PublishEvent[]) => Promise<PublishResponse>>(
-      async () => ({ ingested: 0, deduped: 0, ids: [] }),
-    );
-    const deps: PublishBatchDeps = {
-      listEvents,
-      publish,
-      readStdin: vi.fn(async () => ''),
-      write: (l) => out.stdout.push(l),
-      writeErr: (l) => out.stderr.push(l),
-    };
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
-    expect(listEvents).not.toHaveBeenCalled();
     // Field path comes through from Zod (array-joined per CLI display
     // convention); the missing required keys must surface in the report.
     const printed = out.stderr.join('\n');
+    expect(printed).toMatch(/line 1/);
     expect(printed).toMatch(/projectId/);
+  });
+
+  it('rejects unknown event types locally via isKnownEventType (prototype-chain safe)', async () => {
+    // `toString` would resolve to Object.prototype.toString via index access
+    // without the Object.hasOwn guard isKnownEventType uses. Pin that on
+    // the batch path too — single.ts already pins it.
+    const path = writeBatch('{"type": "toString", "data": {}}\n');
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({}, out);
+
+    const exit = await runPublishBatch(baseOptions(path), deps);
+
+    expect(exit).toBe(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/unknown event type/i);
   });
 });
 
 describe('runPublishBatch — local validation', () => {
   it('exits with code 1 and reports the JSONL line number on parse failure', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
         '{not json\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps, publish } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -213,11 +199,11 @@ describe('runPublishBatch — local validation', () => {
 
   it('exits with code 1 and reports the JSONL line number on schema-validation failure', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
-        '{"type": "app.user.signed-up.v1", "data": {}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps, publish } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -225,13 +211,16 @@ describe('runPublishBatch — local validation', () => {
     expect(publish).not.toHaveBeenCalled();
     const printed = out.stderr.join('\n');
     expect(printed).toMatch(/line 2/);
-    expect(printed).toMatch(/email/);
+    // product.epic.created.v1 requires epicId/projectId/title; the bundled
+    // Zod schema rejects the empty object with at least one of those field
+    // paths in the issues list.
+    expect(printed).toMatch(/epicId|projectId|title/);
   });
 
   it('exits with code 1 if a line is missing the type field', async () => {
     const path = writeBatch('{"data": {}}\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -244,7 +233,7 @@ describe('runPublishBatch — local validation', () => {
       '{"type": "app.unknown.v1", "data": {}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -257,14 +246,13 @@ describe('runPublishBatch — local validation', () => {
 describe('runPublishBatch — server errors map back to JSONL line numbers', () => {
   it('translates server batchIndex into the JSONL line on UnknownEventTypeError', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_2", "projectId": "p_1", "title": "demo-2"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps } = buildDeps(
       {
-        availableTypes: [TYPE],
-        publishError: new UnknownEventTypeError('app.user.signed-up.v1', 1),
+        publishError: new UnknownEventTypeError('product.epic.created.v1', 1),
       },
       out,
     );
@@ -277,15 +265,14 @@ describe('runPublishBatch — server errors map back to JSONL line numbers', () 
 
   it('translates server batchIndex into the JSONL line on EventValidationError', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_2", "projectId": "p_1", "title": "demo-2"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps } = buildDeps(
       {
-        availableTypes: [TYPE],
         publishError: new EventValidationError(
-          'app.user.signed-up.v1',
+          'product.epic.created.v1',
           0,
           [{ path: ['data', 'email'], message: 'rejected' }],
         ),
@@ -305,15 +292,14 @@ describe('runPublishBatch — server errors map back to JSONL line numbers', () 
     // `line` rather than `batchIndex + 1`.
     const path = writeBatch(
       '\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
         '\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_2", "projectId": "p_1", "title": "demo-2"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps } = buildDeps(
       {
-        availableTypes: [TYPE],
-        publishError: new UnknownEventTypeError('app.user.signed-up.v1', 1),
+        publishError: new UnknownEventTypeError('product.epic.created.v1', 1),
       },
       out,
     );
@@ -329,7 +315,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line whose value is null', async () => {
     const path = writeBatch('null\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps, publish } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -342,7 +328,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line whose value is an array', async () => {
     const path = writeBatch('[1, 2, 3]\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -353,7 +339,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line whose value is a primitive', async () => {
     const path = writeBatch('42\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -364,7 +350,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line where type is the empty string', async () => {
     const path = writeBatch('{"type": "", "data": {}}\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -376,11 +362,11 @@ describe('runPublishBatch — non-object JSONL entries', () => {
 describe('runPublishBatch — server error fallthrough', () => {
   it('handles a plain Error from publish() (exit 3, message on stderr)', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps } = buildDeps(
-      { availableTypes: [TYPE], publishError: new Error('plain server boom') },
+      { publishError: new Error('plain server boom') },
       out,
     );
 
@@ -392,13 +378,12 @@ describe('runPublishBatch — server error fallthrough', () => {
 
   it('falls back to "batch index N" when batchIndex is out of bounds for the local list', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps } = buildDeps(
       {
-        availableTypes: [TYPE],
-        publishError: new UnknownEventTypeError('app.user.signed-up.v1', 99),
+        publishError: new UnknownEventTypeError('product.epic.created.v1', 99),
       },
       out,
     );
@@ -418,11 +403,11 @@ describe('runPublishBatch — source merge edge cases', () => {
     // are distinguishable from MCP / direct-SDK provenance without the
     // caller pinning --source-name on every invocation.
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      { publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
       out,
     );
 
@@ -434,11 +419,11 @@ describe('runPublishBatch — source merge edge cases', () => {
 
   it('uses CLI source verbatim when JSONL line has no source', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      { publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
       out,
     );
 
@@ -453,11 +438,11 @@ describe('runPublishBatch — source merge edge cases', () => {
 
   it('uses JSONL source verbatim when no CLI flags supplied', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"name": "wrapper"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}, "source": {"name": "wrapper"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      { publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
       out,
     );
 
@@ -469,11 +454,11 @@ describe('runPublishBatch — source merge edge cases', () => {
 
   it('keeps CLI attributes when JSONL source has no attributes bag', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"name": "wrapper"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}, "source": {"name": "wrapper"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      { publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
       out,
     );
 
@@ -498,11 +483,11 @@ describe('runPublishBatch — source merge edge cases', () => {
     // `name`, so mergeSourceShallow falls back to the cli default for name
     // and merges the attributes bag in.
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"attributes": {"region": "eu"}}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}, "source": {"attributes": {"region": "eu"}}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      { publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
       out,
     );
 
@@ -519,12 +504,12 @@ describe('runPublishBatch — source merge edge cases', () => {
 describe('runPublishBatch — output', () => {
   it('writes one indented line per returned event id', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n' +
-        '{"type": "app.user.signed-up.v1", "data": {"email": "d@e.f"}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}}\n' +
+        '{"type": "product.epic.created.v1", "data": {"epicId": "e_2", "projectId": "p_1", "title": "demo-2"}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] } },
+      { publishResult: { ingested: 2, deduped: 0, ids: ['e1', 'e2'] } },
       out,
     );
 
@@ -539,7 +524,7 @@ describe('runPublishBatch — empty file', () => {
   it('exits with code 1 and reports an empty-file message on stderr', async () => {
     const path = writeBatch('');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE] }, out);
+    const { deps, publish } = buildDeps({  }, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -552,11 +537,11 @@ describe('runPublishBatch — empty file', () => {
 describe('runPublishBatch — source merge', () => {
   it('merges CLI --source-attribute keys with JSONL source.attributes (JSONL wins on key conflict)', async () => {
     const path = writeBatch(
-      '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}, "source": {"attributes": {"region": "eu-west-1"}}}\n',
+      '{"type": "product.epic.created.v1", "data": {"epicId": "e_1", "projectId": "p_1", "title": "demo"}, "source": {"attributes": {"region": "eu-west-1"}}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps(
-      { availableTypes: [TYPE], publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
+      { publishResult: { ingested: 1, deduped: 0, ids: ['x'] } },
       out,
     );
 

@@ -5,7 +5,7 @@ import type { Source } from '../../../core/source.js';
 import { resolveDataInput } from '../../lib/data-input.js';
 import { parseSourceFlags } from '../../lib/source-flags.js';
 import { fuzzyMatch } from '../../lib/fuzzy-match.js';
-import { validateEventLocally } from '../../lib/schema-validate.js';
+import { isKnownEventType, validateEventLocally } from '../../lib/schema-validate.js';
 
 export interface PublishSingleOptions {
   readonly typeId: string;
@@ -50,6 +50,22 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
+  // Type-existence gate runs BEFORE data parsing so a typo in the type id
+  // still surfaces as exit code 2 (unknown_event_type) rather than being
+  // masked by an exit code 1 (validation/parse error) when the data is
+  // also malformed. Mirrors the original op order; pinned by the
+  // "unknown type wins over bad JSON" regression test.
+  if (!isKnownEventType(options.typeId)) {
+    const knownIds = Object.keys(byTypeId);
+    const suggestions = fuzzyMatch(options.typeId, knownIds, { topN: 3 });
+    deps.writeErr(`Unknown event type: ${options.typeId}`);
+    if (suggestions.length > 0) {
+      deps.writeErr('Did you mean:');
+      for (const s of suggestions) deps.writeErr(`  ${s}`);
+    }
+    return EXIT_UNKNOWN_TYPE;
+  }
+
   let parsedData: unknown;
   try {
     parsedData = await resolveDataInput(options.data, { readStdin: deps.readStdin });
@@ -58,19 +74,13 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  // Local validation against the npm-bundled Zod schemas
-  // (@magic-ingredients/no-tickets-schemas). Replaces the registry-fetched
-  // JSON Schema path: the schemas package is the compile-time-pinned source
-  // of truth, so no HTTP round-trip is required to validate.
+  // Schema validation against the npm-bundled Zod schemas
+  // (@magic-ingredients/no-tickets-schemas). Type existence is already
+  // verified above, so the only outcome we care about here is the issues
+  // array; { unknownType } cannot occur on this path.
   const validation = validateEventLocally(options.typeId, parsedData);
   if ('unknownType' in validation) {
-    const knownIds = Object.keys(byTypeId);
-    const suggestions = fuzzyMatch(options.typeId, knownIds, { topN: 3 });
-    deps.writeErr(`Unknown event type: ${options.typeId}`);
-    if (suggestions.length > 0) {
-      deps.writeErr('Did you mean:');
-      for (const s of suggestions) deps.writeErr(`  ${s}`);
-    }
+    // Defensive — shouldn't be reachable given the isKnownEventType guard.
     return EXIT_UNKNOWN_TYPE;
   }
   if (validation.length > 0) {

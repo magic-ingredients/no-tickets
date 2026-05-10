@@ -16,7 +16,6 @@ import { runCli } from '../cli.js';
 // This e2e covers the env-var auth path that ships in this slice.
 
 let testDir: string;
-let logSpy: ReturnType<typeof vi.spyOn>;
 let errSpy: ReturnType<typeof vi.spyOn>;
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 
@@ -36,7 +35,7 @@ beforeEach(async () => {
   vi.stubEnv('NO_TICKETS_API_URL', 'https://api.test.example');
   vi.stubEnv('NO_TICKETS_AUTH_URL', 'https://app.test.example/api/auth/cli');
   process.exitCode = undefined;
-  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'log').mockImplementation(() => {});
   errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(happyFetchResponse());
 });
@@ -97,7 +96,10 @@ describe('publish command e2e — env-var auth', () => {
     expect(errOutput).toMatch(/epicId|projectId|title/);
   });
 
-  it('exits non-zero with an auth error when NO_TICKETS_TOKEN is not set', async () => {
+  it('exits 1 with the canonical "Not authenticated" message when NO_TICKETS_TOKEN is unset and no credentials file exists', async () => {
+    // Pin both: that auth resolution was attempted (canonical message), and
+    // that no fetch happened. Without the message check, the test would pass
+    // even if a stored credentials file silently picked up the publish.
     vi.stubEnv('NO_TICKETS_TOKEN', '');
     await runCli([
       'publish',
@@ -105,25 +107,51 @@ describe('publish command e2e — env-var auth', () => {
       '{"epicId":"e1","projectId":"p1","title":"t"}',
     ]);
 
-    expect(process.exitCode).toBeGreaterThan(0);
+    expect(process.exitCode).toBe(1);
     expect(fetchSpy).not.toHaveBeenCalled();
+    const errOutput = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(errOutput).toMatch(/Not authenticated/);
   });
 
-  it('exits 1 with a usage error when type-id positional is missing', async () => {
+  it('exits 1 with the "<type-id> is required" usage message when the positional is missing', async () => {
     await runCli(['publish']);
 
     expect(process.exitCode).toBe(1);
     expect(fetchSpy).not.toHaveBeenCalled();
+    // Pin which guard fires — multiple branches in handlePublish can return
+    // exit 1, so the message is the contract.
+    const errOutput = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(errOutput).toMatch(/<type-id> is required/);
   });
 
-  it('prints the published id on success', async () => {
-    await runCli([
-      'publish',
-      'product.epic.created.v1',
-      '{"epicId":"e1","projectId":"p1","title":"t"}',
-    ]);
+  it('reads --data from stdin when "-" is passed as the data positional', async () => {
+    // The handler wires runPublishSingle's readStdin to process.stdin; verify
+    // the integration end-to-end. Without this test the readStdinAll helper
+    // and the "-" sentinel path are unexercised at the CLI seam.
+    const stdinPayload = JSON.stringify({
+      epicId: 'from-stdin',
+      projectId: 'p1',
+      title: 'piped',
+    });
+    const stdinSpy = vi
+      .spyOn(process.stdin, Symbol.asyncIterator as unknown as 'on')
+      .mockImplementation(
+        () =>
+          (async function* () {
+            yield Buffer.from(stdinPayload);
+          })() as unknown as ReturnType<typeof process.stdin.on>,
+      );
 
-    const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
-    expect(out).toMatch(/evt-1/);
+    try {
+      await runCli(['publish', 'product.epic.created.v1', '-']);
+
+      expect(process.exitCode).toBeFalsy();
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const [, init] = fetchSpy.mock.calls[0] as [string | URL, RequestInit | undefined];
+      const body = JSON.parse(init?.body as string) as Array<{ data: { epicId: string } }>;
+      expect(body[0]?.data.epicId).toBe('from-stdin');
+    } finally {
+      stdinSpy.mockRestore();
+    }
   });
 });

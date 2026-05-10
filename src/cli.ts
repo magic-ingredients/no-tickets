@@ -301,6 +301,14 @@ async function handlePublish(
   const typeId = args[0] ?? '';
   const data = args[1] ?? '';
 
+  // Cheapest guards first: an empty typeId can't publish, so don't bother
+  // resolving URLs / auth / Client for a call that will exit 1 anyway.
+  if (typeId.length === 0) {
+    console.error('publish: <type-id> is required');
+    process.exitCode = 1;
+    return;
+  }
+
   // URL + token resolution. Phase 1 ships the env-var auth path:
   // NO_TICKETS_TOKEN + (NO_TICKETS_API_URL via resolveUrls).
   // Project-keyed resolution (--project) lands in a follow-up commit
@@ -329,7 +337,9 @@ async function handlePublish(
     },
   );
 
-  if (exit !== 0) process.exitCode = exit;
+  // Set exit code unconditionally so a residual non-zero from earlier
+  // work in the same process doesn't leak through on success.
+  process.exitCode = exit;
 }
 
 async function handleValidate(): Promise<void> {

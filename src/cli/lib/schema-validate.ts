@@ -20,6 +20,15 @@ export interface ValidationIssue {
  *  Schema). Source of truth is now compile-time-pinned via the schemas
  *  package — no per-publish HTTP fetch needed. Server is still
  *  authoritative; this is a fast pre-flight to catch caller errors. */
+/** True iff `typeId` is a registered event type in the bundled schemas
+ *  package. Lets callers gate on type-existence cheaply (without parsing
+ *  data first) — important because parsing data may itself fail with a
+ *  user-input error that masks the more useful "unknown event type"
+ *  signal. */
+export function isKnownEventType(typeId: string): boolean {
+  return Object.hasOwn(byTypeId, typeId);
+}
+
 export function validateEventLocally(
   typeId: string,
   data: unknown,

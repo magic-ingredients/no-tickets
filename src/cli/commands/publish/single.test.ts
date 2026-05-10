@@ -137,18 +137,12 @@ describe('runPublishSingle — unknown type id', () => {
     expect(out.stderr.join('\n')).toMatch(/product\.epic\.created\.v1/);
   });
 
-  it('exits 2 without suggestions when nothing fuzzy-matches', async () => {
-    const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({}, out);
-
-    const exit = await runPublishSingle(
-      baseOptions('z'.repeat(40), '{}'),
-      deps,
-    );
-
-    expect(exit).toBe(2);
-    expect(publish).not.toHaveBeenCalled();
-  });
+  // Note: fuzzy-match has no quality threshold — with the bundled byTypeId
+  // always non-empty, "Did you mean" suggestions are always printed. The
+  // `if (suggestions.length > 0)` branch in single.ts is defensive (covers
+  // a future scenario where byTypeId could be empty) but unreachable in
+  // production today, so there's no test for "no Did you mean" — that
+  // would test dead code.
 });
 
 describe('runPublishSingle — local validation', () => {
@@ -184,7 +178,7 @@ describe('runPublishSingle — local validation', () => {
     expect(out.stderr.join('\n')).toMatch(/epicId/);
   });
 
-  it('exits with code 1 when an extraneous key is sent to a .strict() schema', async () => {
+  it('exits with code 1 and names the extraneous key when a .strict() schema is violated', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps({}, out);
 
@@ -198,6 +192,28 @@ describe('runPublishSingle — local validation', () => {
 
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
+    // Pin that the error actually names the offending field — without this,
+    // a regression that drops .strict() from the schema would still pass.
+    expect(out.stderr.join('\n')).toMatch(/stray/);
+  });
+});
+
+describe('runPublishSingle — operation order', () => {
+  it('reports unknown_event_type (exit 2) before parsing data, even when --data is malformed JSON', async () => {
+    // Regression guard: an unknown type id with bad JSON should surface the
+    // type-id problem (exit 2) — the more useful signal — not be masked by
+    // the JSON-parse failure (exit 1) running first.
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({}, out);
+
+    const exit = await runPublishSingle(
+      baseOptions('definitely.not.a.thing.v9', '{not-valid-json}'),
+      deps,
+    );
+
+    expect(exit).toBe(2);
+    expect(publish).not.toHaveBeenCalled();
+    expect(out.stderr.join('\n')).toMatch(/Unknown event type/i);
   });
 });
 

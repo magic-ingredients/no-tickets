@@ -522,9 +522,59 @@
       "archived": true
     },
     {
+      "id": "publish-shared-surfaces",
+      "title": "Wire CLI publish, share local validation between CLI/MCP via SDK, unify project-keyed shape",
+      "status": "in_progress",
+      "severity": "medium",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Validation — consume `@magic-ingredients/no-tickets-schemas` directly",
+          "status": "completed",
+          "commitSha": "9bcdac3",
+          "completedAt": "2026-05-10T13:40:38.179Z",
+          "committedAt": "2026-05-10T13:40:38.179Z"
+        },
+        {
+          "id": "task-2",
+          "description": "SDK — project registry loader + `clientForProject` factory",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "CLI — `project link/list/unlink` commands",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "CLI — wire `publish` and switch to SDK validator + project resolution",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5",
+          "description": "MCP — add local validation + `project` parameter",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6",
+          "description": "Smoke script — accept `--project`, `--token-env-var`",
+          "status": "not_started"
+        },
+        {
+          "id": "task-7",
+          "description": "Drop CI auto-detection from default source",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/publish-shared-surfaces.md",
+      "reported": "2026-05-09T00:00:00.000Z",
+      "resolved": null,
+      "archived": false
+    },
+    {
       "id": "init-wait-ergonomics",
       "title": "Make `init` wait less hostile when the server doesn't redirect",
-      "status": "in_progress",
+      "status": "completed",
       "severity": "minor",
       "tasks": [
         {
@@ -595,8 +645,8 @@
         }
       ],
       "filePath": ".tiny-brain/fixes/init-wait-ergonomics.md",
-      "reported": "2026-04-24T08:30:00.000Z",
-      "resolved": "2026-04-24T08:40:00.000Z",
+      "reported": "2026-04-24",
+      "resolved": "2026-04-24",
       "archived": true
     },
     {
@@ -803,6 +853,88 @@
       "archived": true
     },
     {
+      "id": "cross-platform-cli-binary",
+      "title": "Rust rewrite of CLI + MCP server, distributed as a single binary across all major platforms",
+      "status": "not_started",
+      "severity": "medium",
+      "tasks": [
+        {
+          "id": "task-1",
+          "description": "Rust rewrite spike — single command end-to-end",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2",
+          "description": "MCP server spike — `list_event_types` tool",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3",
+          "description": "JSON Schema bundle integration",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4",
+          "description": "Full CLI surface port",
+          "status": "not_started"
+        },
+        {
+          "id": "task-5",
+          "description": "Full MCP server surface port",
+          "status": "not_started"
+        },
+        {
+          "id": "task-6",
+          "description": "Cross-compile build pipeline",
+          "status": "not_started"
+        },
+        {
+          "id": "task-7",
+          "description": "GitHub Releases pipeline",
+          "status": "not_started"
+        },
+        {
+          "id": "task-8",
+          "description": "npm wrapper package (migration path for current users)",
+          "status": "not_started"
+        },
+        {
+          "id": "task-9",
+          "description": "Homebrew tap + Scoop bucket",
+          "status": "not_started"
+        },
+        {
+          "id": "task-10",
+          "description": "cargo publish",
+          "status": "not_started"
+        },
+        {
+          "id": "task-11",
+          "description": "Install script + nt.sh redirect",
+          "status": "not_started"
+        },
+        {
+          "id": "task-12",
+          "description": "deb / rpm packaging",
+          "status": "not_started"
+        },
+        {
+          "id": "task-13",
+          "description": "Retire TS CLI + MCP code",
+          "status": "not_started"
+        },
+        {
+          "id": "task-14",
+          "description": "Documentation: install paths + migration note",
+          "status": "not_started"
+        }
+      ],
+      "filePath": ".tiny-brain/fixes/cross-platform-cli-binary.md",
+      "reported": "2026-05-09",
+      "resolved": null,
+      "archived": false
+    },
+    {
       "id": "client-drop-api-prefix",
       "title": "Drop /api from client request paths",
       "status": "completed",
@@ -884,5 +1016,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-04-24T08:12:10.777Z"
+  "lastSynced": "2026-05-10T13:40:45.435Z"
 }

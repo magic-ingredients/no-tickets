@@ -250,7 +250,8 @@ The machine-hash feature (`NO_TICKETS_INCLUDE_MACHINE=1`) stays — it's already
 ## Tasks
 
 ### 1. Validation — consume `@magic-ingredients/no-tickets-schemas` directly
-status: not_started
+status: completed
+commitSha: 9bcdac3
 
 **Note:** earlier draft of this fix proposed an SDK-level `validateEventLocally(event, typeSpec)`. After the architectural decision to drop SDK transport in favour of a Rust binary + per-language wrappers, validation moves into the schemas package itself. The schemas package exports a `byTypeId` map; consumers do `byTypeId[event.type].safeParse(event.data)`. No separate validator wrapper is needed.
 

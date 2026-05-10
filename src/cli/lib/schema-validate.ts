@@ -24,7 +24,10 @@ export function validateEventLocally(
   typeId: string,
   data: unknown,
 ): readonly ValidationIssue[] | { readonly unknownType: true } {
-  if (!(typeId in byTypeId)) return { unknownType: true };
+  // Object.hasOwn — not `typeId in byTypeId` — so that prototype-chain
+  // names like 'toString' / 'hasOwnProperty' fail the unknown-type guard
+  // instead of falling through to a runtime crash on .safeParse.
+  if (!Object.hasOwn(byTypeId, typeId)) return { unknownType: true };
   const schema = byTypeId[typeId as keyof typeof byTypeId];
   const result = schema.safeParse(data);
   if (result.success) return [];

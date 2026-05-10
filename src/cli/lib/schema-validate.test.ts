@@ -34,17 +34,31 @@ describe('validateEventLocally', () => {
     expect(typeof projectIdIssue?.message).toBe('string');
   });
 
-  it('returns ValidationIssue[] with dot-joined path for nested errors', () => {
-    // ai.task.completed.v1 has nested fields; pick something with a min-length string
-    const result = validateEventLocally('product.epic.created.v1', {
-      epicId: '', // empty string fails .min(1)
-      projectId: 'proj-1',
-      title: 'My epic',
+  it('joins nested paths with "." (e.g. agent.id) when a nested field fails', () => {
+    // ai.completion.recorded.v1 has a nested `agent: { id, version }` object.
+    // Empty string at agent.id fails .min(1); the issue path should be ['agent','id']
+    // → joined to 'agent.id'. This is the test the previous implementation lacked.
+    const result = validateEventLocally('ai.completion.recorded.v1', {
+      callId: 'c1',
+      sessionId: 's1',
+      agent: { id: '', version: '1.0.0' }, // bad nested field
+      provider: 'anthropic',
+      model: 'm',
+      modelVersion: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: 0,
+      stopReason: 'stop',
+      toolCallCount: 0,
+      contextUsed: null,
+      systemPromptHash: 'a'.repeat(64),
+      toolRegistryHash: 'a'.repeat(64),
     });
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) return;
-    const issue = result.find((i) => i.path === 'epicId');
-    expect(issue).toBeDefined();
+    const nested = result.find((i) => i.path === 'agent.id');
+    expect(nested).toBeDefined();
+    expect(nested?.path).toContain('.');
   });
 
   it('returns { unknownType: true } when the type id is not in the registry', () => {
@@ -52,8 +66,16 @@ describe('validateEventLocally', () => {
     expect(result).toEqual({ unknownType: true });
   });
 
-  it('rejects extra keys when the registered schema is .strict()', () => {
-    // productEpicCreatedSchema is .strict(); unknown keys should produce an issue
+  it('returns { unknownType: true } for inherited Object.prototype names (no prototype-chain leak)', () => {
+    // Regression: `typeId in byTypeId` walked the prototype chain, so
+    // 'toString' / 'hasOwnProperty' / 'valueOf' would slip past the guard
+    // and crash on .safeParse(undefined). Object.hasOwn fixes it.
+    for (const proto of ['toString', 'hasOwnProperty', 'valueOf', 'constructor']) {
+      expect(validateEventLocally(proto, {})).toEqual({ unknownType: true });
+    }
+  });
+
+  it('rejects extra keys with an unrecognized_keys issue when the schema is .strict()', () => {
     const result = validateEventLocally('product.epic.created.v1', {
       epicId: 'epic-1',
       projectId: 'proj-1',
@@ -62,6 +84,20 @@ describe('validateEventLocally', () => {
     });
     expect(Array.isArray(result)).toBe(true);
     if (!Array.isArray(result)) return;
-    expect(result.length).toBeGreaterThan(0);
+    // Find an issue whose message references the extraneous key — pinning that
+    // strict-mode rejection actually fires, not just any old issue.
+    const strictIssue = result.find((i) => i.message.includes('extraneous'));
+    expect(strictIssue).toBeDefined();
+  });
+
+  it('returns ValidationIssue[] (not throw) when data is not an object', () => {
+    // Trust-boundary guard: callers pass `unknown`. null / array / primitive
+    // must be rejected by the schema, not crash the validator.
+    for (const bad of [null, 'a string', 42, true, ['array']]) {
+      const result = validateEventLocally('product.epic.created.v1', bad);
+      expect(Array.isArray(result)).toBe(true);
+      if (!Array.isArray(result)) continue;
+      expect(result.length).toBeGreaterThan(0);
+    }
   });
 });

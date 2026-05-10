@@ -3,13 +3,36 @@ id: publish-shared-surfaces
 type: fix
 title: Wire CLI publish, share local validation between CLI/MCP via SDK, unify project-keyed shape
 phase: development
-status: in_progress
+status: completed
 severity: medium
 created: 2026-05-09
 updated: 2026-05-10
 reported: 2026-05-09T00:00:00.000Z
-resolved: null
-archived: true
+resolved: 2026-05-10T22:48:00.000Z
+resolution:
+  rootCause: Phase 1 of the four-phase client roadmap. `nt publish` was unwired, MCP `publish_event` had no local validation, validation lived in CLI-only code, and there was no per-project token/URL registry. Bundled Zod schemas were the missing source-of-truth that let validation move out of the network round-trip.
+  fix:
+    - Validation consumed directly from @magic-ingredients/no-tickets-schemas byTypeId
+    - SDK resolveProjectAuth + clientForProject read ~/.notickets/config.json
+    - CLI `nt project link/list/unlink` commands
+    - CLI `publish` dispatcher wired with --project resolution
+    - MCP handlePublishEvent validates locally; required `project` arg
+    - smoke-publish.ts learns --project / --token-env-var / --url
+    - detectSource() drops CI sniffing; surface-specific defaults replace it
+    - batch.ts migrated to bundled Zod; validateAgainstSchema deleted
+  filesModified:
+    - src/cli/lib/schema-validate.ts
+    - src/sdk/projects.ts
+    - src/cli/commands/project/link.ts
+    - src/cli/commands/project/list.ts
+    - src/cli/commands/project/unlink.ts
+    - src/cli.ts
+    - src/cli/commands/publish/single.ts
+    - src/cli/commands/publish/batch.ts
+    - src/mcp/tools/handlers.ts
+    - src/mcp/tools/publish-event.ts
+    - src/agent-detect.ts
+    - scripts/smoke-publish.ts
 ---
 
 # Fix: Wire CLI publish, share local validation between CLI/MCP via SDK, unify project-keyed shape
@@ -285,7 +308,8 @@ The MCP handler and CLI both call this. Note: this is intentionally **not export
 - `src/cli/lib/__tests__/schema-validate.test.ts` (cases: known type valid, known type invalid, unknown type)
 
 ### 2. SDK — project registry loader + `clientForProject` factory
-status: not_started
+status: completed
+commitSha: 39f3554
 
 Consistent with the existing pattern (`src/sdk/auth.ts`, `credentials.ts`, `url-resolver.ts` are all programmatic config-readers), add:
 
@@ -337,7 +361,8 @@ Project entry references a profile by name for URL resolution.
 - `src/transport/index.ts` or root barrel — export `clientForProject`
 
 ### 3. CLI — `project link/list/unlink` commands
-status: not_started
+status: completed
+commitSha: a3398b4
 
 Wire local-only project registry management. `link` writes a new entry to `~/.notickets/config.json` with file mode 0600; rejects duplicate names without `--force`. `list` masks tokens (`nt_push_...3f2`). `unlink` removes an entry.
 
@@ -350,7 +375,8 @@ Note: these commands are local-only — they never call the server. Push tokens 
 - `src/cli.ts` — dispatch `project` subcommand tree
 
 ### 4. CLI — wire `publish` and switch to SDK validator + project resolution
-status: not_started
+status: completed
+commitSha: 9052a41
 
 Update `runPublishSingle` to:
 - Accept the three call shapes documented in "Target shape": positional project, explicit `--token`/`--url` (or `--token-stdin`), or env-var fallback
@@ -418,7 +444,8 @@ Keep the `NO_TICKETS_INCLUDE_MACHINE` opt-in machine-hash code path. CI provenan
 - `src/agent-detect.test.ts` — drop CI-provider tests; keep machine-hash tests
 
 ### 8. Cleanup — migrate batch.ts to bundled Zod; delete validateAgainstSchema
-status: in_progress
+status: completed
+commitSha: 7d8f203
 
 Acceptance criteria item explicitly says: `src/cli/lib/schema-validate.ts deleted` (or at minimum, `validateAgainstSchema` deleted; the bundled-Zod helpers stay). Currently `validateAgainstSchema` is still called from `batch.ts` (against `spec.schema` fetched from the server registry) and from `discovery-flow.test.ts` (asserting the synthesised example passes JSON-Schema validation).
 

@@ -41,7 +41,9 @@ Options:
 Documentation: https://docs.no-tickets.com
 `);
 } else {
-  // Has args → CLI mode
+  // Has args → CLI mode. Must await — runCli is async (HTTP, fs) and the
+  // process otherwise exits before any I/O completes, leaving the user
+  // with exit 0 and no output regardless of the underlying outcome.
   const { runCli } = await import('../dist/cli.js');
-  runCli(args);
+  await runCli(args);
 }

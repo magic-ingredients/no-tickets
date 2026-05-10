@@ -13,6 +13,7 @@ import { runPublishSingle } from './cli/commands/publish/single.js';
 import { runProjectLink } from './cli/commands/project/link.js';
 import { runProjectList } from './cli/commands/project/list.js';
 import { runProjectUnlink } from './cli/commands/project/unlink.js';
+import { clientForProject, ProjectNotRegisteredError } from './sdk/projects.js';
 
 export interface CliDeps {
   /** Override for the browser opener. Tests inject a stub; production uses platformBrowserOpener. */
@@ -345,23 +346,44 @@ async function handlePublish(
     return;
   }
 
-  // URL + token resolution. Phase 1 ships the env-var auth path:
-  // NO_TICKETS_TOKEN + (NO_TICKETS_API_URL via resolveUrls).
-  // Project-keyed resolution (--project) lands in a follow-up commit
-  // once the project registry (Task 2) and link/list/unlink (Task 3) are wired.
-  const urls = urlsForFlagsOrFail(flags);
-  if (urls === null) return;
+  // Auth resolution paths, in priority order:
+  //   1. --project <name>: read ~/.notickets/config.json and use the
+  //      registered push token + the profile's apiUrl. The user-friendly
+  //      path for local dev once `nt project link` has been run.
+  //   2. NO_TICKETS_TOKEN env + NO_TICKETS_API_URL (via --profile or env):
+  //      single-project CI / one-off override. Unchanged from earlier
+  //      Task 4 scope.
+  // The two are mutually exclusive — combining them would silently drop
+  // one resolved value.
+  const projectFlag = flagString(flags, 'project');
+  let client: Client;
 
-  let token: string;
-  try {
-    token = resolveAuth().token;
-  } catch {
-    console.error(NOT_AUTHENTICATED_MESSAGE);
-    process.exitCode = 1;
-    return;
+  if (projectFlag !== undefined) {
+    try {
+      client = clientForProject(projectFlag);
+    } catch (err) {
+      if (err instanceof ProjectNotRegisteredError) {
+        console.error(err.message);
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    }
+  } else {
+    const urls = urlsForFlagsOrFail(flags);
+    if (urls === null) return;
+
+    let token: string;
+    try {
+      token = resolveAuth().token;
+    } catch {
+      console.error(NOT_AUTHENTICATED_MESSAGE);
+      process.exitCode = 1;
+      return;
+    }
+
+    client = new Client({ baseUrl: urls.apiUrl, token });
   }
-
-  const client = new Client({ baseUrl: urls.apiUrl, token });
 
   const exit = await runPublishSingle(
     { typeId, data },

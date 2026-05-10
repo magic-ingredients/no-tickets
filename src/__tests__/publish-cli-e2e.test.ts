@@ -46,6 +46,90 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
+describe('publish command e2e — --project resolution via ~/.notickets/config.json', () => {
+  it('resolves token + apiUrl from the registered project, ignoring env-var auth', async () => {
+    // Write a config.json with a registered project pointing at a different
+    // URL than NO_TICKETS_API_URL. The --project path should win.
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(
+      join(testDir, '.notickets', 'config.json'),
+      JSON.stringify({
+        profiles: {
+          mystaging: {
+            apiUrl: 'https://api-from-config.example.com',
+            authUrl: 'https://app-from-config.example.com/api/auth/cli',
+          },
+        },
+        projects: {
+          myapp: { profile: 'mystaging', pushToken: 'nt_push_from_config' },
+        },
+      }),
+    );
+
+    // Set conflicting env-var values that would win in the env-var path.
+    vi.stubEnv('NO_TICKETS_TOKEN', 'nt_push_FROM_ENV_should_be_ignored');
+    vi.stubEnv('NO_TICKETS_API_URL', 'https://api-from-env-should-be-ignored.example.com');
+
+    await runCli([
+      'publish',
+      'product.epic.created.v1',
+      '{"epicId":"e1","projectId":"p1","title":"t"}',
+      '--project',
+      'myapp',
+    ]);
+
+    expect(process.exitCode).toBeFalsy();
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const [url, init] = fetchSpy.mock.calls[0] as [string | URL, RequestInit];
+    // URL came from the project's profile, not the env var
+    expect(String(url)).toBe('https://api-from-config.example.com/v1/events');
+    // Token came from the project's pushToken, not NO_TICKETS_TOKEN
+    const headers = new Headers(init.headers as HeadersInit);
+    expect(headers.get('authorization')).toBe('Bearer nt_push_from_config');
+  });
+
+  it('exits 1 with ProjectNotRegisteredError message when --project name is unknown', async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(
+      join(testDir, '.notickets', 'config.json'),
+      JSON.stringify({ profiles: {}, projects: {} }),
+    );
+
+    await runCli([
+      'publish',
+      'product.epic.created.v1',
+      '{"epicId":"e","projectId":"p","title":"t"}',
+      '--project',
+      'no-such-project',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).toMatch(/no-such-project/);
+    expect(err).toMatch(/not registered/);
+  });
+
+  it('exits 1 when --project is supplied but config.json does not exist', async () => {
+    // Don't write config.json. NO_TICKETS_HOME points at an empty tmpdir.
+    await runCli([
+      'publish',
+      'product.epic.created.v1',
+      '{"epicId":"e","projectId":"p","title":"t"}',
+      '--project',
+      'mystaging',
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).toMatch(/mystaging/);
+    expect(err).toMatch(/config\.json|not registered/i);
+  });
+});
+
 describe('publish command e2e — env-var auth', () => {
   it('publishes a valid event to <api-url>/v1/events with Bearer auth', async () => {
     await runCli([

@@ -396,7 +396,7 @@ The current `--profile` + `NO_TICKETS_TOKEN` path stays for back-compat.
 - `scripts/smoke-publish.ts`
 
 ### 7. Drop CI auto-detection from default source
-status: not_started
+status: in_progress
 
 Remove the CI-provider env-var sniffing from the default `Source` builder. Replace with surface-specific defaults:
 

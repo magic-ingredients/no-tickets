@@ -125,7 +125,7 @@ describe('runPublishSingle — happy path', () => {
     await runPublishSingle(
       {
         ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
-        sourceName: 'cli',
+        sourceName: 'app',
         sourceAttributes: ['provider=github-actions'],
       },
       deps,
@@ -133,8 +133,60 @@ describe('runPublishSingle — happy path', () => {
 
     const event = publish.mock.calls[0]?.[0]?.[0];
     expect(event?.source).toEqual({
-      name: 'cli',
+      name: 'app',
       attributes: { provider: 'github-actions' },
+    });
+  });
+
+  it('defaults source.name to "cli" on every event when --source-name is not supplied', async () => {
+    // Surface-specific defaults replace the old CI auto-detection. The CLI
+    // surface stamps `name: 'cli'` so events landed via `nt publish` are
+    // distinguishable from MCP / direct-SDK provenance without the caller
+    // having to pass --source-name on every invocation.
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({}, out);
+
+    await runPublishSingle(
+      baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toBeDefined();
+    expect(event?.source?.name).toBe('cli');
+  });
+
+  it('default cli source has no attributes when --source-attribute is not supplied', async () => {
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({}, out);
+
+    await runPublishSingle(
+      baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source?.attributes).toBeUndefined();
+  });
+
+  it('--source-attribute attaches to the default cli source (no --source-name needed)', async () => {
+    // The CLI default `name: 'cli'` stays unless --source-name is supplied;
+    // --source-attribute alone should not strip the surface tag.
+    const out: RecordedOutput = { stdout: [], stderr: [] };
+    const { deps, publish } = buildDeps({}, out);
+
+    await runPublishSingle(
+      {
+        ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
+        sourceAttributes: ['provider=github-actions', 'runId=1234'],
+      },
+      deps,
+    );
+
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toEqual({
+      name: 'cli',
+      attributes: { provider: 'github-actions', runId: '1234' },
     });
   });
 });

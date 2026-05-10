@@ -371,7 +371,12 @@ describe('runPublishBatch — server error fallthrough', () => {
 });
 
 describe('runPublishBatch — source merge edge cases', () => {
-  it('passes through a JSONL line with no source untouched when no CLI flags supplied', async () => {
+  it('defaults source.name to "cli" on every event when neither JSONL nor CLI supplies one', async () => {
+    // Surface-specific defaults replace the old CI auto-detection at the
+    // transport layer. The batch path now stamps `name: 'cli'` for the
+    // same reason single.ts does — events landed via `nt publish --batch`
+    // are distinguishable from MCP / direct-SDK provenance without the
+    // caller pinning --source-name on every invocation.
     const path = writeBatch(
       '{"type": "app.user.signed-up.v1", "data": {"email": "a@b.c"}}\n',
     );
@@ -384,7 +389,7 @@ describe('runPublishBatch — source merge edge cases', () => {
     await runPublishBatch(baseOptions(path), deps);
 
     const event = publish.mock.calls[0]?.[0]?.[0];
-    expect(event).not.toHaveProperty('source');
+    expect(event?.source).toEqual({ name: 'cli' });
   });
 
   it('uses CLI source verbatim when JSONL line has no source', async () => {

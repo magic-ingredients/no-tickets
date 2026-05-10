@@ -1,8 +1,27 @@
-import { maskToken, readConfigSync, type ProjectEntry } from './config-io.js';
+import { ConfigCorruptError, maskToken, readConfigSync, type ProjectEntry } from './config-io.js';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
 
 export async function runProjectList(): Promise<number> {
-  const { config, exists } = readConfigSync();
-  const projects = (exists ? config.projects ?? {} : {}) as Record<string, Partial<ProjectEntry>>;
+  let config: ReturnType<typeof readConfigSync>['config'];
+  let exists: boolean;
+  try {
+    ({ config, exists } = readConfigSync());
+  } catch (err) {
+    if (err instanceof ConfigCorruptError) {
+      console.error(`project list: ${err.message}`);
+      return 1;
+    }
+    throw err;
+  }
+
+  // Defensive narrow — a malformed `projects: 42` would survive a blanket
+  // cast and crash on Object.keys. isRecord collapses any non-object to
+  // "no projects registered" rather than throwing.
+  const rawProjects = exists ? config.projects : undefined;
+  const projects = isRecord(rawProjects) ? (rawProjects as Record<string, Partial<ProjectEntry>>) : {};
   const names = Object.keys(projects).sort();
 
   if (names.length === 0) {

@@ -118,6 +118,21 @@ describe('runProjectUnlink', () => {
     expect(errOutput).toMatch(/config\.json|not registered|not linked/i);
   });
 
+  it('exits 1 with a hard error (no overwrite) when config.json contains invalid JSON', async () => {
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(join(testDir, '.notickets', 'config.json'), '{nope');
+
+    const exit = await runProjectUnlink({ name: 'mystaging' });
+
+    expect(exit).toBe(1);
+    const errOutput = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(errOutput).toMatch(/invalid JSON/);
+
+    // Untouched
+    const onDisk = await readFile(join(testDir, '.notickets', 'config.json'), 'utf-8');
+    expect(onDisk).toBe('{nope');
+  });
+
   it('prints success confirmation on stdout', async () => {
     await writeConfig({
       profiles: {},

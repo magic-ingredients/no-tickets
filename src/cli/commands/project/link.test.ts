@@ -189,6 +189,60 @@ describe('runProjectLink', () => {
     expect(errOutput).toMatch(/config\.json/);
   });
 
+  it('exits 1 with a hard error (no overwrite) when config.json contains invalid JSON', async () => {
+    // Critical: the previous reader silently treated parse errors as "empty
+    // config" and the next link would have rewritten the file from scratch
+    // — wiping profiles + other projects. Hard-fail prevents that.
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(join(testDir, '.notickets', 'config.json'), '{not valid: json}');
+
+    const exit = await runProjectLink({
+      name: 'mystaging',
+      profile: 'staging',
+      token: 'nt_push_x',
+    });
+
+    expect(exit).toBe(1);
+    const errOutput = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(errOutput).toMatch(/invalid JSON/);
+    expect(errOutput).toMatch(/Refusing to proceed/);
+
+    // Critical: file untouched
+    const onDisk = await readFile(join(testDir, '.notickets', 'config.json'), 'utf-8');
+    expect(onDisk).toBe('{not valid: json}');
+  });
+
+  it('exits 1 with a hard error when config.json root is not an object', async () => {
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(join(testDir, '.notickets', 'config.json'), '"oops"');
+
+    const exit = await runProjectLink({
+      name: 'mystaging',
+      profile: 'staging',
+      token: 'nt_push_x',
+    });
+
+    expect(exit).toBe(1);
+    const errOutput = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(errOutput).toMatch(/not an object/);
+  });
+
+  it('treats profiles: <non-object> as "no profiles defined" rather than crashing on Object.keys', async () => {
+    // Defensive cast — a malformed `profiles: "oops"` should produce the
+    // user-friendly "profile not defined" path, not a TypeError.
+    await writeConfig({ profiles: 'oops' });
+
+    const exit = await runProjectLink({
+      name: 'mystaging',
+      profile: 'staging',
+      token: 'nt_push_x',
+    });
+
+    expect(exit).toBe(1);
+    const errOutput = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(errOutput).toMatch(/profile.*not defined/i);
+  });
+
   it('prints success confirmation on stdout (with masked token, never the full secret)', async () => {
     await writeConfig(VALID_PROFILES);
 

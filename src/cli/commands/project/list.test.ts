@@ -87,12 +87,38 @@ describe('runProjectList', () => {
 
     await runProjectList();
 
+    // Compare line-starts, not substring positions — `out.indexOf("alpha")`
+    // would silently pass for an entry like "alpha2" that came first.
+    const lines: string[] = logSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    const names = lines.map((l: string) => l.split('\t')[0]);
+    expect(names).toEqual(['alpha', 'middle', 'zebra']);
+  });
+
+  it('hard-fails (exit 1) when config.json contains invalid JSON', async () => {
+    // Symmetric with link/unlink: we never silently treat a corrupt
+    // config as "empty". For list specifically, returning exit 1 + a
+    // pointed error is more useful than silently saying "no projects".
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    await writeFile(join(testDir, '.notickets', 'config.json'), '{not valid');
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = await runProjectList();
+
+    expect(exit).toBe(1);
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).toMatch(/invalid JSON/);
+  });
+
+  it('treats projects: <non-object> in config as "no projects registered" instead of crashing', async () => {
+    // A `projects: 42` value would crash a blanket cast on Object.keys.
+    // Test that the runtime guard collapses it to the empty path.
+    await writeConfig({ profiles: {}, projects: 42 });
+
+    const exit = await runProjectList();
+    expect(exit).toBe(0);
+
     const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
-    const alphaIdx = out.indexOf('alpha');
-    const middleIdx = out.indexOf('middle');
-    const zebraIdx = out.indexOf('zebra');
-    expect(alphaIdx).toBeLessThan(middleIdx);
-    expect(middleIdx).toBeLessThan(zebraIdx);
+    expect(out).toMatch(/no projects/i);
   });
 
   it('handles a malformed entry (no pushToken) by listing what it can without crashing', async () => {

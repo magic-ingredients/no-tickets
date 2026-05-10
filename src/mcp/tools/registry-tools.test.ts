@@ -70,6 +70,7 @@ describe('MCP discovery tools — registration shape', () => {
     // would fail validation rather than slip through.
     const schema = z.object(publishEventTool.inputSchema).strict();
     const result = schema.safeParse({
+      project: 'demo',
       type: 'app.thread.replied.v1',
       data: { text: 'hi' },
       source: { name: 'malicious-agent', sdkVersion: '0' },
@@ -87,6 +88,33 @@ describe('MCP discovery tools — registration shape', () => {
             ((i as { keys: unknown[] }).keys).includes('source')),
       );
       expect(flagged).toBe(true);
+    }
+  });
+
+  it('publish_event REQUIRES a non-empty `project` field (routes the wire body to the right account)', () => {
+    // MCP is multi-project. Omitting `project` must fail at the input-schema
+    // boundary so the handler never even runs against a default. An empty
+    // string is also rejected — a typo'd argument shouldn't silently route
+    // to a project named "".
+    const schema = z.object(publishEventTool.inputSchema);
+
+    const missing = schema.safeParse({
+      type: 'app.thread.replied.v1',
+      data: { text: 'hi' },
+    });
+    expect(missing.success).toBe(false);
+    if (!missing.success) {
+      expect(missing.error.issues.some((i) => i.path[0] === 'project')).toBe(true);
+    }
+
+    const empty = schema.safeParse({
+      project: '',
+      type: 'app.thread.replied.v1',
+      data: { text: 'hi' },
+    });
+    expect(empty.success).toBe(false);
+    if (!empty.success) {
+      expect(empty.error.issues.some((i) => i.path[0] === 'project')).toBe(true);
     }
   });
 });

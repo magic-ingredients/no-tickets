@@ -368,7 +368,7 @@ Shape: `nt publish <project> <event-json>` (positional JSON envelope) with stdin
 - `src/__tests__/publish-cli-e2e.test.ts` (new)
 
 ### 5. MCP — add local validation + `project` parameter
-status: not_started
+status: in_progress
 
 Update `handlePublishEvent` to:
 - Accept `project` in args (added to `publishEventTool.inputSchema`)

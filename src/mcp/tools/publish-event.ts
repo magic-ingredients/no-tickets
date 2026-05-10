@@ -8,6 +8,10 @@ export const publishEventTool: ToolDescriptor = {
     'schema; the server will reject mismatches. Source metadata is filled ' +
     'server-side and cannot be overridden.',
   inputSchema: {
+    project: z
+      .string()
+      .min(1)
+      .describe('Project name from the local registry (e.g. as set up via `nt project link`); routes the event to the matching account.'),
     type: z.string().min(1).describe('Type id (domain.entity.action.vN).'),
     data: z.record(z.string(), z.unknown()).describe('Event payload matching the type schema.'),
     subject: z

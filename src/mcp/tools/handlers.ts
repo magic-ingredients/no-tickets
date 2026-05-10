@@ -15,7 +15,13 @@ export interface ToolHandlerDeps {
     describe(typeId: string): Promise<EventTypeSpec | null>;
   };
   readonly subjectsCreate: (subject: Subject) => Promise<Subject>;
+  /** Publish the given events under the named project. The wiring layer
+   *  resolves the project name to its token + URL (via `resolveProjectAuth`
+   *  + `clientForProject`) before dispatching. Keeping project explicit at
+   *  the deps boundary means routing is observable from a single call site
+   *  rather than being threaded through closure state. */
   readonly publishEvents: (
+    project: string,
     events: readonly PublishEvent[],
   ) => Promise<PublishResponse>;
   readonly runInteraction: (
@@ -116,6 +122,7 @@ export async function handleDescribeEventType(
 // publish_event --------------------------------------------------------------
 
 export interface PublishEventArgs {
+  readonly project: string;
   readonly type: string;
   readonly data: Record<string, unknown>;
   readonly subject?: SubjectRef;
@@ -144,7 +151,7 @@ export async function handlePublishEvent(
     ...(args.trace_id !== undefined && { traceId: args.trace_id }),
     ...(args.dedupe_key !== undefined && { dedupeKey: args.dedupe_key }),
   };
-  const response = await deps.publishEvents([event]);
+  const response = await deps.publishEvents(args.project, [event]);
   const id = response.ids[0];
   if (id === undefined) {
     // Defensive: a 200 from POST /v1/events should always carry exactly one

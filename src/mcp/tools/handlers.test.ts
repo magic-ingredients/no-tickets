@@ -12,12 +12,24 @@ import type { Subject } from '../../core/subject.js';
 import type { PublishEvent, PublishResponse } from '../../transport/events.js';
 import type { Source } from '../../core/source.js';
 import type { InteractionResponse } from '../../core/interaction.js';
+import {
+  UnknownEventTypeError,
+  EventValidationError,
+} from '../../transport/errors.js';
 
 const MCP_SOURCE: Source = {
   name: 'mcp',
   sdkVersion: '9.9.9-test',
   attributes: { client: 'claude-code', clientVersion: '1.2.3' },
 };
+
+// Local-validation tests use a real type from the bundled
+// @magic-ingredients/no-tickets-schemas package so byTypeId actually has
+// the entry. The describe/list tests still use synthetic specs because
+// those handlers don't touch the bundled schemas.
+const VALID_TYPE_ID = 'product.epic.created.v1';
+const VALID_DATA = { epicId: 'e_1', projectId: 'p_1', title: 'demo epic' };
+const PROJECT = 'demo';
 
 const TYPE: EventTypeSpec = {
   id: 'app.user.signed-up.v1',
@@ -52,7 +64,7 @@ function buildDeps(opts: BuildDepsOptions = {}): {
     'describeResult' in opts ? (opts.describeResult ?? null) : TYPE,
   );
   const publish = vi.fn(
-    async (): Promise<PublishResponse> =>
+    async (_project: string, _events: readonly PublishEvent[]): Promise<PublishResponse> =>
       opts.publishResult ?? { ingested: 1, deduped: 0, ids: ['evt_1'] },
   );
   const subjectsCreate = vi.fn(
@@ -202,21 +214,79 @@ describe('handlePublishEvent', () => {
 
     const result = await handlePublishEvent(
       {
-        type: 'app.user.signed-up.v1',
-        data: { email: 'a@b.c' },
+        project: PROJECT,
+        type: VALID_TYPE_ID,
+        data: VALID_DATA,
       },
       deps,
     );
 
     expect(publish).toHaveBeenCalledTimes(1);
-    const sentEvents = publish.mock.calls[0]?.[0] as PublishEvent[];
+    const [calledProject, sentEvents] = publish.mock.calls[0] as [string, PublishEvent[]];
+    expect(calledProject).toBe(PROJECT);
     expect(sentEvents).toHaveLength(1);
     expect(sentEvents[0]).toMatchObject({
-      type: 'app.user.signed-up.v1',
-      data: { email: 'a@b.c' },
+      type: VALID_TYPE_ID,
+      data: VALID_DATA,
       source: MCP_SOURCE,
     });
     expect(result).toEqual({ id: 'evt_1', deduped: false });
+  });
+
+  it('forwards the agent-supplied project verbatim to publishEvents (no defaulting)', async () => {
+    // The MCP server is multi-project; the project field is REQUIRED and
+    // routes the wire body to the right token + URL. A regression that
+    // silently substitutes a default would publish to the wrong account.
+    const { deps, publish } = buildDeps({});
+
+    await handlePublishEvent(
+      { project: 'project-b', type: VALID_TYPE_ID, data: VALID_DATA },
+      deps,
+    );
+
+    expect(publish.mock.calls[0]?.[0]).toBe('project-b');
+  });
+
+  it('rejects an unknown event type LOCALLY with UnknownEventTypeError before any publish call', async () => {
+    // Before this fix, MCP forwarded everything to the server and let it
+    // 422. Now bundled byTypeId is the local source of truth; an unknown
+    // type id surfaces as a typed error the agent can react to, with
+    // zero HTTP round-trip.
+    const { deps, publish } = buildDeps({});
+
+    await expect(
+      handlePublishEvent(
+        { project: PROJECT, type: 'does.not.exist.v1', data: {} },
+        deps,
+      ),
+    ).rejects.toBeInstanceOf(UnknownEventTypeError);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid data payload LOCALLY with EventValidationError before any publish call', async () => {
+    // Invalid against the bundled Zod schema (missing required fields).
+    // The agent must see structured ValidationIssue[]; no HTTP round-trip.
+    const { deps, publish } = buildDeps({});
+
+    let caught: unknown;
+    try {
+      await handlePublishEvent(
+        { project: PROJECT, type: VALID_TYPE_ID, data: { epicId: 'e_1' } },
+        deps,
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(EventValidationError);
+    const err = caught as EventValidationError;
+    expect(err.typeId).toBe(VALID_TYPE_ID);
+    expect(err.batchIndex).toBe(0);
+    expect(err.issues.length).toBeGreaterThan(0);
+    // At least one issue points at the missing `projectId` (array path,
+    // preserved from Zod — NOT joined to a string).
+    expect(err.issues.some((i) => i.path.includes('projectId'))).toBe(true);
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it('an agent-supplied source on the args object is IGNORED — server source still wins', async () => {
@@ -226,14 +296,15 @@ describe('handlePublishEvent', () => {
     const { deps, publish } = buildDeps({});
 
     const argsWithMaliciousSource = {
-      type: 'app.user.signed-up.v1',
-      data: { email: 'a@b.c' },
+      project: PROJECT,
+      type: VALID_TYPE_ID,
+      data: VALID_DATA,
       source: { name: 'fake-agent', sdkVersion: '0', attributes: { client: 'attacker' } },
     } as unknown as Parameters<typeof handlePublishEvent>[0];
 
     await handlePublishEvent(argsWithMaliciousSource, deps);
 
-    const sent = (publish.mock.calls[0]?.[0] as PublishEvent[])[0];
+    const sent = (publish.mock.calls[0]?.[1] as PublishEvent[])[0];
     expect(sent?.source).toEqual(MCP_SOURCE);
     // The agent's `source` key on args MUST NOT propagate to the wire body.
     expect(sent?.source).not.toMatchObject({ name: 'fake-agent' });
@@ -246,7 +317,7 @@ describe('handlePublishEvent', () => {
 
     await expect(
       handlePublishEvent(
-        { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+        { project: PROJECT, type: VALID_TYPE_ID, data: VALID_DATA },
         deps,
       ),
     ).rejects.toThrow(/missing the event id/);
@@ -257,8 +328,9 @@ describe('handlePublishEvent', () => {
 
     await handlePublishEvent(
       {
-        type: 'app.user.signed-up.v1',
-        data: { email: 'a@b.c' },
+        project: PROJECT,
+        type: VALID_TYPE_ID,
+        data: VALID_DATA,
         subject: { type: 'app.user', id: 'usr_1' },
         occurred_at: '2026-01-01T00:00:00Z',
         parent_event_id: 'evt_parent',
@@ -268,10 +340,10 @@ describe('handlePublishEvent', () => {
       deps,
     );
 
-    const sent = (publish.mock.calls[0]?.[0] as PublishEvent[])[0];
+    const sent = (publish.mock.calls[0]?.[1] as PublishEvent[])[0];
     expect(sent).toMatchObject({
-      type: 'app.user.signed-up.v1',
-      data: { email: 'a@b.c' },
+      type: VALID_TYPE_ID,
+      data: VALID_DATA,
       subject: { type: 'app.user', id: 'usr_1' },
       occurredAt: '2026-01-01T00:00:00Z',
       parentEventId: 'evt_parent',
@@ -284,11 +356,11 @@ describe('handlePublishEvent', () => {
     const { deps, publish } = buildDeps({});
 
     await handlePublishEvent(
-      { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+      { project: PROJECT, type: VALID_TYPE_ID, data: VALID_DATA },
       deps,
     );
 
-    const sent = (publish.mock.calls[0]?.[0] as PublishEvent[])[0] ?? {};
+    const sent = (publish.mock.calls[0]?.[1] as PublishEvent[])[0] ?? {};
     expect(sent).not.toHaveProperty('subject');
     expect(sent).not.toHaveProperty('occurredAt');
     expect(sent).not.toHaveProperty('parentEventId');
@@ -302,7 +374,7 @@ describe('handlePublishEvent', () => {
     });
 
     const result = await handlePublishEvent(
-      { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+      { project: PROJECT, type: VALID_TYPE_ID, data: VALID_DATA },
       deps,
     );
 
@@ -315,7 +387,7 @@ describe('handlePublishEvent', () => {
     });
 
     const result = await handlePublishEvent(
-      { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+      { project: PROJECT, type: VALID_TYPE_ID, data: VALID_DATA },
       deps,
     );
 
@@ -328,7 +400,7 @@ describe('handlePublishEvent', () => {
     });
 
     const result = await handlePublishEvent(
-      { type: 'app.user.signed-up.v1', data: { email: 'a@b.c' } },
+      { project: PROJECT, type: VALID_TYPE_ID, data: VALID_DATA },
       deps,
     );
 

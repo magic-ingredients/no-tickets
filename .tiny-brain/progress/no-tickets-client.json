@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-04-22T18:07:57.987Z",
+  "lastUpdated": "2026-05-10T14:14:47.450Z",
   "features": [
     {
       "id": "cli-auth-flow",
@@ -149,7 +149,8 @@
       "taskSummary": {
         "total": 4,
         "completed": 4,
-        "remaining": 0
+        "remaining": 0,
+        "weightedProgress": 1
       }
     },
     {
@@ -282,7 +283,8 @@
       "taskSummary": {
         "total": 2,
         "completed": 2,
-        "remaining": 0
+        "remaining": 0,
+        "weightedProgress": 0.5
       }
     },
     {
@@ -346,8 +348,10 @@
       ],
       "taskSummary": {
         "total": 4,
-        "completed": 4,
-        "remaining": 0
+        "completed": 2,
+        "remaining": 2,
+        "weightedProgress": 0.25,
+        "nextTask": "Wire tiny-brain to consume npm package"
       }
     },
     {
@@ -450,7 +454,8 @@
       "taskSummary": {
         "total": 6,
         "completed": 6,
-        "remaining": 0
+        "remaining": 0,
+        "weightedProgress": 0.16666666666666666
       }
     },
     {
@@ -523,7 +528,8 @@
       "taskSummary": {
         "total": 4,
         "completed": 4,
-        "remaining": 0
+        "remaining": 0,
+        "weightedProgress": 0.5
       }
     },
     {
@@ -669,7 +675,8 @@
       "taskSummary": {
         "total": 4,
         "completed": 4,
-        "remaining": 0
+        "remaining": 0,
+        "weightedProgress": 1
       }
     },
     {
@@ -753,26 +760,27 @@
   "gitUserEmail": "rishson@gmail.com",
   "author": "Andy Richardson",
   "currentState": {
-    "feature": 7,
-    "featureTitle": "Open Source Launch & npm Publish",
+    "feature": 9,
+    "featureTitle": "Migration Script (docs/prd/ → .notickets/)",
     "overallProgress": {
       "completedFeatures": 8,
       "totalFeatures": 9,
       "completedTasks": 31,
       "totalTasks": 32,
-      "percentComplete": 97
+      "percentComplete": 97,
+      "weightedPercentComplete": 41
     },
     "workRemaining": {
       "pendingFeatures": [
         "Migration Script (docs/prd/ → .notickets/)"
       ],
-      "currentFeatureTasks": 3,
-      "futureFeatureTasks": 1
+      "currentFeatureTasks": 1,
+      "futureFeatureTasks": 0
     },
     "nextAction": {
-      "featureId": "oss-launch",
-      "taskId": "task-7-2",
-      "description": "Publish initial npm release"
+      "featureId": "migration-script",
+      "taskId": "task-9-1",
+      "description": "Build migration command"
     },
     "blockers": []
   }

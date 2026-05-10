@@ -235,25 +235,58 @@
         {
           "id": "task-2",
           "description": "Update Zod schemas in core/schemas.ts",
-          "status": "completed",
+          "status": "in_progress",
           "commitSha": "2e64b37",
+          "testCommitSha": "skipped",
           "committedAt": "2026-04-22T18:47:26.254Z",
+          "redStartedAt": "2026-05-10T13:42:38.508Z",
+          "reviews": {
+            "adversarial": {
+              "completedAt": "2026-05-10T13:42:38.508Z",
+              "reviewSha": "2e64b37",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T13:42:38.508Z",
+              "startedAt": "2026-05-10T13:42:38.508Z"
+            }
+          },
           "completedAt": "2026-04-22T18:47:26.254Z"
         },
         {
           "id": "task-3",
           "description": "Update state computation",
-          "status": "completed",
+          "status": "in_progress",
           "commitSha": "2e64b37",
+          "testCommitSha": "skipped",
           "committedAt": "2026-04-22T18:47:26.254Z",
+          "redStartedAt": "2026-05-10T13:42:38.521Z",
+          "reviews": {
+            "adversarial": {
+              "completedAt": "2026-05-10T13:42:38.521Z",
+              "reviewSha": "2e64b37",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T13:42:38.521Z",
+              "startedAt": "2026-05-10T13:42:38.521Z"
+            }
+          },
           "completedAt": "2026-04-22T18:47:26.254Z"
         },
         {
           "id": "task-4",
           "description": "Update push command and SDK",
-          "status": "completed",
+          "status": "in_progress",
           "commitSha": "2e64b37",
+          "testCommitSha": "skipped",
           "committedAt": "2026-04-22T18:47:26.254Z",
+          "redStartedAt": "2026-05-10T13:42:38.536Z",
+          "reviews": {
+            "adversarial": {
+              "completedAt": "2026-05-10T13:42:38.536Z",
+              "reviewSha": "2e64b37",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T13:42:38.536Z",
+              "startedAt": "2026-05-10T13:42:38.536Z"
+            }
+          },
           "completedAt": "2026-04-22T18:47:26.254Z"
         }
       ],
@@ -530,10 +563,21 @@
         {
           "id": "task-1",
           "description": "Validation — consume `@magic-ingredients/no-tickets-schemas` directly",
-          "status": "completed",
+          "status": "in_progress",
           "commitSha": "9bcdac3",
-          "completedAt": "2026-05-10T13:40:38.179Z",
-          "committedAt": "2026-05-10T13:40:38.179Z"
+          "testCommitSha": "skipped",
+          "committedAt": "2026-05-10T13:40:38.179Z",
+          "redStartedAt": "2026-05-10T13:42:38.624Z",
+          "reviews": {
+            "adversarial": {
+              "completedAt": "2026-05-10T13:42:38.624Z",
+              "reviewSha": "9bcdac3",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T13:42:38.624Z",
+              "startedAt": "2026-05-10T13:42:38.624Z"
+            }
+          },
+          "completedAt": "2026-05-10T13:40:38.179Z"
         },
         {
           "id": "task-2",
@@ -548,7 +592,34 @@
         {
           "id": "task-4",
           "description": "CLI — wire `publish` and switch to SDK validator + project resolution",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "690634bd7e2f9868aad5329c190fcba7e991f8ac",
+          "testCommitSha": "58fc05e582a9febcbe0bfe3b400e2c067e27274a",
+          "redStartedAt": "2026-05-10T13:43:15.766Z",
+          "greenStartedAt": "2026-05-10T13:46:22.133Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-10T13:54:12.651Z",
+              "completedAt": "2026-05-10T13:56:44.956Z",
+              "reviewSha": "690634b",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T13:56:44.956Z",
+              "refactorCommitSha": "3df63c67ee37346f9ed4de96a857c3ef3702e579",
+              "refactorCompletedAt": "2026-05-10T14:03:25.017Z",
+              "refactorCommittedAt": "2026-05-10T14:03:25.017Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-10T14:03:25.017Z",
+              "completedAt": "2026-05-10T14:08:11.311Z",
+              "reviewSha": "3df63c67ee37346f9ed4de96a857c3ef3702e579",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T14:08:11.311Z",
+              "refactorCommitSha": "210c073d3b483730219c2aa1c60f768cd3189862",
+              "refactorCompletedAt": "2026-05-10T14:14:46.575Z",
+              "refactorCommittedAt": "2026-05-10T14:14:46.575Z"
+            }
+          },
+          "completedAt": "2026-05-10T14:14:46.576Z"
         },
         {
           "id": "task-5",
@@ -567,7 +638,7 @@
         }
       ],
       "filePath": ".tiny-brain/fixes/publish-shared-surfaces.md",
-      "reported": "2026-05-09T00:00:00.000Z",
+      "reported": "2026-05-09",
       "resolved": null,
       "archived": false
     },
@@ -1016,5 +1087,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-05-10T13:40:45.435Z"
+  "lastSynced": "2026-05-10T14:14:47.421Z"
 }

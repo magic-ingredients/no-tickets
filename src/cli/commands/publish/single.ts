@@ -1,11 +1,11 @@
+import { byTypeId } from '@magic-ingredients/no-tickets-schemas';
 import type { PublishEvent, PublishResponse } from '../../../transport/events.js';
-import type { EventTypeSpec } from '../../../registry/client.js';
 import type { SubjectRef } from '../../../core/subject.js';
 import type { Source } from '../../../core/source.js';
 import { resolveDataInput } from '../../lib/data-input.js';
 import { parseSourceFlags } from '../../lib/source-flags.js';
 import { fuzzyMatch } from '../../lib/fuzzy-match.js';
-import { validateAgainstSchema } from '../../lib/schema-validate.js';
+import { validateEventLocally } from '../../lib/schema-validate.js';
 
 export interface PublishSingleOptions {
   readonly typeId: string;
@@ -20,7 +20,6 @@ export interface PublishSingleOptions {
 }
 
 export interface PublishSingleDeps {
-  listEvents(): Promise<readonly EventTypeSpec[]>;
   publish(events: readonly PublishEvent[]): Promise<PublishResponse>;
   readStdin(): Promise<string>;
   write(line: string): void;
@@ -51,29 +50,6 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  let availableTypes: readonly EventTypeSpec[];
-  try {
-    availableTypes = await deps.listEvents();
-  } catch (err) {
-    deps.writeErr(err instanceof Error ? err.message : String(err));
-    return EXIT_VALIDATION;
-  }
-
-  const typeSpec = availableTypes.find((t) => t.id === options.typeId);
-  if (typeSpec === undefined) {
-    const suggestions = fuzzyMatch(
-      options.typeId,
-      availableTypes.map((t) => t.id),
-      { topN: 3 },
-    );
-    deps.writeErr(`Unknown event type: ${options.typeId}`);
-    if (suggestions.length > 0) {
-      deps.writeErr('Did you mean:');
-      for (const s of suggestions) deps.writeErr(`  ${s}`);
-    }
-    return EXIT_UNKNOWN_TYPE;
-  }
-
   let parsedData: unknown;
   try {
     parsedData = await resolveDataInput(options.data, { readStdin: deps.readStdin });
@@ -82,11 +58,25 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  const validationErrors = validateAgainstSchema(parsedData, typeSpec.schema);
-  if (validationErrors.length > 0) {
-    deps.writeErr(`${options.typeId}: ${validationErrors.length} local validation error(s):`);
-    for (const e of validationErrors) {
-      deps.writeErr(`  ${e.path}: ${e.message}`);
+  // Local validation against the npm-bundled Zod schemas
+  // (@magic-ingredients/no-tickets-schemas). Replaces the registry-fetched
+  // JSON Schema path: the schemas package is the compile-time-pinned source
+  // of truth, so no HTTP round-trip is required to validate.
+  const validation = validateEventLocally(options.typeId, parsedData);
+  if ('unknownType' in validation) {
+    const knownIds = Object.keys(byTypeId);
+    const suggestions = fuzzyMatch(options.typeId, knownIds, { topN: 3 });
+    deps.writeErr(`Unknown event type: ${options.typeId}`);
+    if (suggestions.length > 0) {
+      deps.writeErr('Did you mean:');
+      for (const s of suggestions) deps.writeErr(`  ${s}`);
+    }
+    return EXIT_UNKNOWN_TYPE;
+  }
+  if (validation.length > 0) {
+    deps.writeErr(`${options.typeId}: ${validation.length} local validation error(s):`);
+    for (const issue of validation) {
+      deps.writeErr(`  ${issue.path}: ${issue.message}`);
     }
     return EXIT_VALIDATION;
   }

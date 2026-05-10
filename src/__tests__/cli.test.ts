@@ -204,7 +204,6 @@ describe('runCli dispatch', () => {
 
   it.each([
     'event',
-    'publish',
     'subject',
     'action',
   ])('runCli routes "%s" to the "not yet implemented" default branch', async (verb) => {

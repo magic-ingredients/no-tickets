@@ -7,6 +7,9 @@ import { createToken, listTokens, revokeToken } from './commands/token.js';
 import { resolveInitAuth } from './commands/init-auth.js';
 import { DEFAULT_TIMEOUT_MS as DEFAULT_AUTH_TIMEOUT_MS } from './sdk/auth-server.js';
 import { resolveUrls, type ResolvedUrls } from './sdk/url-resolver.js';
+import { Client } from './transport/client.js';
+import { publish } from './transport/events.js';
+import { runPublishSingle } from './cli/commands/publish/single.js';
 
 export interface CliDeps {
   /** Override for the browser opener. Tests inject a stub; production uses platformBrowserOpener. */
@@ -283,6 +286,52 @@ function handleStatus(flags: Readonly<Record<string, FlagValue>>): void {
   }
 }
 
+async function readStdinAll(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
+async function handlePublish(
+  args: readonly string[],
+  flags: Readonly<Record<string, FlagValue>>,
+): Promise<void> {
+  const typeId = args[0] ?? '';
+  const data = args[1] ?? '';
+
+  // URL + token resolution. Phase 1 ships the env-var auth path:
+  // NO_TICKETS_TOKEN + (NO_TICKETS_API_URL via resolveUrls).
+  // Project-keyed resolution (--project) lands in a follow-up commit
+  // once the project registry (Task 2) and link/list/unlink (Task 3) are wired.
+  const urls = urlsForFlagsOrFail(flags);
+  if (urls === null) return;
+
+  let token: string;
+  try {
+    token = resolveAuth().token;
+  } catch {
+    console.error(NOT_AUTHENTICATED_MESSAGE);
+    process.exitCode = 1;
+    return;
+  }
+
+  const client = new Client({ baseUrl: urls.apiUrl, token });
+
+  const exit = await runPublishSingle(
+    { typeId, data },
+    {
+      publish: (events) => publish(client, events),
+      readStdin: readStdinAll,
+      write: (line) => console.log(line),
+      writeErr: (line) => console.error(line),
+    },
+  );
+
+  if (exit !== 0) process.exitCode = exit;
+}
+
 async function handleValidate(): Promise<void> {
   const files = await readNoTicketsDir('.notickets');
   const result = validateFiles(files);
@@ -338,6 +387,9 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
       break;
     case 'init':
       await handleInit(openBrowser, parsed.flags);
+      break;
+    case 'publish':
+      await handlePublish(parsed.args, parsed.flags);
       break;
     case 'unknown':
       console.error(`Unknown command: ${String(argv[0]).replace(/[\x00-\x1f\x7f]/g, '')}\nRun "npx no-tickets --help" for usage.`);

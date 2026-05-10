@@ -1,23 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runPublishSingle, type PublishSingleDeps, type PublishSingleOptions } from './single.js';
-import type { EventTypeSpec } from '../../../registry/client.js';
 import type { PublishResponse, PublishEvent } from '../../../transport/events.js';
 
-const TYPE_USER: EventTypeSpec = {
-  id: 'app.user.signed-up.v1',
-  domain: 'app.user',
-  entity: 'user',
-  action: 'signed-up',
-  version: 1,
-  schema: {
-    type: 'object',
-    properties: {
-      email: { type: 'string' },
-      plan: { type: 'string', enum: ['free', 'pro'] },
-    },
-    required: ['email'],
-  },
-};
+// Tests use real type ids from @magic-ingredients/no-tickets-schemas via the
+// validateEventLocally path. JSON-Schema-specific validation behaviors live
+// in src/cli/lib/schema-validate.test.ts now.
+
+const VALID_EPIC_DATA = '{"epicId":"e1","projectId":"p1","title":"my epic"}';
 
 interface RecordedOutput {
   readonly stdout: string[];
@@ -25,9 +14,9 @@ interface RecordedOutput {
 }
 
 interface BuildDepsOptions {
-  readonly availableTypes: readonly EventTypeSpec[];
   readonly publishResult?: PublishResponse;
   readonly publishError?: unknown;
+  readonly stdin?: string;
 }
 
 function buildDeps(opts: BuildDepsOptions, out: RecordedOutput): {
@@ -41,9 +30,8 @@ function buildDeps(opts: BuildDepsOptions, out: RecordedOutput): {
     },
   );
   const deps: PublishSingleDeps = {
-    listEvents: vi.fn(async () => opts.availableTypes),
     publish,
-    readStdin: vi.fn(async () => ''),
+    readStdin: vi.fn(async () => opts.stdin ?? ''),
     write: (line) => out.stdout.push(line),
     writeErr: (line) => out.stderr.push(line),
   };
@@ -58,10 +46,10 @@ const baseOptions = (typeId: string, data: string): PublishSingleOptions => ({
 describe('runPublishSingle — happy path', () => {
   it('publishes a valid event and prints the ingested count and ids', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+      baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
       deps,
     );
 
@@ -70,8 +58,8 @@ describe('runPublishSingle — happy path', () => {
     const events = publish.mock.calls[0]?.[0];
     expect(events).toEqual([
       expect.objectContaining({
-        type: 'app.user.signed-up.v1',
-        data: { email: 'a@b.c' },
+        type: 'product.epic.created.v1',
+        data: { epicId: 'e1', projectId: 'p1', title: 'my epic' },
       }),
     ]);
     expect(out.stdout.join('\n')).toContain('1 event');
@@ -80,82 +68,81 @@ describe('runPublishSingle — happy path', () => {
 
   it('attaches subject when both --subject-type and --subject-id are provided', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     await runPublishSingle(
       {
-        ...baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+        ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
         subjectType: 'app.user',
         subjectId: 'usr_42',
       },
       deps,
     );
 
-    const events = publish.mock.calls[0]?.[0];
-    expect(events?.[0]).toMatchObject({
-      subject: { type: 'app.user', id: 'usr_42' },
-    });
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.subject).toEqual({ type: 'app.user', id: 'usr_42' });
   });
 
   it('omits subject when only one of subject-type/subject-id is provided', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     await runPublishSingle(
       {
-        ...baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+        ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
         subjectType: 'app.user',
       },
       deps,
     );
 
-    const eventBody = publish.mock.calls[0]?.[0]?.[0];
-    expect(eventBody?.subject).toBeUndefined();
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.subject).toBeUndefined();
   });
 
   it('attaches source overrides when source-name is provided', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     await runPublishSingle(
       {
-        ...baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
-        sourceName: 'tiny-brain',
-        sourceAttributes: ['env=prod'],
+        ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
+        sourceName: 'cli',
+        sourceAttributes: ['provider=github-actions'],
       },
       deps,
     );
 
-    const eventBody = publish.mock.calls[0]?.[0]?.[0];
-    expect(eventBody?.source).toMatchObject({
-      name: 'tiny-brain',
-      attributes: { env: 'prod' },
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event?.source).toEqual({
+      name: 'cli',
+      attributes: { provider: 'github-actions' },
     });
   });
 });
 
 describe('runPublishSingle — unknown type id', () => {
-  it('exits with code 2 and prints fuzzy-match suggestions to stderr', async () => {
+  it('exits with code 2 and prints fuzzy-match suggestions to stderr (no publish call)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-uppp.v1', '{"email": "a@b.c"}'),
+      // misspelling of product.epic.created.v1 — should fuzzy-match
+      baseOptions('product.epic.creatd.v1', '{}'),
       deps,
     );
 
     expect(exit).toBe(2);
     expect(publish).not.toHaveBeenCalled();
-    const printed = out.stderr.join('\n');
-    expect(printed).toContain('app.user.signed-up.v1'); // fuzzy suggestion
+    expect(out.stderr.join('\n')).toMatch(/Unknown event type/i);
+    expect(out.stderr.join('\n')).toMatch(/product\.epic\.created\.v1/);
   });
 
-  it('exits with code 2 even when there are no candidates in the cache', async () => {
+  it('exits 2 without suggestions when nothing fuzzy-matches', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('anything.v1', '{}'),
+      baseOptions('z'.repeat(40), '{}'),
       deps,
     );
 
@@ -165,236 +152,131 @@ describe('runPublishSingle — unknown type id', () => {
 });
 
 describe('runPublishSingle — local validation', () => {
-  it('exits with code 1 and reports the field path when --data is missing a required field', async () => {
+  it('exits with code 1 and reports the field path when data is missing a required field', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{}'),
+      // projectId missing
+      baseOptions('product.epic.created.v1', '{"epicId":"e1","title":"t"}'),
       deps,
     );
 
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toMatch(/email/i);
+    expect(out.stderr.join('\n')).toMatch(/projectId/);
   });
 
-  it('exits with code 1 when --data has a wrong-typed field', async () => {
+  it('exits with code 1 when a string field is empty (.min(1) violation)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{"email": 42}'),
+      baseOptions(
+        'product.epic.created.v1',
+        '{"epicId":"","projectId":"p1","title":"t"}',
+      ),
       deps,
     );
 
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toMatch(/email/);
+    expect(out.stderr.join('\n')).toMatch(/epicId/);
   });
 
-  it('rejects an enum violation with a "one of" message', async () => {
+  it('exits with code 1 when an extraneous key is sent to a .strict() schema', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{"email": "a@b.c", "plan": "enterprise"}'),
+      baseOptions(
+        'product.epic.created.v1',
+        '{"epicId":"e1","projectId":"p1","title":"t","stray":1}',
+      ),
       deps,
     );
 
     expect(exit).toBe(1);
     expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toContain('plan');
-    expect(out.stderr.join('\n')).toMatch(/one of/);
   });
-
-  it('validates each item of an array schema; flags the failing index', async () => {
-    const ARRAY_TYPE: EventTypeSpec = {
-      ...TYPE_USER,
-      id: 'app.list.v1',
-      schema: {
-        type: 'object',
-        properties: {
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['tags'],
-      },
-    };
-    const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [ARRAY_TYPE] }, out);
-
-    const exit = await runPublishSingle(
-      baseOptions('app.list.v1', '{"tags": ["ok", 42]}'),
-      deps,
-    );
-
-    expect(exit).toBe(1);
-    expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toContain('tags.1');
-  });
-
-  it('rejects a non-array value at an array-typed field', async () => {
-    const ARRAY_TYPE: EventTypeSpec = {
-      ...TYPE_USER,
-      id: 'app.list.v1',
-      schema: {
-        type: 'object',
-        properties: {
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    };
-    const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [ARRAY_TYPE] }, out);
-
-    const exit = await runPublishSingle(
-      baseOptions('app.list.v1', '{"tags": "not-an-array"}'),
-      deps,
-    );
-
-    expect(exit).toBe(1);
-    expect(publish).not.toHaveBeenCalled();
-    expect(out.stderr.join('\n')).toMatch(/expected array/);
-  });
-
-  it.each([
-    ['number', 'count', '{"count": 1}', '{"count": "1"}'],
-    ['integer', 'n', '{"n": 1}', '{"n": "1"}'],
-    ['boolean', 'flag', '{"flag": true}', '{"flag": 1}'],
-    ['null', 'value', '{"value": null}', '{"value": 0}'],
-  ])(
-    'matchesType: %s field accepts the right value and rejects the wrong type',
-    async (schemaType, field, ok, bad) => {
-      const TYPE: EventTypeSpec = {
-        ...TYPE_USER,
-        id: 'app.x.v1',
-        schema: {
-          type: 'object',
-          properties: { [field]: { type: schemaType as 'number' } },
-        },
-      };
-      const okOut: RecordedOutput = { stdout: [], stderr: [] };
-      const okDeps = buildDeps({ availableTypes: [TYPE] }, okOut);
-      const okExit = await runPublishSingle(baseOptions('app.x.v1', ok), okDeps.deps);
-      expect(okExit).toBe(0);
-
-      const badOut: RecordedOutput = { stdout: [], stderr: [] };
-      const badDeps = buildDeps({ availableTypes: [TYPE] }, badOut);
-      const badExit = await runPublishSingle(baseOptions('app.x.v1', bad), badDeps.deps);
-      expect(badExit).toBe(1);
-      expect(badDeps.publish).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe('runPublishSingle — optional field omission on the wire', () => {
   it('omits parentEventId, traceId, dedupeKey, subject, and source when not supplied', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
-    await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
-      deps,
-    );
+    await runPublishSingle(baseOptions('product.epic.created.v1', VALID_EPIC_DATA), deps);
 
-    const event = publish.mock.calls[0]?.[0]?.[0] ?? {};
-    expect(event).not.toHaveProperty('parentEventId');
-    expect(event).not.toHaveProperty('traceId');
-    expect(event).not.toHaveProperty('dedupeKey');
-    expect(event).not.toHaveProperty('subject');
-    expect(event).not.toHaveProperty('source');
+    const event = publish.mock.calls[0]?.[0]?.[0];
+    expect(event && 'parentEventId' in event).toBe(false);
+    expect(event && 'traceId' in event).toBe(false);
+    expect(event && 'dedupeKey' in event).toBe(false);
+    expect(event && 'subject' in event).toBe(false);
+    expect(event && 'source' in event).toBe(false);
   });
 
   it('passes parentEventId, traceId, and dedupeKey through when supplied', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     await runPublishSingle(
       {
-        ...baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+        ...baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
         parent: 'evt_parent',
         trace: 'trace_xyz',
-        dedupeKey: 'idempotency_1',
+        dedupeKey: 'dedupe_abc',
       },
       deps,
     );
 
     const event = publish.mock.calls[0]?.[0]?.[0];
-    expect(event).toMatchObject({
-      parentEventId: 'evt_parent',
-      traceId: 'trace_xyz',
-      dedupeKey: 'idempotency_1',
-    });
+    expect(event?.parentEventId).toBe('evt_parent');
+    expect(event?.traceId).toBe('trace_xyz');
+    expect(event?.dedupeKey).toBe('dedupe_abc');
   });
 });
 
 describe('runPublishSingle — input guards', () => {
-  it('exits with code 1 when type id is empty (no listEvents call)', async () => {
+  it('exits with code 1 when type id is empty (no fuzzy-match, no publish)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
-    const exit = await runPublishSingle(baseOptions('', '{"email": "a@b.c"}'), deps);
+    const exit = await runPublishSingle(baseOptions('', '{}'), deps);
 
     expect(exit).toBe(1);
-    expect(deps.listEvents).not.toHaveBeenCalled();
-    expect(publish).not.toHaveBeenCalled();
-  });
-
-  it('exits with code 1 when listEvents fails (cache missing)', async () => {
-    const out: RecordedOutput = { stdout: [], stderr: [] };
-    const publish = vi.fn();
-    const deps: PublishSingleDeps = {
-      listEvents: vi.fn(async () => {
-        throw new Error('cache missing');
-      }),
-      publish,
-      readStdin: vi.fn(async () => ''),
-      write: (l) => out.stdout.push(l),
-      writeErr: (l) => out.stderr.push(l),
-    };
-
-    const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{}'),
-      deps,
-    );
-
-    expect(exit).toBe(1);
-    expect(out.stderr.join('\n')).toContain('cache missing');
     expect(publish).not.toHaveBeenCalled();
   });
 
   it('exits with code 1 when --data fails to resolve (invalid JSON)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({ availableTypes: [TYPE_USER] }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{not json'),
+      baseOptions('product.epic.created.v1', '{not-valid-json}'),
       deps,
     );
 
     expect(exit).toBe(1);
-    expect(out.stderr.join('\n')).toMatch(/json/i);
     expect(publish).not.toHaveBeenCalled();
   });
 });
 
 describe('runPublishSingle — server error', () => {
-  it('exits with code 3 when the server returns an error', async () => {
+  it('exits with code 3 when the publish call throws', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps(
-      {
-        availableTypes: [TYPE_USER],
-        publishError: new Error('server boom'),
-      },
+    const { deps, publish } = buildDeps(
+      { publishError: new Error('boom') },
       out,
     );
 
     const exit = await runPublishSingle(
-      baseOptions('app.user.signed-up.v1', '{"email": "a@b.c"}'),
+      baseOptions('product.epic.created.v1', VALID_EPIC_DATA),
       deps,
     );
 
     expect(exit).toBe(3);
-    expect(out.stderr.join('\n')).toContain('server boom');
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(out.stderr.join('\n')).toMatch(/boom/);
   });
 });

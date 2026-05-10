@@ -10,6 +10,9 @@ import { resolveUrls, type ResolvedUrls } from './sdk/url-resolver.js';
 import { Client } from './transport/client.js';
 import { publish } from './transport/events.js';
 import { runPublishSingle } from './cli/commands/publish/single.js';
+import { runProjectLink } from './cli/commands/project/link.js';
+import { runProjectList } from './cli/commands/project/list.js';
+import { runProjectUnlink } from './cli/commands/project/unlink.js';
 
 export interface CliDeps {
   /** Override for the browser opener. Tests inject a stub; production uses platformBrowserOpener. */
@@ -28,20 +31,21 @@ type Command =
   | 'token'
   | 'event'
   | 'publish'
+  | 'project'
   | 'subject'
   | 'action'
   | 'help'
   | 'version'
   | 'unknown';
 
-// `event`, `publish`, `subject`, `action` are recognised so the help text
-// matches runtime parsing — each falls through to the default branch's
-// "not yet implemented" message until the dispatcher wiring lands. Without
-// this entry, users copying the help text get the "Unknown command" path
+// `event`, `subject`, `action` are recognised so the help text matches
+// runtime parsing — each falls through to the default branch's "not yet
+// implemented" message until its dispatcher wiring lands. Without this
+// entry, users copying the help text get the "Unknown command" path
 // instead of a clear "X is not yet implemented" message.
 const KNOWN_COMMANDS = new Set<Command>([
   'init', 'connect', 'disconnect', 'status', 'validate', 'token',
-  'event', 'publish', 'subject', 'action',
+  'event', 'publish', 'project', 'subject', 'action',
 ]);
 
 function isKnownCommand(value: string): value is Command {
@@ -53,7 +57,7 @@ type FlagValue = boolean | string;
 /** Flags that consume the following argv entry as their value.
  *  All other flags are parsed as booleans so positional args like
  *  `init --quiet some-arg` are never accidentally swallowed. */
-const VALUE_FLAGS = new Set<string>(['project', 'label', 'timeout', 'profile']);
+const VALUE_FLAGS = new Set<string>(['project', 'label', 'timeout', 'profile', 'token']);
 
 interface ParsedArgs {
   readonly command: Command;
@@ -286,6 +290,38 @@ function handleStatus(flags: Readonly<Record<string, FlagValue>>): void {
   }
 }
 
+async function handleProject(
+  subcommandArgs: readonly string[],
+  flags: Readonly<Record<string, FlagValue>>,
+): Promise<void> {
+  const subcommand = subcommandArgs[0];
+
+  switch (subcommand) {
+    case 'link': {
+      const exit = await runProjectLink({
+        name: subcommandArgs[1] ?? '',
+        profile: flagString(flags, 'profile') ?? '',
+        token: flagString(flags, 'token') ?? '',
+        force: flags['force'] === true,
+      });
+      process.exitCode = exit;
+      return;
+    }
+    case 'list': {
+      const exit = await runProjectList();
+      process.exitCode = exit;
+      return;
+    }
+    case 'unlink': {
+      const exit = await runProjectUnlink({ name: subcommandArgs[1] ?? '' });
+      process.exitCode = exit;
+      return;
+    }
+    default:
+      fail(`Unknown project subcommand: ${subcommand ?? '(none)'}. Use link | list | unlink.`);
+  }
+}
+
 async function readStdinAll(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -400,6 +436,9 @@ export async function runCli(argv: readonly string[], deps: CliDeps = {}): Promi
       break;
     case 'publish':
       await handlePublish(parsed.args, parsed.flags);
+      break;
+    case 'project':
+      await handleProject(parsed.args, parsed.flags);
       break;
     case 'unknown':
       console.error(`Unknown command: ${String(argv[0]).replace(/[\x00-\x1f\x7f]/g, '')}\nRun "npx no-tickets --help" for usage.`);

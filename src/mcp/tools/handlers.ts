@@ -1,3 +1,4 @@
+import { byTypeId } from '@magic-ingredients/no-tickets-schemas';
 import type { EventTypeSpec } from '../../registry/client.js';
 import type { Subject, SubjectRef } from '../../core/subject.js';
 import type { Source } from '../../core/source.js';
@@ -8,6 +9,11 @@ import type {
 import type { InteractionResponse } from '../../core/interaction.js';
 import type { EventsListOptions } from '../../registry/index.js';
 import { synthesiseExample } from '../../lib/example-synth.js';
+import {
+  UnknownEventTypeError,
+  EventValidationError,
+  type ValidationIssue,
+} from '../../transport/errors.js';
 
 export interface ToolHandlerDeps {
   readonly events: {
@@ -137,10 +143,38 @@ export interface PublishEventResult {
   readonly deduped: boolean;
 }
 
+// Local validation runs before any HTTP — bundled schemas are the
+// MCP-side source of truth. The agent gets a structured error and saves
+// a round-trip when its payload is bogus. Mirrors the CLI's exit-code-2 /
+// exit-code-1 split (unknown type vs validation), but expressed as
+// transport-typed errors so error-mapping.ts can convert them to the
+// MCP-wire `unknown_event_type` / `event_validation` codes uniformly.
+// batchIndex is fixed at 0 because publish_event is singular by contract.
+const SINGULAR_BATCH_INDEX = 0;
+
+function validateAgainstBundledSchema(
+  typeId: string,
+  data: unknown,
+): void {
+  const schema = byTypeId[typeId as keyof typeof byTypeId];
+  if (schema === undefined) {
+    throw new UnknownEventTypeError(typeId, SINGULAR_BATCH_INDEX);
+  }
+  const parsed = schema.safeParse(data);
+  if (parsed.success) return;
+  const issues: readonly ValidationIssue[] = parsed.error.issues.map((issue) => ({
+    path: issue.path.filter((p): p is string | number => typeof p === 'string' || typeof p === 'number'),
+    message: issue.message,
+  }));
+  throw new EventValidationError(typeId, SINGULAR_BATCH_INDEX, issues);
+}
+
 export async function handlePublishEvent(
   args: PublishEventArgs,
   deps: ToolHandlerDeps,
 ): Promise<PublishEventResult> {
+  validateAgainstBundledSchema(args.type, args.data);
+
   const event: PublishEvent = {
     type: args.type,
     data: args.data,

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { byTypeId } from '@magic-ingredients/no-tickets-schemas';
 import {
   handleListEventTypes,
   handleDescribeEventType,
@@ -309,6 +310,49 @@ describe('handlePublishEvent', () => {
     expect(projectIdIssue).toBeDefined();
     expect(Array.isArray(projectIdIssue?.path)).toBe(true);
     expect(typeof projectIdIssue?.path).not.toBe('string');
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('strips `symbol` entries from Zod issue paths so EventValidationError honours the string|number contract', async () => {
+    // Zod types `ZodIssue.path` as `PropertyKey[]` (string | number | symbol).
+    // In practice produced paths are string|number, but the type allows
+    // symbols, and the transport `ValidationIssue.path` contract is
+    // narrower (string|number). The filter in handlers.ts strips symbols
+    // so the contract holds at runtime too. This test forges a result with
+    // a leading symbol so the strip path actually runs — without it, the
+    // filter is dead under real Zod and a regression that removed it
+    // (or weakened the predicate) would slip past every other test.
+    const { deps, publish } = buildDeps({});
+    const forgedSymbol = Symbol('forged-key');
+    const safeParseSpy = vi
+      .spyOn(byTypeId[VALID_TYPE_ID], 'safeParse')
+      .mockReturnValue({
+        success: false,
+        error: {
+          issues: [
+            { path: [forgedSymbol, 'projectId'], message: 'forged' },
+          ],
+        },
+      } as unknown as ReturnType<(typeof byTypeId)[typeof VALID_TYPE_ID]['safeParse']>);
+
+    let caught: unknown;
+    try {
+      await handlePublishEvent(
+        { project: PROJECT, type: VALID_TYPE_ID, data: VALID_DATA },
+        deps,
+      );
+    } catch (err) {
+      caught = err;
+    } finally {
+      safeParseSpy.mockRestore();
+    }
+
+    expect(caught).toBeInstanceOf(EventValidationError);
+    const err = caught as EventValidationError;
+    const path = err.issues[0]?.path ?? [];
+    // The leading Symbol was stripped; only 'projectId' remains.
+    expect(path).toEqual(['projectId']);
+    expect(path.some((p) => typeof p === 'symbol')).toBe(false);
     expect(publish).not.toHaveBeenCalled();
   });
 

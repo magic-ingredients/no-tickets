@@ -384,7 +384,8 @@ Update `handlePublishEvent` to:
 - MCP transport setup (project-aware client construction)
 
 ### 6. Smoke script — accept `--project`, `--token-env-var`
-status: not_started
+status: completed
+commitSha: d22d320
 
 `scripts/smoke-publish.ts` learns:
 - `--project <name>` — resolves via `resolveProjectAuth`

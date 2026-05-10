@@ -3,10 +3,10 @@ id: publish-shared-surfaces
 type: fix
 title: Wire CLI publish, share local validation between CLI/MCP via SDK, unify project-keyed shape
 phase: development
-status: not_started
+status: in_progress
 severity: medium
 created: 2026-05-09
-updated: 2026-05-09
+updated: 2026-05-10
 reported: 2026-05-09T00:00:00.000Z
 resolved: null
 ---
@@ -396,7 +396,8 @@ The current `--profile` + `NO_TICKETS_TOKEN` path stays for back-compat.
 - `scripts/smoke-publish.ts`
 
 ### 7. Drop CI auto-detection from default source
-status: in_progress
+status: completed
+commitSha: 465a926
 
 Remove the CI-provider env-var sniffing from the default `Source` builder. Replace with surface-specific defaults:
 

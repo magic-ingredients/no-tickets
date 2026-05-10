@@ -1,3 +1,4 @@
+import { byTypeId } from '@magic-ingredients/no-tickets-schemas';
 import type { JsonSchema } from '../../lib/example-synth.js';
 
 export interface ValidationError {
@@ -20,10 +21,17 @@ export interface ValidationIssue {
  *  package — no per-publish HTTP fetch needed. Server is still
  *  authoritative; this is a fast pre-flight to catch caller errors. */
 export function validateEventLocally(
-  _typeId: string,
-  _data: unknown,
+  typeId: string,
+  data: unknown,
 ): readonly ValidationIssue[] | { readonly unknownType: true } {
-  throw new Error('validateEventLocally: not implemented');
+  if (!(typeId in byTypeId)) return { unknownType: true };
+  const schema = byTypeId[typeId as keyof typeof byTypeId];
+  const result = schema.safeParse(data);
+  if (result.success) return [];
+  return result.error.issues.map((issue) => ({
+    path: issue.path.join('.'),
+    message: issue.message,
+  }));
 }
 
 function asJsonSchema(value: unknown): JsonSchema | null {

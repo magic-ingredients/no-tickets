@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, expectTypeOf } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -136,16 +136,16 @@ describe('runPublishBatch — happy path', () => {
 });
 
 describe('runPublishBatch — bundled-Zod validation (no server registry fetch)', () => {
-  it('rejects invalid data via bundled byTypeId; PublishBatchDeps no longer carries listEvents', async () => {
-    // The cleanup task moved batch.ts off the server-fetched
-    // EventTypeSpec.schema path and onto the bundled
-    // @magic-ingredients/no-tickets-schemas package — same source of truth
-    // single.ts already uses. As a result, `listEvents` is gone from the
-    // deps interface entirely; bundled byTypeId IS the local registry, no
-    // network needed for shape validation. This test pins both halves:
-    //   1. Invalid data fails locally with the line + field path reported.
-    //   2. The deps shape compiles WITHOUT a listEvents method (a regression
-    //      that re-introduced the server fetch would have to add it back).
+  it('PublishBatchDeps no longer carries `listEvents` (type-level pin against re-introducing the server fetch)', () => {
+    // The fixture rewrite alone enforces this implicitly (every test would
+    // need a listEvents stub re-added), but make it explicit at the type
+    // level — a regression that re-introduced the server-fetch path would
+    // have to widen the deps interface, which this expectTypeOf catches at
+    // compile time.
+    expectTypeOf<PublishBatchDeps>().not.toHaveProperty('listEvents');
+  });
+
+  it('rejects invalid data via bundled byTypeId and reports the JSONL line + field path', async () => {
     const path = writeBatch(
       // product.epic.created.v1 with missing `projectId` and `title` —
       // bundled Zod's `min(1)` constraints reject this.
@@ -165,10 +165,12 @@ describe('runPublishBatch — bundled-Zod validation (no server registry fetch)'
     expect(printed).toMatch(/projectId/);
   });
 
-  it('rejects unknown event types locally via isKnownEventType (prototype-chain safe)', async () => {
-    // `toString` would resolve to Object.prototype.toString via index access
-    // without the Object.hasOwn guard isKnownEventType uses. Pin that on
-    // the batch path too — single.ts already pins it.
+  it('rejects an unknown event type without crashing on prototype-chain names (smoke test parity with single.ts)', async () => {
+    // schema-validate.test.ts is the canonical place where `toString` /
+    // `hasOwnProperty` / `valueOf` / `constructor` are exhaustively pinned
+    // against Object.prototype resolution. This is an integration smoke
+    // proving the batch dispatcher routes through the same guard — not a
+    // replacement for the unit pin.
     const path = writeBatch('{"type": "toString", "data": {}}\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps({}, out);
@@ -188,7 +190,7 @@ describe('runPublishBatch — local validation', () => {
         '{not json\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({  }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -203,7 +205,7 @@ describe('runPublishBatch — local validation', () => {
         '{"type": "product.epic.created.v1", "data": {}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({  }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -220,7 +222,7 @@ describe('runPublishBatch — local validation', () => {
   it('exits with code 1 if a line is missing the type field', async () => {
     const path = writeBatch('{"data": {}}\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({  }, out);
+    const { deps } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -233,7 +235,7 @@ describe('runPublishBatch — local validation', () => {
       '{"type": "app.unknown.v1", "data": {}}\n',
     );
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({  }, out);
+    const { deps } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -274,7 +276,7 @@ describe('runPublishBatch — server errors map back to JSONL line numbers', () 
         publishError: new EventValidationError(
           'product.epic.created.v1',
           0,
-          [{ path: ['data', 'email'], message: 'rejected' }],
+          [{ path: ['data', 'title'], message: 'rejected' }],
         ),
       },
       out,
@@ -315,7 +317,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line whose value is null', async () => {
     const path = writeBatch('null\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({  }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -328,7 +330,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line whose value is an array', async () => {
     const path = writeBatch('[1, 2, 3]\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({  }, out);
+    const { deps } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -339,7 +341,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line whose value is a primitive', async () => {
     const path = writeBatch('42\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({  }, out);
+    const { deps } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -350,7 +352,7 @@ describe('runPublishBatch — non-object JSONL entries', () => {
   it('rejects a JSONL line where type is the empty string', async () => {
     const path = writeBatch('{"type": "", "data": {}}\n');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps } = buildDeps({  }, out);
+    const { deps } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 
@@ -524,7 +526,7 @@ describe('runPublishBatch — empty file', () => {
   it('exits with code 1 and reports an empty-file message on stderr', async () => {
     const path = writeBatch('');
     const out: RecordedOutput = { stdout: [], stderr: [] };
-    const { deps, publish } = buildDeps({  }, out);
+    const { deps, publish } = buildDeps({}, out);
 
     const exit = await runPublishBatch(baseOptions(path), deps);
 

@@ -5,18 +5,23 @@
  *   1. --project <name>
  *        Reads token + URL from ~/.notickets/config.json via resolveProjectAuth.
  *        Use for local dev once `nt project link` has registered the project.
+ *        --url is rejected here (the project entry carries its own URL pair).
  *
  *   2. --token-env-var <NAME> [--url <url>]
  *        Reads token from the env var named <NAME>. --url overrides the API
  *        URL (otherwise NO_TICKETS_API_URL env / production defaults).
  *        Use for CI multi-project — caller names its own env var per project.
  *
- *   3. --profile <name> [+ NO_TICKETS_TOKEN env]
- *        Legacy single-project path: --profile picks URL pair from config.json;
- *        NO_TICKETS_TOKEN supplies the token. Unchanged.
+ *   3. --profile <name>  (token from NO_TICKETS_TOKEN env or stored credentials)
+ *        Legacy single-project path: --profile picks URL pair from config.json.
+ *        --url is rejected here (the profile carries its own URL pair).
  *
  *   4. Defaults (no flags)
- *        NO_TICKETS_TOKEN env + NO_TICKETS_API_URL env / production URLs.
+ *        NO_TICKETS_TOKEN env (or stored credentials) + NO_TICKETS_API_URL env
+ *        / production URLs.
+ *
+ * No `--token <value>` flag is offered intentionally: argv leaks tokens via
+ * `ps`, shell history, and CI logs. Always pipe the token through an env var.
  *
  * Each typed error class prints something useful. A success prints the
  * server response so you can grep the dashboard for the event id.
@@ -50,6 +55,21 @@ interface ParsedArgs {
   readonly positionals: readonly string[];
 }
 
+/** Read a flag's value at `argv[i+1]`. Rejects undefined, empty strings, and
+ *  values that start with `--` — the last case catches `--project --url ...`
+ *  where the user forgot the project name and the next flag would silently
+ *  become the value. */
+function takeFlagValue(argv: readonly string[], i: number, flag: string): string {
+  const value = argv[i + 1];
+  if (value === undefined || value.length === 0) {
+    die(`${flag} requires a value`);
+  }
+  if (value.startsWith('--')) {
+    die(`${flag} is missing a value (got next flag "${value}" instead)`);
+  }
+  return value;
+}
+
 /** Tiny ad-hoc parser. Kept inline — the smoke script doesn't need the full
  *  CLI parser, just enough to thread the four auth/URL shapes documented
  *  above. Unknown flags fall into `positionals` so a misspelled flag
@@ -62,33 +82,45 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   let profile: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === undefined) continue;
     if (arg === '--project') {
-      project = argv[i + 1];
-      if (project === undefined) die('--project requires a value');
+      project = takeFlagValue(argv, i, '--project');
       i++;
       continue;
     }
     if (arg === '--token-env-var') {
-      tokenEnvVar = argv[i + 1];
-      if (tokenEnvVar === undefined) die('--token-env-var requires a value');
+      tokenEnvVar = takeFlagValue(argv, i, '--token-env-var');
       i++;
       continue;
     }
     if (arg === '--url') {
-      url = argv[i + 1];
-      if (url === undefined) die('--url requires a value');
+      url = takeFlagValue(argv, i, '--url');
       i++;
       continue;
     }
     if (arg === '--profile') {
-      profile = argv[i + 1];
-      if (profile === undefined) die('--profile requires a value');
+      profile = takeFlagValue(argv, i, '--profile');
       i++;
       continue;
     }
-    positionals.push(arg as string);
+    positionals.push(arg);
   }
   return { project, tokenEnvVar, url, profile, positionals };
+}
+
+/** Sanity-check the user-supplied URL before threading it into Client.
+ *  Catches the most common typos (missing scheme, trailing whitespace)
+ *  before they manifest as confusing network errors. */
+function assertHttpUrl(url: string, flag: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    die(`${flag} ${JSON.stringify(url)} is not a valid URL`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    die(`${flag} ${JSON.stringify(url)} must be http(s); got ${parsed.protocol}`);
+  }
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -112,6 +144,22 @@ const sources = [
 ].filter((s): s is string => s !== null);
 if (sources.length > 1) {
   die(`auth sources are mutually exclusive; got ${sources.join(' + ')}`);
+}
+
+// --url is only meaningful with --token-env-var. Pairing it with --project
+// or --profile would silently override the URL their config entries carry,
+// hiding the override at the invocation site. Reject up-front.
+if (args.url !== undefined) {
+  if (args.project !== undefined) {
+    die('--url cannot be combined with --project (the project entry carries its own URL)');
+  }
+  if (args.profile !== undefined) {
+    die('--url cannot be combined with --profile (the profile carries its own URL pair)');
+  }
+  if (args.tokenEnvVar === undefined) {
+    die('--url requires --token-env-var (otherwise NO_TICKETS_API_URL env is the override path)');
+  }
+  assertHttpUrl(args.url, '--url');
 }
 
 let token: string;
@@ -149,19 +197,23 @@ if (args.project !== undefined) {
     }
   }
 } else {
-  try {
-    const auth = resolveAuth();
-    token = auth.token;
-    tokenSource = `${auth.source} (${auth.tokenType})`;
-  } catch (err) {
-    die(err instanceof Error ? err.message : String(err));
-  }
+  // Resolve URLs before auth so a misconfigured profile / env pair fails
+  // up-front instead of after a credentials prompt. Both errors are
+  // surfaced before any network — order shouldn't matter for correctness,
+  // but resolving URLs first gives a more useful trace when both are wrong.
   try {
     const resolved = resolveUrls({
       ...(args.profile !== undefined && { profile: args.profile }),
     });
-    baseUrl = args.url ?? resolved.apiUrl;
-    urlSource = args.url !== undefined ? '--url' : resolved.source;
+    baseUrl = resolved.apiUrl;
+    urlSource = resolved.source;
+  } catch (err) {
+    die(err instanceof Error ? err.message : String(err));
+  }
+  try {
+    const auth = resolveAuth();
+    token = auth.token;
+    tokenSource = `${auth.source} (${auth.tokenType})`;
   } catch (err) {
     die(err instanceof Error ? err.message : String(err));
   }

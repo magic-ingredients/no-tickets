@@ -10,7 +10,7 @@ const TYPE_USER: EventTypeSpec = {
   domain: 'people-team',
   entity: 'user',
   action: 'signed-up',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 };
 
@@ -19,7 +19,7 @@ const TYPE_DEPLOY: EventTypeSpec = {
   domain: 'platform-team',
   entity: 'deploy',
   action: 'completed',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 };
 
@@ -28,7 +28,7 @@ const TYPE_DEPRECATED: EventTypeSpec = {
   domain: 'sunset-team',
   entity: 'thing',
   action: 'event',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
   deprecatedAt: '2026-01-01T00:00:00Z',
 };

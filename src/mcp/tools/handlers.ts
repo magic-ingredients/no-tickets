@@ -37,7 +37,9 @@ export interface ListEventTypesResultRow {
   readonly domain: string;
   readonly entity: string;
   readonly action: string;
-  readonly version: number;
+  /** Version string from the event-type id suffix, e.g. "v1". Matches the
+   *  server's wire shape; pin the immutable .vN dimension at the type level. */
+  readonly version: string;
 }
 
 export interface ListEventTypesResult {
@@ -90,6 +92,15 @@ export async function handleDescribeEventType(
   const spec = await deps.events.describe(args.id);
   if (spec === null) {
     throw new Error(`event type "${args.id}" not found`);
+  }
+  // The detail endpoint includes schema; the list endpoint omits it.
+  // Describe always hits detail, so absence here is a server-contract
+  // violation worth surfacing loudly rather than rendering an empty
+  // example silently.
+  if (spec.schema === undefined) {
+    throw new Error(
+      `event type "${args.id}" detail response is missing the schema field — server contract violation`,
+    );
   }
   return {
     id: spec.id,

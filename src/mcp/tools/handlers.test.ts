@@ -24,7 +24,7 @@ const TYPE: EventTypeSpec = {
   domain: 'app.user',
   entity: 'user',
   action: 'signed-up',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: { email: { type: 'string' } }, required: ['email'] },
   retentionDays: 90,
   dedupeStrategy: 'natural_key',
@@ -83,7 +83,7 @@ describe('handleListEventTypes', () => {
       domain: 'engineering',
       entity: 'deploy',
       action: 'completed',
-      version: 1,
+      version: 'v1',
       schema: { type: 'object', properties: {} },
     };
     const { deps, list } = buildDeps({
@@ -103,14 +103,14 @@ describe('handleListEventTypes', () => {
           domain: 'app.user',
           entity: 'user',
           action: 'signed-up',
-          version: 1,
+          version: 'v1',
         },
         {
           id: 'engineering.deploy.completed.v1',
           domain: 'engineering',
           entity: 'deploy',
           action: 'completed',
-          version: 1,
+          version: 'v1',
         },
       ],
     });
@@ -170,7 +170,7 @@ describe('handleDescribeEventType', () => {
       domain: 'app.minimal',
       entity: 'thing',
       action: 'happened',
-      version: 1,
+      version: 'v1',
       schema: { type: 'object', properties: {} },
     };
     const { deps } = buildDeps({ describeResult: MINIMAL });

@@ -19,7 +19,7 @@ const SAMPLE_TYPE: EventTypeSpec = {
   domain: 'engineering',
   entity: 'deploy',
   action: 'completed',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 };
 

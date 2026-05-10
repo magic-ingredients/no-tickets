@@ -2,15 +2,19 @@ import { z } from 'zod';
 import type { Client } from '../transport/client.js';
 import { mapResponseError, MissingEtagError } from '../transport/errors.js';
 
+// Wire contract — matches GET /v1/registry/event-types[/{id}] on the server.
+// - `version` is a string, e.g. "v1" (literal suffix from the type id;
+//   the .vN id segment is the canonical version dimension and is immutable).
+// - `schema` is optional: the list endpoint omits it (high-volume path,
+//   JSON Schema is large); the detail endpoint includes it. Consumers
+//   that read schema must guard for absence.
 export const eventTypeSpecSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1),
   entity: z.string().min(1),
   action: z.string().min(1),
-  version: z.number().int().positive(),
-  schema: z
-    .record(z.string(), z.unknown())
-    .refine((s) => Object.keys(s).length > 0, 'schema must not be empty'),
+  version: z.string().min(1),
+  schema: z.record(z.string(), z.unknown()).optional(),
   uiHints: z.record(z.string(), z.unknown()).optional(),
   retentionDays: z.number().int().nonnegative().optional(),
   dedupeStrategy: z.string().min(1).optional(),
@@ -20,10 +24,14 @@ export const eventTypeSpecSchema = z.object({
 export type EventTypeSpec = Readonly<z.infer<typeof eventTypeSpecSchema>>;
 
 const listResponseSchema = z.object({
-  types: z.array(eventTypeSpecSchema),
+  eventTypes: z.array(eventTypeSpecSchema),
 });
 
-const LIST_PATH = '/v1/admin/event-types';
+const detailResponseSchema = z.object({
+  eventType: eventTypeSpecSchema,
+});
+
+const LIST_PATH = '/v1/registry/event-types';
 
 export interface ListEventTypesOptions {
   readonly domain?: string;
@@ -84,7 +92,9 @@ export async function listEventTypes(
 
   const etag = requireEtag(response, path);
   const parsed = listResponseSchema.parse(await response.json());
-  return { etag, types: parsed.types };
+  // Wire shape is `eventTypes`; internal field stays `types` so downstream
+  // consumers (Cache, RefreshResult, filters) keep their established names.
+  return { etag, types: parsed.eventTypes };
 }
 
 export async function getEventType(client: Client, id: string): Promise<EventTypeSpec | null> {
@@ -99,5 +109,7 @@ export async function getEventType(client: Client, id: string): Promise<EventTyp
     throw mapResponseError(response.status, await readJson(response));
   }
 
-  return eventTypeSpecSchema.parse(await response.json());
+  // Detail endpoint wraps the spec under `eventType`; unwrap.
+  const parsed = detailResponseSchema.parse(await response.json());
+  return parsed.eventType;
 }

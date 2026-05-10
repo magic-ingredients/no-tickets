@@ -12,7 +12,7 @@ const TYPE_A: EventTypeSpec = {
   domain: 'app.user',
   entity: 'user',
   action: 'signed-up',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
   deprecatedAt: null,
 };
@@ -22,7 +22,7 @@ const TYPE_B: EventTypeSpec = {
   domain: 'engineering',
   entity: 'deploy',
   action: 'completed',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
   deprecatedAt: '2026-01-01T00:00:00Z',
 };
@@ -34,7 +34,7 @@ const TYPE_C: EventTypeSpec = {
   domain: 'app.session',
   entity: 'session',
   action: 'started',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 };
 
@@ -235,7 +235,7 @@ describe('events.describe', () => {
   it('falls back to a one-shot fetch on cache miss and writes the new type back to the cache', async () => {
     const seed = { ...buildCache(), types: [TYPE_A] }; // no TYPE_B
     writeCache(BASE_URL, seed);
-    const events = createEvents({ client: makeClient(jsonFetch(TYPE_B)) });
+    const events = createEvents({ client: makeClient(jsonFetch({ eventType: TYPE_B })) });
 
     const result = await events.describe(TYPE_B.id);
 
@@ -259,7 +259,7 @@ describe('events.describe', () => {
   });
 
   it('falls back to network when the cache is entirely missing (no write)', async () => {
-    const events = createEvents({ client: makeClient(jsonFetch(TYPE_A)) });
+    const events = createEvents({ client: makeClient(jsonFetch({ eventType: TYPE_A })) });
 
     const result = await events.describe(TYPE_A.id);
 
@@ -272,7 +272,7 @@ describe('events.describe', () => {
   it('triggers scheduleRefresh on a full cache miss (no cache file exists)', async () => {
     const scheduleRefresh = vi.fn().mockResolvedValue(undefined);
     const events = createEvents({
-      client: makeClient(jsonFetch(TYPE_A)),
+      client: makeClient(jsonFetch({ eventType: TYPE_A })),
       scheduleRefresh,
     });
 
@@ -296,7 +296,7 @@ describe('events.describe', () => {
     writeCache(BASE_URL, seed);
     const scheduleRefresh = vi.fn().mockResolvedValue(undefined);
     const events = createEvents({
-      client: makeClient(jsonFetch(TYPE_B)),
+      client: makeClient(jsonFetch({ eventType: TYPE_B })),
       scheduleRefresh,
     });
 
@@ -322,7 +322,8 @@ describe('events.describe', () => {
         types: [TYPE_A, TYPE_B],
       };
       writeCache(BASE_URL, refreshed);
-      return new Response(JSON.stringify(TYPE_B), {
+      // Detail endpoint wraps the spec under `eventType`.
+      return new Response(JSON.stringify({ eventType: TYPE_B }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });

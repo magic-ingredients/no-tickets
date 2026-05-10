@@ -41,7 +41,7 @@ const TYPE: EventTypeSpec = {
   domain: 'app.user',
   entity: 'user',
   action: 'signed-up',
-  version: 1,
+  version: 'v1',
   schema: {
     type: 'object',
     properties: {

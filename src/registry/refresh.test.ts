@@ -12,7 +12,7 @@ const TYPE_A: EventTypeSpec = {
   domain: 'app.user',
   entity: 'user',
   action: 'signed-up',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 };
 
@@ -21,7 +21,7 @@ const TYPE_B: EventTypeSpec = {
   domain: 'engineering',
   entity: 'deploy',
   action: 'completed',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 };
 
@@ -90,7 +90,7 @@ describe('scheduleRefresh — fresh fetch (no prior cache)', () => {
   it('writes a new CacheFile with the server etag and types', async () => {
     const headers = { etag: 'W/"new"' };
     const fetchImpl: typeof fetch = async () =>
-      jsonResponse({ body: { types: [TYPE_A, TYPE_B] }, headers });
+      jsonResponse({ body: { eventTypes: [TYPE_A, TYPE_B] }, headers });
 
     const result = await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
 
@@ -104,7 +104,7 @@ describe('scheduleRefresh — fresh fetch (no prior cache)', () => {
     let captured: Headers | undefined;
     const fetchImpl: typeof fetch = async (_url, init) => {
       captured = new Headers(init?.headers);
-      return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      return jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
     };
 
     await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
@@ -119,7 +119,7 @@ describe('scheduleRefresh — conditional refresh', () => {
     let captured: Headers | undefined;
     const fetchImpl: typeof fetch = async (_url, init) => {
       captured = new Headers(init?.headers);
-      return jsonResponse({ body: { types: [TYPE_A] }, headers: { etag: 'W/"new"' } });
+      return jsonResponse({ body: { eventTypes: [TYPE_A] }, headers: { etag: 'W/"new"' } });
     };
 
     await freshScheduler().scheduleRefresh(makeClient(fetchImpl));
@@ -158,7 +158,7 @@ describe('scheduleRefresh — conditional refresh', () => {
     seedCache();
     const fetchImpl: typeof fetch = async () =>
       jsonResponse({
-        body: { types: [TYPE_A, TYPE_B] },
+        body: { eventTypes: [TYPE_A, TYPE_B] },
         headers: { etag: 'W/"updated"' },
       });
 
@@ -236,7 +236,7 @@ describe('scheduleRefresh — bounded concurrency', () => {
     const fetchImpl: typeof fetch = async () => {
       callCount++;
       await blocked;
-      return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      return jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
     };
     const scheduler = freshScheduler();
     const client = makeClient(fetchImpl);
@@ -259,7 +259,7 @@ describe('scheduleRefresh — bounded concurrency', () => {
     let callCount = 0;
     const fetchImpl: typeof fetch = async () => {
       callCount++;
-      return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      return jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
     };
     const a = makeClient(fetchImpl);
     const b = new Client({
@@ -279,7 +279,7 @@ describe('scheduleRefresh — bounded concurrency', () => {
     let callCount = 0;
     const fetchImpl: typeof fetch = async () => {
       callCount++;
-      return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      return jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
     };
     const scheduler = freshScheduler();
     const client = makeClient(fetchImpl);
@@ -295,7 +295,7 @@ describe('awaitRefresh', () => {
   it('returns the refresh result when it resolves before the timeout', async () => {
     seedCache();
     const fetchImpl: typeof fetch = async () =>
-      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
 
     const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
     const result = await awaitRefresh(promise, { timeoutMs: 1000 });
@@ -310,7 +310,7 @@ describe('awaitRefresh', () => {
     });
     const fetchImpl: typeof fetch = async () => {
       await blocked;
-      return jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      return jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
     };
 
     const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
@@ -324,7 +324,7 @@ describe('awaitRefresh', () => {
   it('clears the timer when the refresh resolves first (kills mutations on the cleanup path)', async () => {
     seedCache();
     const fetchImpl: typeof fetch = async () =>
-      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } });
+      jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } });
     const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
 
     const promise = freshScheduler().scheduleRefresh(makeClient(fetchImpl));
@@ -346,7 +346,7 @@ describe('default scheduleRefresh export', () => {
     seedCache();
     const fetchImpl: typeof fetch = async () =>
       jsonResponse({
-        body: { types: [TYPE_A] },
+        body: { eventTypes: [TYPE_A] },
         headers: { etag: 'W/"singleton-smoke"' },
       });
 

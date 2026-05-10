@@ -52,7 +52,7 @@ const SAMPLE_TYPE: EventTypeSpec = {
   domain: 'engineering',
   entity: 'deploy',
   action: 'completed',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
   uiHints: { color: 'green' },
   retentionDays: 90,
@@ -74,44 +74,44 @@ function client(fetchImpl: typeof fetch): Client {
 }
 
 describe('listEventTypes', () => {
-  it('GETs /v1/admin/event-types and parses the type array with the etag', async () => {
+  it('GETs /v1/registry/event-types and parses the type array with the etag', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ body: { types: [SAMPLE_TYPE] }, headers: { etag: 'W/"abc123"' } }),
+      jsonResponse({ body: { eventTypes: [SAMPLE_TYPE] }, headers: { etag: 'W/"abc123"' } }),
     ]);
 
     const result = await listEventTypes(client(fetchImpl));
 
     expect(calls[0]?.method).toBe('GET');
-    expect(calls[0]?.url).toBe('https://api.example.com/v1/admin/event-types');
+    expect(calls[0]?.url).toBe('https://api.example.com/v1/registry/event-types');
     expect(calls[0]?.headers['authorization']).toBe('Bearer t');
     expect(result).toEqual({ etag: 'W/"abc123"', types: [SAMPLE_TYPE] });
   });
 
   it('appends the domain and deprecated query params when supplied', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } }),
+      jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } }),
     ]);
 
     await listEventTypes(client(fetchImpl), { domain: 'engineering', deprecated: false });
 
     expect(calls[0]?.url).toBe(
-      'https://api.example.com/v1/admin/event-types?domain=engineering&deprecated=false',
+      'https://api.example.com/v1/registry/event-types?domain=engineering&deprecated=false',
     );
   });
 
   it('omits query params that are not supplied', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } }),
+      jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } }),
     ]);
 
     await listEventTypes(client(fetchImpl));
 
-    expect(calls[0]?.url).toBe('https://api.example.com/v1/admin/event-types');
+    expect(calls[0]?.url).toBe('https://api.example.com/v1/registry/event-types');
   });
 
   it('sends If-None-Match when ifNoneMatch is provided', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"new"' } }),
+      jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"new"' } }),
     ]);
 
     await listEventTypes(client(fetchImpl), { ifNoneMatch: 'W/"prev"' });
@@ -135,13 +135,13 @@ describe('listEventTypes', () => {
     // scoping. This test fails for any client that re-filters on `domain`.
     const filtered: EventTypeSpec[] = [SAMPLE_TYPE];
     const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ body: { types: filtered }, headers: { etag: 'W/"x"' } }),
+      jsonResponse({ body: { eventTypes: filtered }, headers: { etag: 'W/"x"' } }),
     ]);
 
     const result = await listEventTypes(client(fetchImpl), { domain: 'marketing' });
 
     expect(calls[0]?.url).toBe(
-      'https://api.example.com/v1/admin/event-types?domain=marketing',
+      'https://api.example.com/v1/registry/event-types?domain=marketing',
     );
     expect('types' in result ? result.types : null).toEqual(filtered);
     expectAllResponsesConsumed(calls, 1);
@@ -150,7 +150,7 @@ describe('listEventTypes', () => {
   it('throws ZodError on a malformed type entry', async () => {
     const { fetch: fetchImpl } = recordingFetch([
       jsonResponse({
-        body: { types: [{ id: 'x', domain: 'd', entity: 'e' }] }, // missing action/version/schema
+        body: { eventTypes: [{ id: 'x', domain: 'd', entity: 'e' }] }, // missing action/version/schema
         headers: { etag: 'W/"x"' },
       }),
     ]);
@@ -162,7 +162,7 @@ describe('listEventTypes', () => {
     // ETag is the cache discriminator — without it the cache layer can't
     // do conditional refresh. Throw a typed error so the cache layer can
     // distinguish from generic transport / parse failures.
-    const { fetch: fetchImpl } = recordingFetch([jsonResponse({ body: { types: [] } })]);
+    const { fetch: fetchImpl } = recordingFetch([jsonResponse({ body: { eventTypes: [] } })]);
 
     await expect(listEventTypes(client(fetchImpl))).rejects.toBeInstanceOf(MissingEtagError);
   });
@@ -186,7 +186,7 @@ describe('listEventTypes', () => {
 
   it('does NOT send if-none-match when ifNoneMatch is omitted', async () => {
     const { fetch: fetchImpl, calls } = recordingFetch([
-      jsonResponse({ body: { types: [] }, headers: { etag: 'W/"x"' } }),
+      jsonResponse({ body: { eventTypes: [] }, headers: { etag: 'W/"x"' } }),
     ]);
 
     await listEventTypes(client(fetchImpl));
@@ -231,25 +231,25 @@ describe('listEventTypes', () => {
 });
 
 describe('getEventType', () => {
-  it('GETs /v1/admin/event-types/:id and parses the type', async () => {
-    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: SAMPLE_TYPE })]);
+  it('GETs /v1/registry/event-types/:id and parses the type', async () => {
+    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: { eventType: SAMPLE_TYPE } })]);
 
     const result = await getEventType(client(fetchImpl), SAMPLE_TYPE.id);
 
     expect(calls[0]?.method).toBe('GET');
     expect(calls[0]?.url).toBe(
-      `https://api.example.com/v1/admin/event-types/${encodeURIComponent(SAMPLE_TYPE.id)}`,
+      `https://api.example.com/v1/registry/event-types/${encodeURIComponent(SAMPLE_TYPE.id)}`,
     );
     expect(result).toEqual(SAMPLE_TYPE);
   });
 
   it('URL-encodes the :id segment', async () => {
-    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: SAMPLE_TYPE })]);
+    const { fetch: fetchImpl, calls } = recordingFetch([jsonResponse({ body: { eventType: SAMPLE_TYPE } })]);
 
     await getEventType(client(fetchImpl), 'has space/slash');
 
     expect(calls[0]?.url).toBe(
-      'https://api.example.com/v1/admin/event-types/has%20space%2Fslash',
+      'https://api.example.com/v1/registry/event-types/has%20space%2Fslash',
     );
   });
 
@@ -301,29 +301,21 @@ describe('getEventType', () => {
 
   it('throws ZodError when the server returns a malformed type', async () => {
     const { fetch: fetchImpl } = recordingFetch([
-      jsonResponse({ body: { id: 'x', domain: 'd' } }), // missing fields
+      jsonResponse({ body: { eventType: { id: 'x', domain: 'd' } } }), // missing fields
     ]);
 
     await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
   });
 
-  it('rejects an empty schema object with a clear refine message', async () => {
-    const { fetch: fetchImpl } = recordingFetch([
-      jsonResponse({ body: { ...SAMPLE_TYPE, schema: {} } }),
-    ]);
-
-    const failure = getEventType(client(fetchImpl), 'x');
-    await expect(failure).rejects.toBeInstanceOf(ZodError);
-    await expect(failure).rejects.toMatchObject({
-      issues: expect.arrayContaining([
-        expect.objectContaining({ message: expect.stringMatching(/schema must not be empty/i) }),
-      ]),
-    });
-  });
+  // Removed: "rejects an empty schema object with a clear refine message".
+  // eventTypeSpecSchema.schema is now optional (list endpoint omits it,
+  // detail includes it). The non-empty refine was contract enforcement
+  // that no longer fits the wire shape; dropping the test alongside the
+  // refine.
 
   it('rejects a non-ISO-8601 deprecatedAt', async () => {
     const { fetch: fetchImpl } = recordingFetch([
-      jsonResponse({ body: { ...SAMPLE_TYPE, deprecatedAt: 'yesterday' } }),
+      jsonResponse({ body: { eventType: { ...SAMPLE_TYPE, deprecatedAt: 'yesterday' } } }),
     ]);
 
     await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
@@ -331,7 +323,7 @@ describe('getEventType', () => {
 
   it('rejects an empty dedupeStrategy string', async () => {
     const { fetch: fetchImpl } = recordingFetch([
-      jsonResponse({ body: { ...SAMPLE_TYPE, dedupeStrategy: '' } }),
+      jsonResponse({ body: { eventType: { ...SAMPLE_TYPE, dedupeStrategy: '' } } }),
     ]);
 
     await expect(getEventType(client(fetchImpl), 'x')).rejects.toBeInstanceOf(ZodError);
@@ -339,7 +331,7 @@ describe('getEventType', () => {
 
   it('accepts an ISO-8601 deprecatedAt timestamp', async () => {
     const { fetch: fetchImpl } = recordingFetch([
-      jsonResponse({ body: { ...SAMPLE_TYPE, deprecatedAt: '2026-01-01T00:00:00Z' } }),
+      jsonResponse({ body: { eventType: { ...SAMPLE_TYPE, deprecatedAt: '2026-01-01T00:00:00Z' } } }),
     ]);
 
     const result = await getEventType(client(fetchImpl), 'x');

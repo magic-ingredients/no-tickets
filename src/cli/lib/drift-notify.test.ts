@@ -9,7 +9,7 @@ const TYPE = (id: string): EventTypeSpec => ({
   domain: id.split('.')[0] ?? 'app',
   entity: 'thing',
   action: 'happened',
-  version: 1,
+  version: 'v1',
   schema: { type: 'object', properties: {} },
 });
 

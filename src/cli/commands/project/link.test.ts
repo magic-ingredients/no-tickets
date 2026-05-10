@@ -243,6 +243,130 @@ describe('runProjectLink', () => {
     expect(errOutput).toMatch(/profile.*not defined/i);
   });
 
+  it.each([
+    ['null', null],
+    ['array', []],
+  ])('treats profiles: %s the same as "no profiles defined" (isRecord guard)', async (_label, value) => {
+    // null is typeof 'object' and arrays satisfy typeof 'object' — without
+    // the explicit `v !== null` and `!Array.isArray(v)` checks in isRecord,
+    // Object.hasOwn / Object.keys would behave wrongly. Pin both branches.
+    await writeConfig({ profiles: value as unknown as Record<string, unknown> });
+
+    const exit = await runProjectLink({
+      name: 'mystaging',
+      profile: 'staging',
+      token: 'nt_push_x',
+    });
+
+    expect(exit).toBe(1);
+    expect(errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')).toMatch(
+      /profile.*not defined/i,
+    );
+  });
+
+  it.each([
+    ['null', null],
+    ['array', []],
+  ])('treats projects: %s the same as "first time linking" (isRecord guard)', async (_label, value) => {
+    // The duplicate-name check must not crash when projects is null/array.
+    // It should treat both as "no projects yet" and proceed with the link.
+    await writeConfig({
+      profiles: { staging: { apiUrl: 'https://x', authUrl: 'https://x/auth' } },
+      projects: value,
+    });
+
+    const exit = await runProjectLink({
+      name: 'mystaging',
+      profile: 'staging',
+      token: 'nt_push_x',
+    });
+
+    expect(exit).toBe(0);
+    const config = await readConfig();
+    expect(config['projects']).toEqual({
+      mystaging: { profile: 'staging', pushToken: 'nt_push_x' },
+    });
+  });
+
+  it('propagates non-ConfigCorruptError filesystem errors (e.g. EACCES) instead of swallowing them', async () => {
+    // Pin that the `instanceof ConfigCorruptError` guard is exact — a
+    // generic Error from fs (EMFILE, EACCES, ...) MUST propagate, not be
+    // silently mapped to exit 1 with a corrupt-config message.
+    //
+    // Approach: write a valid config, then chmod 0o000 so readFileSync
+    // throws EACCES. macOS still lets root read the file, so this test
+    // is skipped when running as root.
+    if (process.getuid?.() === 0) return; // skip under root
+
+    const { chmod } = await import('node:fs/promises');
+    await mkdir(join(testDir, '.notickets'), { recursive: true });
+    const configFile = join(testDir, '.notickets', 'config.json');
+    await writeFile(configFile, '{}');
+    await chmod(configFile, 0o000);
+
+    try {
+      await expect(
+        runProjectLink({ name: 'mystaging', profile: 'staging', token: 'nt_push_x' }),
+      ).rejects.toThrow(/EACCES|permission/i);
+    } finally {
+      // Restore so afterEach cleanup can rm the testDir
+      await chmod(configFile, 0o600);
+    }
+  });
+
+  it('asserts the literal usage messages on each empty-arg guard (pins the wording)', async () => {
+    // Each guard returns exit 1; without asserting the message, mutating
+    // the .length === 0 check or removing console.error calls would pass.
+    await writeConfig(VALID_PROFILES);
+
+    await runProjectLink({ name: '', profile: 'staging', token: 'nt_push_x' });
+    expect(errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')).toMatch(
+      /<name> is required/,
+    );
+    errSpy.mockClear();
+
+    await runProjectLink({ name: 'a', profile: '', token: 'nt_push_x' });
+    expect(errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')).toMatch(
+      /--profile.*required/,
+    );
+    errSpy.mockClear();
+
+    await runProjectLink({ name: 'a', profile: 'staging', token: '' });
+    expect(errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n')).toMatch(
+      /--token.*required/,
+    );
+  });
+
+  it('"profile not defined" error includes Available: hint when other profiles exist', async () => {
+    // Pin the conditional hint — without this, mutating
+    // `available.length > 0` to `true` (always show) or `false` (never)
+    // both pass the existing tests.
+    await writeConfig({
+      profiles: {
+        staging: { apiUrl: 'https://x', authUrl: 'https://x/auth' },
+        production: { apiUrl: 'https://y', authUrl: 'https://y/auth' },
+      },
+    });
+
+    await runProjectLink({ name: 'a', profile: 'no-such', token: 'nt_push_x' });
+
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).toMatch(/Available:/);
+    expect(err).toMatch(/staging/);
+    expect(err).toMatch(/production/);
+  });
+
+  it('"profile not defined" error omits Available: hint when no profiles defined at all', async () => {
+    // Inverse of the above — empty profiles{} should NOT produce a stray
+    // "Available: " with nothing after it.
+    await writeConfig({ profiles: {} });
+
+    await runProjectLink({ name: 'a', profile: 'no-such', token: 'nt_push_x' });
+
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).not.toMatch(/Available:/);
+  });
+
   it('prints success confirmation on stdout (with masked token, never the full secret)', async () => {
     await writeConfig(VALID_PROFILES);
 

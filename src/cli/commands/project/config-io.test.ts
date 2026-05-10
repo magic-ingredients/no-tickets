@@ -30,4 +30,14 @@ describe('maskToken', () => {
   it('masks an empty token (defensive — never crashes on malformed input)', () => {
     expect(maskToken('')).toBe('');
   });
+
+  it('boundary: nt_push_ + 4 chars exactly takes the fallback path (not the prefix branch)', () => {
+    // The check is `> PREFIX.length + 4`, i.e. STRICTLY greater than 12.
+    // Mutating to `>= PREFIX.length + 4` would change behavior for a 12-char
+    // token (nt_push_1234). Pin which branch a 12-char token takes:
+    //   12-char nt_push_1234 → fallback (no prefix branch).
+    expect(maskToken('nt_push_1234')).toBe('nt_p…34');
+    // 13-char nt_push_12345 → prefix branch (nt_push_…<last4>).
+    expect(maskToken('nt_push_12345')).toBe('nt_push_…2345');
+  });
 });

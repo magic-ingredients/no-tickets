@@ -121,7 +121,11 @@ describe('runProjectList', () => {
     expect(out).toMatch(/no projects/i);
   });
 
-  it('handles a malformed entry (no pushToken) by listing what it can without crashing', async () => {
+  it('handles a malformed entry (no pushToken) by listing the available fields and "<missing>" for the gap', async () => {
+    // Pin <missing> appears in the column where the data is absent —
+    // mutating the fallback to '' or any other string would pass a
+    // "no crash" check but lose the user-facing "this entry is broken"
+    // signal.
     await writeConfig({
       profiles: { staging: { apiUrl: 'https://x', authUrl: 'https://x/auth' } },
       projects: {
@@ -134,5 +138,31 @@ describe('runProjectList', () => {
 
     const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(out).toMatch(/broken/);
+    expect(out).toMatch(/<missing>/);
+  });
+
+  it('shows "<missing>" for both columns when the entry has neither profile nor pushToken', async () => {
+    await writeConfig({
+      profiles: {},
+      projects: { wholly_broken: {} },
+    });
+
+    await runProjectList();
+
+    const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(out).toMatch(/wholly_broken.*<missing>.*<missing>/);
+  });
+
+  it.each([
+    ['null', null],
+    ['array', []],
+  ])('treats projects: %s as "no projects registered" (isRecord guard)', async (_label, value) => {
+    await writeConfig({ profiles: {}, projects: value });
+
+    const exit = await runProjectList();
+    expect(exit).toBe(0);
+
+    const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(out).toMatch(/no projects/i);
   });
 });

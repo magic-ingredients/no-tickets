@@ -104,9 +104,24 @@ describe('runProjectUnlink', () => {
     });
   });
 
-  it('exits 1 when name is empty', async () => {
+  it('exits 1 with the literal usage message when name is empty (pins the wording)', async () => {
     const exit = await runProjectUnlink({ name: '' });
     expect(exit).toBe(1);
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).toMatch(/<name> is required/);
+  });
+
+  it.each([
+    ['null', null],
+    ['array', []],
+  ])('treats projects: %s as "no projects registered" (isRecord guard)', async (_label, value) => {
+    await writeConfig({ profiles: {}, projects: value });
+
+    const exit = await runProjectUnlink({ name: 'anything' });
+
+    expect(exit).toBe(1);
+    const err = errSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(err).toMatch(/not registered/);
   });
 
   it('exits 1 with helpful guidance when config.json does not exist', async () => {

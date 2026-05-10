@@ -614,7 +614,34 @@
         {
           "id": "task-3",
           "description": "CLI — `project link/list/unlink` commands",
-          "status": "not_started"
+          "status": "completed",
+          "commitSha": "a3398b4fd9a05e94d4426700a98a16d7445d8138",
+          "testCommitSha": "8f9cc62bd0223480950d2189ffe8fbaae04e386b",
+          "redStartedAt": "2026-05-10T14:41:28.207Z",
+          "greenStartedAt": "2026-05-10T14:44:27.859Z",
+          "reviews": {
+            "adversarial": {
+              "startedAt": "2026-05-10T14:48:13.467Z",
+              "completedAt": "2026-05-10T14:50:09.622Z",
+              "reviewSha": "a3398b4",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T14:50:09.622Z",
+              "refactorCommitSha": "eef727c64ef93ad2169613ace2dbdf47a8d8eb09",
+              "refactorCompletedAt": "2026-05-10T14:55:49.297Z",
+              "refactorCommittedAt": "2026-05-10T14:55:49.297Z"
+            },
+            "mutation": {
+              "startedAt": "2026-05-10T14:55:49.297Z",
+              "completedAt": "2026-05-10T15:00:39.870Z",
+              "reviewSha": "eef727c64ef93ad2169613ace2dbdf47a8d8eb09",
+              "verdict": "needs-refactoring",
+              "refactorStartedAt": "2026-05-10T15:00:39.870Z",
+              "refactorCommitSha": "195751d98804018458a2a0e54a89ea81eb42e3e3",
+              "refactorCompletedAt": "2026-05-10T15:04:15.827Z",
+              "refactorCommittedAt": "2026-05-10T15:04:15.827Z"
+            }
+          },
+          "completedAt": "2026-05-10T15:04:15.827Z"
         },
         {
           "id": "task-4",
@@ -1114,5 +1141,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-05-10T14:40:52.166Z"
+  "lastSynced": "2026-05-10T15:04:17.335Z"
 }

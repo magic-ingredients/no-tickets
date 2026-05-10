@@ -6,7 +6,7 @@
   "prdId": "no-tickets-client",
   "prdDirPath": "docs/prd/no-tickets-client",
   "created": "2026-04-16T10:06:08.225Z",
-  "lastUpdated": "2026-05-10T14:40:52.217Z",
+  "lastUpdated": "2026-05-10T15:04:17.384Z",
   "features": [
     {
       "id": "cli-auth-flow",

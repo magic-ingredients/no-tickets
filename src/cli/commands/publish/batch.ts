@@ -33,13 +33,15 @@ function isObjectRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+// cliSource is non-optional here — the CLI surface now always supplies at
+// least { name: 'cli' } via the surface default, so the helper doesn't
+// need to handle the "both inputs absent" case anymore. Pruning the dead
+// branch is what kills the mutation testing survivors on lines 41-43.
 function mergeSourceShallow(
-  cliSource: Partial<Source> | undefined,
+  cliSource: Partial<Source>,
   jsonlSource: unknown,
-): Partial<Source> | undefined {
+): Partial<Source> {
   const existing = isObjectRecord(jsonlSource) ? (jsonlSource as Partial<Source>) : undefined;
-  if (cliSource === undefined && existing === undefined) return undefined;
-  if (cliSource === undefined) return existing;
   if (existing === undefined) return cliSource;
   // JSONL line wins on top-level fields; attributes are key-merged so a CLI
   // --source-attribute env=prod survives even when the JSONL line carries
@@ -59,13 +61,12 @@ function mergeSourceShallow(
 
 function buildPublishEvent(
   raw: Record<string, unknown>,
-  source: Partial<Source> | undefined,
+  source: Partial<Source>,
 ): PublishEvent {
   const { source: rawSource, ...rest } = raw;
-  const merged = mergeSourceShallow(source, rawSource);
   return {
     ...(rest as PublishEvent),
-    ...(merged !== undefined && { source: merged }),
+    source: mergeSourceShallow(source, rawSource),
   };
 }
 

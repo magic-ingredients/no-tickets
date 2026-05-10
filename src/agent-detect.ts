@@ -10,73 +10,6 @@ function resolveHome(): string {
   return process.env['HOME'] ?? process.env['USERPROFILE'] ?? homedir();
 }
 
-interface CiAttributeBindings {
-  readonly provider: string;
-  readonly runId?: string;
-  readonly workflow?: string;
-}
-
-// Order matters: the first entry whose env var is set wins. GitHub Actions
-// before GitLab so a runner that mistakenly has both vars set is identified
-// as the more specific provider.
-const CI_ATTRIBUTE_BINDINGS: ReadonlyArray<readonly [string, () => CiAttributeBindings]> = [
-  [
-    'GITHUB_ACTIONS',
-    () => ({
-      provider: 'github-actions',
-      runId: process.env['GITHUB_RUN_ID'],
-      workflow: process.env['GITHUB_WORKFLOW'],
-    }),
-  ],
-  [
-    'GITLAB_CI',
-    () => ({
-      provider: 'gitlab',
-      runId: process.env['CI_JOB_ID'],
-      workflow: process.env['CI_PIPELINE_NAME'],
-    }),
-  ],
-  [
-    'CIRCLECI',
-    () => ({
-      provider: 'circleci',
-      runId: process.env['CIRCLE_BUILD_NUM'],
-      workflow: process.env['CIRCLE_JOB'],
-    }),
-  ],
-  [
-    'JENKINS_URL',
-    () => ({
-      provider: 'jenkins',
-      runId: process.env['BUILD_ID'],
-      workflow: process.env['JOB_NAME'],
-    }),
-  ],
-  [
-    'BUILDKITE',
-    () => ({
-      provider: 'buildkite',
-      runId: process.env['BUILDKITE_BUILD_ID'],
-      workflow: process.env['BUILDKITE_PIPELINE_NAME'],
-    }),
-  ],
-  [
-    'TRAVIS',
-    () => ({
-      provider: 'travis',
-      runId: process.env['TRAVIS_BUILD_ID'],
-      workflow: process.env['TRAVIS_JOB_NAME'],
-    }),
-  ],
-];
-
-function detectCiAttributes(): CiAttributeBindings | null {
-  for (const [envVar, binding] of CI_ATTRIBUTE_BINDINGS) {
-    if (process.env[envVar]) return binding();
-  }
-  return null;
-}
-
 // Salt is generated once per installation and stored at ~/.notickets/.machine-salt.
 // Hostname + salt → SHA-256 hex (truncated). Hostname alone is PII; salted hash
 // is opaque to anyone without the local salt file.
@@ -114,25 +47,19 @@ function hashedMachine(): string {
 }
 
 /**
- * Detect a fully-formed Source for direct SDK use. Used by the publish-client
- * (Feature 2) to auto-fill source on every event when the caller doesn't
- * provide one.
+ * Detect a Source for direct SDK use. Used by the transport (Feature 2) to
+ * auto-fill source on every event when the caller doesn't provide one.
  *
- * - `name: 'ci'` when a known CI provider env var is set; `attributes.provider`
- *   identifies which one, plus `runId`/`workflow` when the provider exposes them.
- * - `name: 'sdk'` otherwise (direct programmatic SDK use).
+ * - `name: 'sdk'` always. CI provenance is caller-driven now — surface
+ *   handlers (CLI / MCP) override `name` to `'cli'` / `'mcp'`, and CI
+ *   scripts that want `provider=github-actions` style attribution supply
+ *   it explicitly via `PublishEvent.source.attributes` or the CLI's
+ *   `--source-attribute key=value` flag.
  * - `attributes.machine` populated only when `NO_TICKETS_INCLUDE_MACHINE=1`.
  *   Value is a hashed hostname using a per-installation salt (never raw hostname).
  */
 export function detectSource(): Source {
   const attributes: Record<string, string | number | boolean> = {};
-
-  const ci = detectCiAttributes();
-  if (ci) {
-    attributes['provider'] = ci.provider;
-    if (ci.runId) attributes['runId'] = ci.runId;
-    if (ci.workflow) attributes['workflow'] = ci.workflow;
-  }
 
   if (process.env['NO_TICKETS_INCLUDE_MACHINE'] === '1') {
     // Best-effort: filesystem failures (read-only $HOME, missing perms, ...)
@@ -145,7 +72,7 @@ export function detectSource(): Source {
   }
 
   const source: Source = {
-    name: ci ? 'ci' : 'sdk',
+    name: 'sdk',
     sdkVersion: SDK_VERSION,
   };
 

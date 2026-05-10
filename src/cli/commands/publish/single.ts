@@ -89,9 +89,13 @@ export async function runPublishSingle(
     return EXIT_VALIDATION;
   }
 
-  let source: Partial<Source> | undefined;
+  // Surface-specific default: every event published via `nt publish` carries
+  // name: 'cli' so it's distinguishable from MCP / direct-SDK provenance.
+  // --source-name overrides the surface tag (spread order — flagsSource last).
+  // --source-attribute attaches alongside the default cli name.
+  let flagsSource: Partial<Source> | undefined;
   try {
-    source = parseSourceFlags({
+    flagsSource = parseSourceFlags({
       ...(options.sourceName !== undefined && { name: options.sourceName }),
       ...(options.sourceAttributes !== undefined && { attributes: options.sourceAttributes }),
     });
@@ -99,13 +103,14 @@ export async function runPublishSingle(
     deps.writeErr(err instanceof Error ? err.message : String(err));
     return EXIT_VALIDATION;
   }
+  const source: Partial<Source> = { name: 'cli', ...flagsSource };
 
   const subject = buildSubject(options.subjectType, options.subjectId);
   const event: PublishEvent = {
     type: options.typeId,
     data: parsedData,
     ...(subject !== undefined && { subject }),
-    ...(source !== undefined && { source }),
+    source,
     ...(options.parent !== undefined && { parentEventId: options.parent }),
     ...(options.trace !== undefined && { traceId: options.trace }),
     ...(options.dedupeKey !== undefined && { dedupeKey: options.dedupeKey }),

@@ -95,9 +95,12 @@ export async function runPublishBatch(
   }
   const typeIndex = new Map(availableTypes.map((t) => [t.id, t]));
 
-  let source: Partial<Source> | undefined;
+  // Surface-specific default: stamp `name: 'cli'` on every event. JSONL
+  // lines override on top-level fields (per mergeSourceShallow), CLI flags
+  // override the default `cli` tag (spread order — flagsSource last).
+  let flagsSource: Partial<Source> | undefined;
   try {
-    source = parseSourceFlags({
+    flagsSource = parseSourceFlags({
       ...(options.sourceName !== undefined && { name: options.sourceName }),
       ...(options.sourceAttributes !== undefined && { attributes: options.sourceAttributes }),
     });
@@ -105,6 +108,7 @@ export async function runPublishBatch(
     deps.writeErr(err instanceof Error ? err.message : String(err));
     return EXIT_VALIDATION;
   }
+  const source: Partial<Source> = { name: 'cli', ...flagsSource };
 
   const batchEvents: BatchEvent[] = [];
   for (const entry of entries) {

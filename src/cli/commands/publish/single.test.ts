@@ -315,7 +315,7 @@ describe('runPublishSingle — operation order', () => {
 });
 
 describe('runPublishSingle — optional field omission on the wire', () => {
-  it('omits parentEventId, traceId, dedupeKey, subject, and source when not supplied', async () => {
+  it('omits parentEventId, traceId, dedupeKey, and subject when not supplied (source still carries the cli surface tag)', async () => {
     const out: RecordedOutput = { stdout: [], stderr: [] };
     const { deps, publish } = buildDeps({}, out);
 
@@ -326,7 +326,8 @@ describe('runPublishSingle — optional field omission on the wire', () => {
     expect(event && 'traceId' in event).toBe(false);
     expect(event && 'dedupeKey' in event).toBe(false);
     expect(event && 'subject' in event).toBe(false);
-    expect(event && 'source' in event).toBe(false);
+    // source is no longer omitted — the cli surface default is unconditional.
+    expect(event?.source).toEqual({ name: 'cli' });
   });
 
   it('passes parentEventId, traceId, and dedupeKey through when supplied', async () => {

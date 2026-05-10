@@ -5,6 +5,27 @@ export interface ValidationError {
   readonly message: string;
 }
 
+export interface ValidationIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+/** Validates an event payload against the bundled schemas package
+ *  (`@magic-ingredients/no-tickets-schemas`). Looks up the Zod schema by
+ *  type id; returns [] on success, ValidationIssue[] on schema failure, or
+ *  { unknownType: true } if the id is not registered.
+ *
+ *  Replaces validateAgainstSchema (which took a runtime-fetched JSON
+ *  Schema). Source of truth is now compile-time-pinned via the schemas
+ *  package — no per-publish HTTP fetch needed. Server is still
+ *  authoritative; this is a fast pre-flight to catch caller errors. */
+export function validateEventLocally(
+  _typeId: string,
+  _data: unknown,
+): readonly ValidationIssue[] | { readonly unknownType: true } {
+  throw new Error('validateEventLocally: not implemented');
+}
+
 function asJsonSchema(value: unknown): JsonSchema | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as JsonSchema)

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@magic-ingredients/no-tickets-schemas':
+        specifier: file:vendor/magic-ingredients-no-tickets-schemas-0.1.0.tgz
+        version: file:vendor/magic-ingredients-no-tickets-schemas-0.1.0.tgz
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@3.25.76)
@@ -426,6 +429,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@magic-ingredients/no-tickets-schemas@file:vendor/magic-ingredients-no-tickets-schemas-0.1.0.tgz':
+    resolution: {integrity: sha512-8xTCCoy8SgG1hGdI0XBBgv1Qo72jajAm2lKK/wn0K/B6Iq/QUc+vqmUbMVaxUFZGf/A5b12Yue5JzsNK66z2kA==, tarball: file:vendor/magic-ingredients-no-tickets-schemas-0.1.0.tgz}
+    version: 0.1.0
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
@@ -2294,6 +2301,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@magic-ingredients/no-tickets-schemas@file:vendor/magic-ingredients-no-tickets-schemas-0.1.0.tgz':
+    dependencies:
+      zod: 4.3.6
 
   '@modelcontextprotocol/sdk@1.29.0(zod@3.25.76)':
     dependencies:

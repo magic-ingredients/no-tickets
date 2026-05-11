@@ -640,3 +640,43 @@ fn status_profile_flag_works_before_subcommand() {
             r#""apiUrl":"https://before-api.example""#,
         ));
 }
+
+// ─── Broken-pipe: stdout closed by consumer exits 0, not 1 ──────────────────
+
+/// Status's stdout write must treat a `BrokenPipe` error as a normal exit
+/// (consumer closed early, e.g. `nt status | head -n 0`). Any other stdout
+/// error is a hard failure (exit 1). Pin both branches so mutation testing
+/// has signal on the `e.kind() == io::ErrorKind::BrokenPipe` guard.
+///
+/// Reproduction: spawn the binary with stdout piped, drop the read end
+/// before reading, wait for exit. The binary's first stdout write returns
+/// `ErrorKind::BrokenPipe`; the run() handler must map that to exit code 0.
+#[test]
+fn status_broken_pipe_on_stdout_exits_zero() {
+    use std::process::{Command, Stdio};
+
+    let temp = tempfile::tempdir().unwrap();
+    let bin = assert_cmd::cargo::cargo_bin("nt");
+    let mut child = Command::new(&bin)
+        .env("NO_TICKETS_HOME", temp.path())
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env_remove("NO_TICKETS_API_URL")
+        .env_remove("NO_TICKETS_AUTH_URL")
+        .arg("status")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn nt");
+
+    // Drop the read end of stdout before the child writes — the child's
+    // first println!/writeln! will fail with BrokenPipe.
+    drop(child.stdout.take());
+
+    let status = child.wait().expect("child exits");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "broken-pipe on stdout must map to exit 0, got {status:?}",
+    );
+}

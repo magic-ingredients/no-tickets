@@ -69,10 +69,25 @@ pub fn run(profile: Option<&str>) -> i32 {
 
     let out = build_authenticated_output(&auth, urls);
     let json = serde_json::to_string(&out).expect("status payload serializes");
-    // Broken-pipe (stdout closed by consumer — `| head -n 1`, etc.) is a
-    // normal exit, not a panic. Anything else from stdout is a hard failure.
     let stdout = io::stdout();
-    match writeln!(stdout.lock(), "{json}") {
+    let write_result = writeln!(stdout.lock(), "{json}");
+    write_result_to_exit_code(write_result)
+}
+
+/// Pure mapping from a stdout-write outcome to the process exit code.
+///
+/// Broken-pipe (stdout closed by a consumer — `| head -n 1`, etc.) is a
+/// normal exit; the consumer signalled "I have enough" and the kernel
+/// closed the read end of the pipe. Anything else (disk full, hardware
+/// I/O failure, permissions) is a hard failure that the caller should
+/// be told about via a non-zero exit.
+///
+/// Pure: input is the `io::Result` from a write, output is the exit code.
+/// Tested with fakes for both error kinds; the integration test
+/// `status_broken_pipe_on_stdout_exits_zero` exercises the
+/// real-process broken-pipe path end-to-end.
+fn write_result_to_exit_code(result: io::Result<()>) -> i32 {
+    match result {
         Ok(()) => 0,
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => 0,
         Err(_) => 1,
@@ -174,5 +189,36 @@ mod tests {
         let body = serde_json::to_string(&out).expect("serialises");
         assert!(body.contains(r#""apiUrl":"https://staging-api.no-tickets.com""#));
         assert!(body.contains(r#""authUrl":"https://staging.no-tickets.com/api/auth/cli""#));
+    }
+
+    #[test]
+    fn write_result_ok_maps_to_exit_zero() {
+        assert_eq!(write_result_to_exit_code(Ok(())), 0);
+    }
+
+    #[test]
+    fn write_result_broken_pipe_maps_to_exit_zero() {
+        // BrokenPipe = consumer closed the read end (`| head -n 1` etc.).
+        // Normal termination, not a failure.
+        let err = io::Error::new(io::ErrorKind::BrokenPipe, "pipe closed");
+        assert_eq!(write_result_to_exit_code(Err(err)), 0);
+    }
+
+    #[test]
+    fn write_result_non_broken_pipe_error_maps_to_exit_one() {
+        // Any stdout error that is NOT BrokenPipe is a hard failure.
+        // Pins the asymmetry of the match guard — mutation testing
+        // surfaced this branch's lack of coverage.
+        let err = io::Error::new(io::ErrorKind::PermissionDenied, "denied");
+        assert_eq!(write_result_to_exit_code(Err(err)), 1);
+    }
+
+    #[test]
+    fn write_result_other_error_kind_also_maps_to_exit_one() {
+        // Belt-and-braces: a different non-BrokenPipe kind also exits 1.
+        // Confirms the guard discriminates on BrokenPipe specifically,
+        // not on "some particular error" / "is_some" / etc.
+        let err = io::Error::new(io::ErrorKind::Other, "weird");
+        assert_eq!(write_result_to_exit_code(Err(err)), 1);
     }
 }

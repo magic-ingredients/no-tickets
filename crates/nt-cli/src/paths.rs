@@ -16,6 +16,9 @@ use directories::ProjectDirs;
 
 use crate::env::Env;
 
+/// Filename of the session credentials file inside [`config_dir`].
+pub const CREDENTIALS_FILE: &str = "credentials";
+
 /// Returns the platform-native config directory used by the CLI.
 ///
 /// The `credentials` file lives directly inside this directory. Task 4
@@ -25,9 +28,6 @@ use crate::env::Env;
 /// 1. `NO_TICKETS_HOME=<dir>` (non-empty) → `<dir>/.notickets`
 /// 2. Platform-native via `directories` crate
 /// 3. `None` if neither resolves
-/// Filename of the session credentials file inside [`config_dir`].
-pub const CREDENTIALS_FILE: &str = "credentials";
-
 pub fn config_dir(env: &dyn Env) -> Option<PathBuf> {
     if let Some(override_home) = env.var("NO_TICKETS_HOME").filter(|s| !s.is_empty()) {
         return Some(PathBuf::from(override_home).join(".notickets"));

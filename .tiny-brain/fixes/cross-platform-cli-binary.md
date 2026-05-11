@@ -307,7 +307,8 @@ Build a Rust prototype of `nt status` against staging. Goal: validate the core t
 - Documents any toolchain surprises in `docs/rust-spike-notes.md`
 
 ### 2. MCP server spike — `list_event_types` tool
-status: in_progress
+status: completed
+commitSha: 676ea22
 
 Implement one MCP tool (`list_event_types`) using the official `rmcp` SDK with stdio transport and the `#[tool]` macro. Spawn it as an MCP server, drive it from a Claude Code MCP client. Confirm wire compatibility.
 

@@ -1,43 +1,32 @@
-//! `nt-mcp` server: a single tool (`list_event_types`) over rmcp's stdio
-//! transport. Spike scope per the cross-platform-cli-binary fix Task 2:
-//! validate the rmcp toolchain, prove stdout-purity discipline, confirm
-//! TS parity on tool descriptor + payload shape.
+//! `nt-mcp` server: rmcp tool routing + ServerHandler impl.
+//!
+//! Tool bodies live in `crates/nt-mcp/src/tools/<name>.rs` so the
+//! impl block stays a thin dispatch layer as Task 5 adds the rest of
+//! the surface (describe_event_type, publish_event, status, validate,
+//! create_subject, run_interaction).
 
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::fixtures::{EventTypeRow, all_event_types};
+use crate::tools::list_event_types::{self, ListEventTypesArgs};
 
-/// Arguments to the `list_event_types` tool. Both optional — matches the
-/// TS reference at src/mcp/tools/list-event-types.ts.
-#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-pub struct ListEventTypesArgs {
-    /// Filter to a single domain prefix.
-    #[serde(default)]
-    pub domain: Option<String>,
-    /// When true, return ONLY deprecated types; when false, only active.
-    #[serde(default)]
-    pub deprecated: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-struct ListEventTypesPayload<'a> {
-    types: Vec<&'a EventTypeRow>,
-}
+/// Reported `serverInfo.name` in the initialize response. Matches the TS
+/// server (src/mcp/create-server.ts), which reports `no-tickets` —
+/// preserving wire parity for any client that pins on this string.
+const SERVER_NAME: &str = "no-tickets";
 
 #[derive(Clone)]
 pub struct NtServer {
     // The macro-generated tool_handler reads this field reflectively;
-    // the dead-code analyser doesn't see that path. Suppress the warning
-    // narrowly rather than allowing it crate-wide.
+    // the dead-code analyser doesn't see that path. Narrow allow.
     #[allow(dead_code)]
     tool_router: ToolRouter<NtServer>,
-    fixtures: Vec<EventTypeRow>,
+    fixtures: &'static [EventTypeRow],
 }
 
 impl NtServer {
@@ -57,42 +46,31 @@ impl Default for NtServer {
 
 #[tool_router]
 impl NtServer {
-    /// Description text deliberately mirrors the TS implementation so a
-    /// shared client sees identical tool metadata across runtimes (see
-    /// src/mcp/tools/list-event-types.ts).
-    #[tool(
-        description = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async."
-    )]
+    // Description literal MUST stay byte-for-byte in sync with
+    // `tools::list_event_types::TS_PARITY_DESCRIPTION` — the rmcp
+    // `#[tool]` attribute requires a string literal, so the constant
+    // can't be referenced here directly. The integration test asserts
+    // byte-equality against the constant, so any drift fails CI.
+    #[tool(description = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async.")]
     fn list_event_types(
         &self,
         Parameters(args): Parameters<ListEventTypesArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let filtered: Vec<&EventTypeRow> = self
-            .fixtures
-            .iter()
-            .filter(|t| match &args.domain {
-                Some(d) => t.domain == *d,
-                None => true,
-            })
-            .filter(|t| match args.deprecated {
-                Some(want) => t.deprecated == want,
-                None => true,
-            })
-            .collect();
-
-        let payload = ListEventTypesPayload { types: filtered };
-        let json = serde_json::to_string(&payload)
-            .expect("ListEventTypesPayload always serialises");
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        list_event_types::handle(&args, self.fixtures)
     }
 }
 
 #[tool_handler]
 impl ServerHandler for NtServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder().enable_tools().build(),
-        )
-        .with_server_info(Implementation::from_build_env())
+        // `Implementation` is `#[non_exhaustive]`, so direct struct
+        // construction is disallowed. Start from the build-env default
+        // (carries crate version, sensible defaults) and override name
+        // + version to the TS parity values.
+        let mut info = Implementation::from_build_env();
+        info.name = SERVER_NAME.to_string();
+        info.version = env!("CARGO_PKG_VERSION").to_string();
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(info)
     }
 }

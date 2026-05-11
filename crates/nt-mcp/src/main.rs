@@ -1,5 +1,6 @@
 mod fixtures;
 mod server;
+mod tools;
 
 use rmcp::{ServiceExt, transport::stdio};
 use server::NtServer;
@@ -10,14 +11,17 @@ async fn main() -> anyhow::Result<()> {
     // CRITICAL: route ALL logging to stderr. Anything to stdout corrupts
     // the MCP JSON-RPC stream and causes Claude Code to silently
     // disconnect. The stdout-purity integration test pins this.
-    tracing_subscriber::fmt()
+    //
+    // `try_init` so a re-entrant subscriber install (e.g., embedded
+    // future usage in tests) is a no-op rather than a panic.
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
         .with_ansi(false)
-        .init();
+        .try_init();
 
     tracing::info!("nt-mcp starting (stdio transport)");
 

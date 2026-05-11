@@ -291,7 +291,8 @@ Before retiring the TS CLI/MCP, run a parallel test:
 ## Tasks
 
 ### 1. Rust rewrite spike — single command end-to-end
-status: not_started
+status: completed
+commitSha: f3b38bd
 
 Build a Rust prototype of `nt status` against staging. Goal: validate the core toolchain (cargo, reqwest, serde, the project-config file read path) before committing to a full rewrite.
 

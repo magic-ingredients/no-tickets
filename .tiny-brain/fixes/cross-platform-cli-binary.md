@@ -37,7 +37,7 @@ The roadmap explicitly does **not** ship a multi-language transport-bearing SDK 
 |---|---|---|---|
 | **CLI** (`nt publish ...`) | TS-via-npm CLI | **Rust binary (every package manager)** | Rust binary (unchanged) |
 | **MCP server** (agent tool calls) | TS server via npm | **Rust binary** | Rust binary (unchanged) |
-| **In-code TS** (`import { publish }`) | Transitional TS scaffold | **TS wrapper (~50–80 LOC, spawns binary in `--stream` mode)** — same import path; transparent migration via the npm wrapper | TS wrapper (unchanged) |
+| **In-code TS** (`import { publish }`) | Transitional TS scaffold | None — TS programmatic surface retired with no backcompat (no npm wrapper) | TS wrapper (~50–80 LOC, spawns binary in `--stream` mode) + Zod schemas package |
 | **In-code Python** | None (raw HTTP or CLI) | None (raw HTTP or CLI) | Python wrapper (~50–80 LOC, `subprocess.Popen` streaming) + Pydantic schemas package |
 | **In-code Go** | None (raw HTTP or CLI) | None (raw HTTP or CLI) | Go wrapper (~50–80 LOC, `exec.Cmd` streaming) + struct schemas package |
 
@@ -49,8 +49,8 @@ The "wrapper" pattern is identical across languages. Only the spawn primitive ch
 |---|---|---|---|
 | **1** | `publish-shared-surfaces.md` | TS CLI `publish` wired (transitional scaffold); Zod schemas extracted to `@magic-ingredients/no-tickets-schemas`; project registry; flag shape | — |
 | **2 (this fix)** | `cross-platform-cli-binary.md` | Full Rust rewrite of CLI + MCP, validating against the JSON Schema build artifact from `no-tickets-service`. **`--stream` mode** for persistent-subprocess wrappers. **Structured-error contract** on stderr. TS CLI and MCP scaffold retired. | Phase 1 (defines the surface to port) |
-| **3 (this fix)** | same | Multi-channel distribution: cargo, Homebrew, Scoop, deb/rpm, npm wrapper, install script. npm wrapper makes existing `import { publish }` keep working — body becomes `execFile('nt', ...)` (or `--stream` variant). | Phase 2 |
-| **4** | future fix | Python + Go schemas packages (codegen from Zod source, server-side pipeline) + Python + Go wrapper packages (~50–80 LOC each). | Phase 3 (stable binary + structured-error contract + `--stream` contract); also depends on server-side codegen pipeline |
+| **3 (this fix)** | same | Multi-channel distribution: cargo, Homebrew, Scoop, deb/rpm, install script. **No npm wrapper** — rewrite intentionally drops backcompat with the existing `@magic-ingredients/no-tickets` consumer surface. | Phase 2 |
+| **4** | future fix | Per-language schemas packages (TS / Python / Go, codegen from Zod source via server-side pipeline) + per-language wrapper packages (~50–80 LOC each, including TS). | Phase 3 (stable binary + structured-error contract + `--stream` contract); also depends on server-side codegen pipeline |
 
 ## Issue Summary
 
@@ -124,9 +124,8 @@ Single source artifact (per-target binary) shipped through every relevant channe
 | **Scoop bucket** | Windows developers | `scoop install nt` |
 | **cargo install** | Rust ecosystem users | `cargo install nt-cli` (publishes to crates.io) |
 | **deb / rpm** | Linux server installs | apt/yum repos hosted on GitHub Pages or a CDN |
-| **npm wrapper** | Existing npm users (no migration cost) | `@magic-ingredients/nt`'s postinstall downloads the platform binary from GH Releases (esbuild pattern). `npx no-tickets ...` keeps working. |
 
-The npm wrapper is **the migration path**: existing `npx no-tickets ...` users transparently get the Rust binary on the next install. No breaking change for current consumers.
+No npm wrapper: the rewrite drops backcompat with the existing `@magic-ingredients/no-tickets` consumer surface (event-repository rewrite accepts the data-shape break). Existing npm users move to one of the channels above on next install; a TS wrapper for new programmatic use is deferred to Phase 4 (see phase table above).
 
 ## Compatibility audit (must verify before committing to Rust)
 
@@ -249,7 +248,7 @@ A pass through crates.io confirms most of the bespoke surface has well-adopted R
 | **Cross-compile toolchain** | `cargo-zigbuild` (preferred) or `cross` | `cargo-zigbuild` runs in CI without Docker-per-target overhead. |
 | **Stream JSONL parsing** | `tokio::io::BufReader::lines()` + `serde_json` | Stdlib + serde, no extra crate. ~30 LOC for the request/response loop. |
 | **CLI behavioral tests** | `assert_cmd` + `predicates` | Runs the binary, asserts stdout/stderr/exit code. Powers the feature-equivalence smoke matrix in Task 4. |
-| **Release pipeline generator** | `cargo-dist` | **Chosen.** One config block in `Cargo.toml` generates: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula auto-update, Scoop manifest auto-update. Collapses what would be four hand-rolled workflow tasks into one config block. See Task 6. Out of scope for `cargo-dist`: deb/rpm (Task 9), npm wrapper postinstall (Task 7) — those stay hand-rolled. |
+| **Release pipeline generator** | `cargo-dist` | **Chosen.** One config block in `Cargo.toml` generates: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula auto-update, Scoop manifest auto-update. Collapses what would be four hand-rolled workflow tasks into one config block. See Task 6. Out of scope for `cargo-dist`: deb/rpm (Task 9) — stays hand-rolled. |
 | **CLI self-update (`nt self-update`)** | `self_update` | Purpose-built for CLI tools — reads latest GH Release, downloads target binary, sha256-verifies, replaces self. ~20 LOC integration. Targets install.sh / direct-download users only (package-manager installs update via their package manager). **Not** Velopack — Velopack is GUI-app-shaped (Squirrel successor) and the wrong fit for a CLI/MCP binary. See Task 13. |
 
 ### Critical implementation gotchas
@@ -258,7 +257,7 @@ A pass through crates.io confirms most of the bespoke surface has well-adopted R
 
 2. **`thiserror` for the structured-error contract.** Define a single enum `NtError` with `#[derive(thiserror::Error)]` variants per error class in the table above. One match arm maps each variant to its exit code + serialized stderr shape. Adding a new error class is one variant + one match arm — keeps the "additive-only" contract guarantee mechanical.
 
-3. **`cargo-dist` opinionated defaults are acceptable.** Auto-generates Homebrew formula and install.sh assuming GitHub Releases hosting — matches plan. Auto-generates a single-binary release — matches. Divergent items (deb/rpm, npm wrapper postinstall) are out of `cargo-dist` scope and stay hand-rolled as separate tasks below.
+3. **`cargo-dist` opinionated defaults are acceptable.** Auto-generates Homebrew formula and install.sh assuming GitHub Releases hosting — matches plan. Auto-generates a single-binary release — matches. Divergent items (deb/rpm) are out of `cargo-dist` scope and stay hand-rolled as a separate task below.
 
 ### What's still genuinely custom
 
@@ -268,7 +267,6 @@ These have no off-the-shelf crate; they're code we write:
 - Each CLI subcommand's behavior matching the TS implementation (Task 4) — clap removes the parser boilerplate; the semantics still need porting one command at a time.
 - The `build.rs` step that fetches the JSON Schema bundle from a `no-tickets-service` release artifact and pins by version (Task 3).
 - Token resolution + project registry persistence (small layer over `serde_json` + `directories`).
-- npm wrapper postinstall logic for backward compatibility (Task 8) — Node-side, not Rust.
 
 ## Test Plan
 
@@ -459,13 +457,13 @@ Single config block in `Cargo.toml` drives the full distribution surface: cross-
 `cargo-zigbuild` is the underlying cross-compile toolchain (configurable through cargo-dist). Five required targets: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. Secondary glibc target available as opt-in artifact.
 
 Outputs per release:
-- Tarballs / zips per target with sha256 checksums (consumed by Task 7's npm wrapper)
+- Tarballs / zips per target with sha256 checksums
 - Updated Homebrew formula in `magic-ingredients/homebrew-tap`
 - Updated Scoop manifest in `magic-ingredients/scoop-bucket`
 - `install.sh` published with the release (mirrored by Task 11 hosting)
 - Tagged GH Release with all artifacts
 
-Out of `cargo-dist`'s scope (handled in separate tasks): npm wrapper (Task 7), deb/rpm packaging (Task 9), `cargo install` channel (Task 8).
+Out of `cargo-dist`'s scope (handled in separate tasks): deb/rpm packaging (Task 9), `cargo install` channel (Task 8).
 
 **Files to modify/create:**
 - `Cargo.toml` — `[workspace.metadata.dist]` config block, target list, installer set
@@ -478,17 +476,14 @@ Out of `cargo-dist`'s scope (handled in separate tasks): npm wrapper (Task 7), d
 - `brew install magic-ingredients/tap/nt` works on macOS + Linux
 - `scoop install nt` works on Windows
 - `curl -fsSL <generated-install.sh-url> | sh` produces a working `nt` on Linux/macOS
-- Artifact layout matches what the Task 7 npm wrapper expects (binary file names + checksum file)
 
 ### 7. npm wrapper package (migration path for current users)
-status: not_started
+status: superseded
+commitSha: null
 
-Replace `@magic-ingredients/no-tickets`'s `bin/no-tickets.js` Node entry with a postinstall script that downloads the Rust binary from the GH Releases produced by Task 6. The CLI surface stays the same; users notice nothing except that `npx no-tickets ...` is faster.
+**Superseded — no backcompat required.** The event-repository rewrite explicitly does not preserve the existing `@magic-ingredients/no-tickets` consumer surface (no push v2 / no legacy schema continuity), so a transparent npm-side migration is unnecessary. Existing npm users will install the Rust binary via brew/scoop/cargo/install.sh on next setup; no postinstall shim required.
 
-**Files to modify/create:**
-- `wrappers/npm-binary/postinstall.js`
-- `wrappers/npm-binary/package.json`
-- `bin/no-tickets.js` — thin shim invoking the downloaded binary
+A TS wrapper for *new* programmatic-from-JS use cases is deferred to **Phase 4** alongside Python + Go wrappers — built on demand, not for migration.
 
 ### 8. cargo publish
 status: not_started
@@ -521,7 +516,7 @@ status: not_started
 ### 11. `nt self-update` subcommand
 status: not_started
 
-Add a `nt self-update` command using the `self_update` crate. Scoped specifically to install.sh / direct-download users — package-manager installs (Homebrew, Scoop, cargo, npm, apt/yum) update via their package manager and don't go through this path.
+Add a `nt self-update` command using the `self_update` crate. Scoped specifically to install.sh / direct-download users — package-manager installs (Homebrew, Scoop, cargo, apt/yum) update via their package manager and don't go through this path.
 
 Behavior:
 - Reads the latest release from GitHub Releases (same repo as Task 6's artifacts)
@@ -544,23 +539,22 @@ Detection: on launch, if the binary detects it was installed via a package manag
 ### 12. Retire TS CLI + MCP code
 status: not_started
 
-Once the Rust binary covers the full surface and migrates current npm users transparently (Task 7) and self-update is in place (Task 11), delete `src/cli/`, `src/cli.ts`, `src/mcp/`, related tests. The TS package shrinks to the thin SDK surface (Phase 4 will reshape it further).
+Once the Rust binary covers the full surface and self-update is in place (Task 11), delete `src/cli/`, `src/cli.ts`, `src/mcp/`, related tests. The npm package retires entirely from this repo — no backcompat shim. Phase 4 will reintroduce per-language wrapper packages (including TS) as their own publishing surface when adoption justifies it.
 
 **Files to modify/delete:**
 - `src/cli/` (delete)
 - `src/cli.ts` (delete)
 - `src/mcp/` (delete)
-- `bin/no-tickets.js` (becomes binary shim — see Task 7)
-- `package.json` — adjust `bin` and `files`
+- `bin/no-tickets.js` (delete — no replacement shim)
+- `package.json` — retire the npm package or strip to a placeholder, depending on the chosen Phase 4 path
 
 ### 13. Documentation: install paths + migration note
 status: not_started
 
 README + docs covering:
-- Each install channel (`brew install`, `scoop install`, `cargo install`, `npm install -g`, `curl install.sh`)
+- Each install channel (`brew install`, `scoop install`, `cargo install`, `curl install.sh`)
 - "Why a binary now?" — performance, no-Node CI, multi-channel distribution
-- Migration note for npm users — no action required, transparent
-- TS SDK is unaffected — programmatic publishing from JS code works the same
+- **Migration note for existing npm users** — the rewrite drops backcompat; install via one of the new channels. Existing `npx no-tickets ...` workflows stop working and must be replaced with `nt ...`. (Phase 4 will reintroduce a TS programmatic wrapper for in-code use; CLI users move to the binary directly.)
 - `nt self-update` — when to use it (install.sh / direct-download), when not to (every package-manager channel)
 
 **Files to modify/create:**
@@ -679,7 +673,7 @@ no-tickets/                       (existing repo)
 │   └── nt-mcp/
 ├── package.json                  (existing TS package — unchanged)
 ├── src/                          (existing TS source — retired in Task 12)
-├── wrappers/                     (existing — npm wrapper goes here in Task 7)
+├── wrappers/                     (existing — reserved for Phase 4 per-language wrappers; not used in this fix)
 └── ...
 ```
 
@@ -688,8 +682,7 @@ no-tickets/                       (existing repo)
 **Why not a separate `no-tickets-rust` repo?**
 - Tasks 1–5 are spikes — same-repo iteration is materially faster than cross-repo PRs
 - Feature-equivalence smoke matrix (Task 4) needs TS + Rust running side-by-side in one CI job
-- npm wrapper (Task 7) downloads from this repo's GH Releases — same-repo keeps the postinstall logic trivial
-- After Task 12 retires the TS source, this repo naturally becomes the Rust repo with thin TS SDK + wrappers — no migration required
+- After Task 12 retires the TS source, this repo naturally becomes the Rust repo (Phase 4 per-language wrappers may live here or split out then) — no migration required
 
 **Why not introduce Turborepo / pnpm-workspaces now?**
 - Adds tooling for zero current benefit — the TS package is one unit, Rust is a separate `cargo` workspace, no shared build graph

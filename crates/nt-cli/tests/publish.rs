@@ -117,14 +117,17 @@ async fn publish_sends_post_to_v1_events_with_bearer_header_and_prints_response(
 #[tokio::test]
 async fn publish_request_body_is_single_element_array_with_event_envelope() {
     let server = MockServer::start().await;
-    // body_partial_json asserts the request body is a JSON array with at
-    // least one element matching the partial shape: type, data, source
-    // (with name + sdkVersion). Any of the fields can have additional
-    // content; the matcher is subset-based.
+    // body_partial_json asserts the request body is a JSON array with
+    // at least one element matching the partial shape. Pin every field
+    // the TS sourceSchema requires (name + sdkVersion) PLUS the
+    // attributes.project escape-hatch used to surface caller project
+    // context — all required for TS parity, all checked here.
     let body_partial = json!([{
         "type": "ai.task.completed.v1",
         "source": {
             "name": "nt-cli",
+            "sdkVersion": env!("CARGO_PKG_VERSION"),
+            "attributes": { "project": "demo" }
         }
     }]);
     Mock::given(method("POST"))
@@ -160,10 +163,11 @@ async fn publish_request_body_is_single_element_array_with_event_envelope() {
 /// Inspects the raw request body bytes and asserts `type`, `data`,
 /// `source` appear in that declaration order. Same monotonic-byte-
 /// position approach as the nt status and list_event_types tests.
+/// Capture is synchronous inside the responder closure (no spawn +
+/// sleep race) using a std::sync::Mutex.
 #[tokio::test]
 async fn publish_wire_body_field_order_is_type_data_source() {
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let captured_for_responder = captured.clone();
@@ -172,12 +176,10 @@ async fn publish_wire_body_field_order_is_type_data_source() {
     Mock::given(method("POST"))
         .and(path("/v1/events"))
         .respond_with(move |req: &wiremock::Request| {
-            let body = String::from_utf8(req.body.clone())
-                .expect("body utf8");
-            let cell = captured_for_responder.clone();
-            tokio::spawn(async move {
-                *cell.lock().await = Some(body);
-            });
+            // wiremock invokes this closure synchronously per request.
+            // Take the body inline; no spawn, no race.
+            let body = String::from_utf8(req.body.clone()).expect("body utf8");
+            *captured_for_responder.lock().unwrap() = Some(body);
             ResponseTemplate::new(200).set_body_json(json!({
                 "ingested": 1, "deduped": 0, "ids": ["x"],
             }))
@@ -195,7 +197,10 @@ async fn publish_wire_body_field_order_is_type_data_source() {
             "--type",
             "ai.task.completed.v1",
             "--data",
-            r#"{"taskId":"t-1"}"#,
+            // Caller payload deliberately distinctive — no "type" /
+            // "source" keys hiding inside data to fool the find()
+            // calls below.
+            r#"{"taskId":"t-1","sessionId":"s-1"}"#,
             "--project",
             "demo",
         ],
@@ -203,16 +208,20 @@ async fn publish_wire_body_field_order_is_type_data_source() {
     .await;
     assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
 
-    // Give the spawned capture task a chance to land.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    let body = captured.lock().await.clone().expect("captured body");
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    // Envelope-distinctive matchers. The test payload is deliberately
+    // chosen to contain NO `type`, `data`, or `source` keys (a
+    // taskId/sessionId object), so each of these substrings appears
+    // exactly once in the body — at envelope level. Full-value matches
+    // on type and source for extra confidence; "data":{ for the data
+    // opening (the value's internal key order may vary).
     let p = |needle: &str| {
         body.find(needle)
             .unwrap_or_else(|| panic!("missing {needle:?} in {body:?}"))
     };
-    let t = p(r#""type":"#);
-    let d = p(r#""data":"#);
-    let s = p(r#""source":"#);
+    let t = p(r#""type":"ai.task.completed.v1""#);
+    let d = p(r#""data":{"#);
+    let s = p(r#""source":{"name":"nt-cli""#);
     assert!(
         t < d && d < s,
         "wire field order must be type, data, source — got {body}",
@@ -265,6 +274,7 @@ async fn publish_401_response_surfaces_auth_failure_on_stderr() {
             "error": "unauthorized",
             "message": "token rejected",
         })))
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -302,6 +312,7 @@ async fn publish_403_response_surfaces_permission_denied_on_stderr() {
             "error": "permission_denied",
             "message": "project access denied",
         })))
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -338,6 +349,7 @@ async fn publish_4xx_validation_error_surfaces_server_message() {
             "typeId": "ai.task.completed.v1",
             "issues": [{ "path": "taskId", "message": "required" }],
         })))
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -372,6 +384,7 @@ async fn publish_5xx_response_maps_to_transport_error() {
     Mock::given(method("POST"))
         .and(path("/v1/events"))
         .respond_with(ResponseTemplate::new(503))
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -396,6 +409,84 @@ async fn publish_5xx_response_maps_to_transport_error() {
             || out.stderr.to_lowercase().contains("server")
             || out.stderr.to_lowercase().contains("transport"),
         "stderr must name the server error; got {:?}",
+        out.stderr,
+    );
+}
+
+// ─── Response passthrough: unknown fields survive to stdout ───────────────
+
+/// Server may add new fields to the response over time (forward-compat).
+/// The CLI must not drop them — pin the passthrough behaviour so a
+/// future "let's parse into a typed struct" change doesn't silently
+/// lose information.
+#[tokio::test]
+async fn publish_response_passes_through_unknown_fields() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 1,
+            "deduped": 0,
+            "ids": ["evt_1"],
+            "futureField": "preserved",
+            "anotherFutureField": 42,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &[
+            "--type",
+            "ai.task.completed.v1",
+            "--data",
+            "{}",
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+    assert_eq!(out.code, 0, "expected success; stderr={:?}", out.stderr);
+    let body: Value = serde_json::from_str(out.stdout.trim()).unwrap();
+    assert_eq!(body["futureField"], "preserved");
+    assert_eq!(body["anotherFutureField"], 42);
+    assert_eq!(body["ingested"], 1);
+}
+
+// ─── Network failure (connection refused) maps to transport error ─────────
+
+#[tokio::test]
+async fn publish_connection_refused_maps_to_transport_error() {
+    // No wiremock instance running on this URL — TCP connect refuses.
+    let home = tempdir();
+    let out = run_nt_publish(
+        "http://127.0.0.1:1", // port 1 is reserved + closed
+        Some("nt_push_token"),
+        home.path(),
+        &[
+            "--type",
+            "ai.task.completed.v1",
+            "--data",
+            "{}",
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+    assert_ne!(
+        out.code, 0,
+        "connection refused must produce non-zero exit; stdout={:?} stderr={:?}",
+        out.stdout, out.stderr,
+    );
+    assert!(
+        out.stderr.to_lowercase().contains("transport")
+            || out.stderr.to_lowercase().contains("connect")
+            || out.stderr.to_lowercase().contains("refused"),
+        "stderr must surface the network failure; got {:?}",
         out.stderr,
     );
 }

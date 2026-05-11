@@ -55,16 +55,9 @@ async fn main() {
             data,
             project,
         } => {
-            let parsed_data: serde_json::Value = match serde_json::from_str(&data) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("--data must be valid JSON: {e}");
-                    std::process::exit(1);
-                }
-            };
             commands::publish::run(commands::publish::PublishArgs {
                 type_id: &r#type,
-                data: &parsed_data,
+                data: &data,
                 project: &project,
                 profile: cli.profile.as_deref(),
             })

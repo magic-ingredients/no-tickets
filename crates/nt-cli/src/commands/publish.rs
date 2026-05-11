@@ -14,7 +14,10 @@ use crate::urls::resolve_urls;
 
 pub struct PublishArgs<'a> {
     pub type_id: &'a str,
-    pub data: &'a Value,
+    /// Raw `--data` argument. Parsed inside `run()` so the i32 exit-code
+    /// contract owns the full input-handling surface (main.rs is
+    /// dispatch-only; doesn't short-circuit with its own exit calls).
+    pub data: &'a str,
     pub project: &'a str,
     pub profile: Option<&'a str>,
 }
@@ -66,6 +69,16 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
         return 1;
     };
 
+    // --data must be valid JSON. Parsing inside run() means the i32
+    // exit-code contract owns the full input-handling path.
+    let parsed_data: Value = match serde_json::from_str(args.data) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("--data must be valid JSON: {e}");
+            return 1;
+        }
+    };
+
     let client = match Client::new(urls.api_url, auth.token) {
         Ok(c) => c,
         Err(e) => {
@@ -76,7 +89,7 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
 
     let envelope = EventEnvelope {
         type_id: args.type_id,
-        data: args.data,
+        data: &parsed_data,
         source: Source {
             name: "nt-cli",
             sdk_version: env!("CARGO_PKG_VERSION"),
@@ -90,11 +103,13 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
     match client.post_json("/v1/events", &body).await {
         Ok(response) => {
             // Print verbatim. Server response shape:
-            // `{ ingested, deduped, ids }`.
+            // `{ ingested, deduped, ids }`. serde_json::Value
+            // serialisation cannot fail for valid Value, so `.expect`
+            // is appropriate here.
             println!(
                 "{}",
                 serde_json::to_string(&response)
-                    .unwrap_or_else(|_| response.to_string())
+                    .expect("serde_json::Value always serialises"),
             );
             0
         }

@@ -8,7 +8,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::auth::{resolve_auth, NOT_AUTH_MSG};
+use crate::auth::{resolve_auth, AuthOutcome, NOT_AUTH_MSG};
 use crate::env::Env;
 use crate::transport::{Client, HttpClient};
 use crate::urls::resolve_urls;
@@ -132,9 +132,12 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
         }
     };
 
-    let Some(auth) = resolve_auth(env) else {
-        eprintln!("{NOT_AUTH_MSG}");
-        return 1;
+    let auth = match resolve_auth(env, &urls.api_url) {
+        AuthOutcome::Resolved(a) => a,
+        AuthOutcome::SessionHostMismatch { .. } | AuthOutcome::None => {
+            eprintln!("{NOT_AUTH_MSG}");
+            return 1;
+        }
     };
 
     // --data must be valid JSON. Parsing inside run() means the i32

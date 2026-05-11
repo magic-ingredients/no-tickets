@@ -260,6 +260,30 @@ fn status_no_env_no_file_is_not_authenticated() {
         .stderr(predicate::str::contains(NOT_AUTH_MSG));
 }
 
+// ─── Session host mismatch: emit warning, decline session (ADR-0002 Task 3) ─
+
+/// When the credentials file's `host` field doesn't match the env-resolved
+/// `api_url`, the session is stale (issued against a different env). The
+/// binary must surface a warning to stderr telling the user to re-init,
+/// and not silently authenticate with the stale session.
+#[test]
+fn status_session_host_mismatch_emits_warning_and_declines_session() {
+    let temp = tempfile::tempdir().unwrap();
+    write_credentials(
+        temp.path(),
+        r#"{"token":"nt_session_staging","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api-staging.no-tickets.com"}"#,
+    );
+    isolate(&mut nt(), temp.path())
+        // No env token → forces use of credentials file.
+        // No NO_TICKETS_ENV → resolves to prod defaults.
+        .arg("status")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("api-staging.no-tickets.com"))
+        .stderr(predicate::str::contains("nt init"));
+}
+
 // ─── Home resolution: NO_TICKETS_HOME beats real HOME ───────────────────────
 
 /// Sets host-home env vars to a directory containing valid credentials, and

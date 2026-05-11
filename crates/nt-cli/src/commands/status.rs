@@ -5,7 +5,7 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::auth::{resolve_auth, ResolvedAuth, NOT_AUTH_MSG};
+use crate::auth::{resolve_auth, AuthOutcome, ResolvedAuth, NOT_AUTH_MSG};
 use crate::env::Env;
 use crate::urls::{resolve_urls, ResolvedUrls};
 
@@ -63,9 +63,17 @@ pub fn run(env: &dyn Env) -> i32 {
         }
     };
 
-    let Some(auth) = resolve_auth(env) else {
-        eprintln!("{NOT_AUTH_MSG}");
-        return 1;
+    let auth = match resolve_auth(env, &urls.api_url) {
+        AuthOutcome::Resolved(a) => a,
+        AuthOutcome::SessionHostMismatch { .. } => {
+            // RED-phase stub: warning emission lives in GREEN.
+            eprintln!("{NOT_AUTH_MSG}");
+            return 1;
+        }
+        AuthOutcome::None => {
+            eprintln!("{NOT_AUTH_MSG}");
+            return 1;
+        }
     };
 
     let out = build_authenticated_output(&auth, urls);

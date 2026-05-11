@@ -114,15 +114,12 @@ struct ProfileConfig {
 }
 
 pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls, UrlError> {
-    // RED: signature accepts env but body still reads process env.
-    // GREEN replaces std::env::var with env.var.
-    let _ = env;
     if let Some(name) = profile {
         return load_profile(name, env);
     }
 
-    let env_api = std::env::var("NO_TICKETS_API_URL").unwrap_or_default();
-    let env_auth = std::env::var("NO_TICKETS_AUTH_URL").unwrap_or_default();
+    let env_api = env.var("NO_TICKETS_API_URL").unwrap_or_default();
+    let env_auth = env.var("NO_TICKETS_AUTH_URL").unwrap_or_default();
     let api_trim = env_api.trim();
     let auth_trim = env_auth.trim();
     let api_set = !api_trim.is_empty();

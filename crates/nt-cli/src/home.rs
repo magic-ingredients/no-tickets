@@ -11,19 +11,19 @@ use std::path::PathBuf;
 
 use crate::env::Env;
 
-pub fn home_dir(_env: &dyn Env) -> Option<PathBuf> {
-    if let Ok(h) = std::env::var("NO_TICKETS_HOME") {
+pub fn home_dir(env: &dyn Env) -> Option<PathBuf> {
+    if let Some(h) = env.var("NO_TICKETS_HOME") {
         if !h.is_empty() {
             return Some(PathBuf::from(h));
         }
     }
     #[cfg(unix)]
     {
-        std::env::var("HOME").ok().filter(|s| !s.is_empty()).map(PathBuf::from)
+        env.var("HOME").filter(|s| !s.is_empty()).map(PathBuf::from)
     }
     #[cfg(windows)]
     {
-        std::env::var("USERPROFILE").ok().filter(|s| !s.is_empty()).map(PathBuf::from)
+        env.var("USERPROFILE").filter(|s| !s.is_empty()).map(PathBuf::from)
     }
 }
 

@@ -58,10 +58,7 @@ pub struct ResolvedAuth {
 }
 
 pub fn resolve_auth(env: &dyn Env) -> Option<ResolvedAuth> {
-    // RED: signature accepts env but body still reads process env.
-    // GREEN replaces std::env::var with env.var.
-    let _ = env;
-    if let Ok(token) = std::env::var("NO_TICKETS_TOKEN") {
+    if let Some(token) = env.var("NO_TICKETS_TOKEN") {
         if !token.is_empty() {
             let token_type = TokenType::detect(&token);
             return Some(ResolvedAuth {

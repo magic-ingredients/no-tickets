@@ -4,7 +4,6 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::fs;
-use std::io;
 use std::path::PathBuf;
 
 use crate::home;
@@ -155,19 +154,9 @@ fn load_profile(name: &str) -> Result<ResolvedUrls, UrlError> {
         });
     }
 
-    let raw = fs::read_to_string(&path).map_err(|e| {
-        // IO read failure (permission, symlink loop, not-a-file, etc.) is
-        // distinct from invalid JSON — surface it as such.
-        match e.kind() {
-            io::ErrorKind::InvalidData => UrlError::ProfileFileInvalidJson {
-                path: path.clone(),
-                message: e.to_string(),
-            },
-            _ => UrlError::ProfileFileUnreadable {
-                path: path.clone(),
-                message: e.to_string(),
-            },
-        }
+    let raw = fs::read_to_string(&path).map_err(|e| UrlError::ProfileFileUnreadable {
+        path: path.clone(),
+        message: e.to_string(),
     })?;
 
     let parsed: ConfigFile =

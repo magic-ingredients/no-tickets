@@ -6,13 +6,14 @@ use crate::credentials;
 pub const NOT_AUTH_MSG: &str =
     "Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.";
 
+#[derive(Clone, Copy)]
 pub enum AuthSource {
     Env,
     Credentials,
 }
 
 impl AuthSource {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             AuthSource::Env => "env",
             AuthSource::Credentials => "credentials",
@@ -20,6 +21,7 @@ impl AuthSource {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum TokenType {
     Push,
     Session,
@@ -37,7 +39,7 @@ impl TokenType {
         }
     }
 
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             TokenType::Push => "push",
             TokenType::Session => "session",

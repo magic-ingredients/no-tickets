@@ -477,12 +477,18 @@ fn status_profile_flag_accepts_equals_syntax() {
 
 /// Unknown profile when others ARE configured — TS message:
 /// `profile "X" not found in {path}. Available: y, z.`
+///
+/// Uses a profile declaration order (`staging`, `prod`, `dev`) that
+/// differs from alphabetical order (`dev`, `prod`, `staging`). The
+/// "Available" hint MUST reflect the on-disk insertion order. This
+/// pins the IndexMap choice — a regression to BTreeMap would emit
+/// alphabetical order and fail this assertion.
 #[test]
-fn status_profile_unknown_name_with_available_hint() {
+fn status_profile_unknown_name_with_available_hint_preserves_insertion_order() {
     let temp = tempfile::tempdir().unwrap();
     write_config(
         temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://s","authUrl":"https://s"},"prod":{"apiUrl":"https://p","authUrl":"https://p"}}}"#,
+        r#"{"profiles":{"staging":{"apiUrl":"https://s","authUrl":"https://s"},"prod":{"apiUrl":"https://p","authUrl":"https://p"},"dev":{"apiUrl":"https://d","authUrl":"https://d"}}}"#,
     );
     isolate(&mut nt(), temp.path())
         .env("NO_TICKETS_TOKEN", "nt_push_abc")
@@ -492,9 +498,9 @@ fn status_profile_unknown_name_with_available_hint() {
         .failure()
         .code(1)
         .stderr(predicate::str::contains("nonexistent"))
-        .stderr(predicate::str::contains("Available"))
-        .stderr(predicate::str::contains("staging"))
-        .stderr(predicate::str::contains("prod"));
+        .stderr(predicate::str::contains(
+            "Available: staging, prod, dev",
+        ));
 }
 
 /// Missing config.json — TS message:
@@ -568,6 +574,50 @@ fn status_profile_non_http_url_errors() {
         .stderr(predicate::str::contains("staging"))
         .stderr(predicate::str::contains("invalid"))
         .stderr(predicate::str::contains("apiUrl"));
+}
+
+/// Pins the strict-URL validator: `https://` with an empty host is
+/// rejected (TS's `new URL("https://")` throws; a naive `starts_with`
+/// check would accept it). Forces the GREEN impl to do real URL parsing.
+#[test]
+fn status_profile_https_without_host_is_invalid() {
+    let temp = tempfile::tempdir().unwrap();
+    write_config(
+        temp.path(),
+        r#"{"profiles":{"staging":{"apiUrl":"https://","authUrl":"https://ok"}}}"#,
+    );
+    isolate(&mut nt(), temp.path())
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .arg("status")
+        .args(["--profile", "staging"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("invalid"))
+        .stderr(predicate::str::contains("apiUrl"));
+}
+
+/// Pins the HomeUnresolvable variant: with NO_TICKETS_HOME, HOME, and
+/// USERPROFILE all unset, `--profile X` cannot find a config path and
+/// must surface a graceful error — not panic. A regression to the old
+/// `.expect()` would crash with a Rust stacktrace, failing this test.
+#[test]
+fn status_profile_with_no_home_resolvable_errors_gracefully() {
+    nt()
+        .env_remove("NO_TICKETS_HOME")
+        .env_remove("HOME")
+        .env_remove("USERPROFILE")
+        // Token presence is irrelevant — URL resolution runs first and
+        // fails before auth is touched.
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env_remove("NO_TICKETS_API_URL")
+        .env_remove("NO_TICKETS_AUTH_URL")
+        .args(["--profile", "staging"])
+        .arg("status")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("home directory"));
 }
 
 /// Flag-before-subcommand parity: TS's argv parser is position-agnostic,

@@ -1,11 +1,14 @@
 mod auth;
 mod commands;
 mod credentials;
+mod env;
 mod home;
 mod transport;
 mod urls;
 
 use clap::{Parser, Subcommand};
+
+use crate::env::SystemEnv;
 
 #[derive(Parser)]
 #[command(
@@ -48,19 +51,23 @@ enum Commands {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let cli = Cli::parse();
+    let env = SystemEnv;
     let exit = match cli.command {
-        Commands::Status => commands::status::run(cli.profile.as_deref()),
+        Commands::Status => commands::status::run(cli.profile.as_deref(), &env),
         Commands::Publish {
             r#type,
             data,
             project,
         } => {
-            commands::publish::run(commands::publish::PublishArgs {
-                type_id: &r#type,
-                data: &data,
-                project: &project,
-                profile: cli.profile.as_deref(),
-            })
+            commands::publish::run(
+                commands::publish::PublishArgs {
+                    type_id: &r#type,
+                    data: &data,
+                    project: &project,
+                    profile: cli.profile.as_deref(),
+                },
+                &env,
+            )
             .await
         }
     };

@@ -6,6 +6,7 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 use crate::auth::{NOT_AUTH_MSG, ResolvedAuth, resolve_auth};
+use crate::env::Env;
 use crate::urls::{ResolvedUrls, resolve_urls};
 
 /// Field order MUST match the TS object literal:
@@ -49,12 +50,12 @@ fn build_authenticated_output(auth: &ResolvedAuth, urls: ResolvedUrls) -> Status
     }
 }
 
-pub fn run(profile: Option<&str>) -> i32 {
+pub fn run(profile: Option<&str>, env: &dyn Env) -> i32 {
     // URL resolution runs before auth resolution — matches TS handleStatus,
     // where urlsForFlagsOrFail returns before describeAuthStatus is called.
     // This is what makes the profile-error tests work even when
     // NO_TICKETS_TOKEN is set (URL error wins).
-    let urls = match resolve_urls(profile) {
+    let urls = match resolve_urls(env, profile) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("{}", e.user_message());
@@ -62,7 +63,7 @@ pub fn run(profile: Option<&str>) -> i32 {
         }
     };
 
-    let Some(auth) = resolve_auth() else {
+    let Some(auth) = resolve_auth(env) else {
         eprintln!("{NOT_AUTH_MSG}");
         return 1;
     };

@@ -7,6 +7,7 @@ use std::fs;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use crate::env::Env;
 use crate::home;
 
 /// Shape of `~/.notickets/credentials` on disk.
@@ -30,8 +31,8 @@ pub struct StoredCredentials {
     pub expires_at: String,
 }
 
-pub fn load() -> Option<StoredCredentials> {
-    let path = home::credentials_path()?;
+pub fn load(env: &dyn Env) -> Option<StoredCredentials> {
+    let path = home::credentials_path(env)?;
     let raw = fs::read_to_string(&path).ok()?;
     let parsed: StoredCredentials = serde_json::from_str(&raw).ok()?;
     if !is_expires_in_future(&parsed.expires_at) {

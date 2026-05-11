@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::auth::{NOT_AUTH_MSG, resolve_auth};
+use crate::env::Env;
 use crate::transport::{Client, HttpClient};
 use crate::urls::resolve_urls;
 
@@ -127,10 +128,10 @@ fn build_envelope<'a>(
     }
 }
 
-pub async fn run(args: PublishArgs<'_>) -> i32 {
+pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
     // URL resolution first (matches handleStatus pattern). A profile
     // error or partial-pair env-var setup wins over auth missing.
-    let urls = match resolve_urls(args.profile) {
+    let urls = match resolve_urls(env, args.profile) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("{}", e.user_message());
@@ -138,7 +139,7 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
         }
     };
 
-    let Some(auth) = resolve_auth() else {
+    let Some(auth) = resolve_auth(env) else {
         eprintln!("{NOT_AUTH_MSG}");
         return 1;
     };

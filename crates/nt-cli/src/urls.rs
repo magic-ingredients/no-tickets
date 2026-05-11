@@ -6,16 +6,19 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::env::Env;
 use crate::home;
 
 pub const DEFAULT_API: &str = "https://api.no-tickets.com";
 pub const DEFAULT_AUTH: &str = "https://app.no-tickets.com/api/auth/cli";
 
+#[derive(Debug)]
 pub struct ResolvedUrls {
     pub api_url: String,
     pub auth_url: String,
 }
 
+#[derive(Debug)]
 pub enum UrlError {
     PartialPair {
         which: &'static str,
@@ -110,9 +113,12 @@ struct ProfileConfig {
     auth_url: String,
 }
 
-pub fn resolve_urls(profile: Option<&str>) -> Result<ResolvedUrls, UrlError> {
+pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls, UrlError> {
+    // RED: signature accepts env but body still reads process env.
+    // GREEN replaces std::env::var with env.var.
+    let _ = env;
     if let Some(name) = profile {
-        return load_profile(name);
+        return load_profile(name, env);
     }
 
     let env_api = std::env::var("NO_TICKETS_API_URL").unwrap_or_default();
@@ -144,8 +150,8 @@ pub fn resolve_urls(profile: Option<&str>) -> Result<ResolvedUrls, UrlError> {
     })
 }
 
-fn load_profile(name: &str) -> Result<ResolvedUrls, UrlError> {
-    let path = home::config_path().ok_or(UrlError::HomeUnresolvable)?;
+fn load_profile(name: &str, env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
+    let path = home::config_path(env).ok_or(UrlError::HomeUnresolvable)?;
 
     if !path.exists() {
         return Err(UrlError::ProfileFileMissing {
@@ -205,4 +211,78 @@ fn is_http_url(s: &str) -> bool {
     // `new URL("https://")` throws in JS; `url::Url::parse("https://")`
     // accepts it with empty host. Require a non-empty host for parity.
     parsed.host_str().is_some_and(|h| !h.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::HashMapEnv;
+
+    // Distinctive sentinels: cannot collide with host env state, so a
+    // RED-state implementation (still reading process env) will fail
+    // every assertion deterministically.
+    const SENTINEL_API: &str = "https://red-phase-api.sentinel-z9q3.example";
+    const SENTINEL_AUTH: &str = "https://red-phase-auth.sentinel-z9q3.example";
+
+    #[test]
+    fn resolve_urls_uses_injected_env_when_both_urls_set() {
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_API_URL", SENTINEL_API),
+            ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
+        ]);
+        let resolved = resolve_urls(&env, None).expect("resolves");
+        assert_eq!(resolved.api_url, SENTINEL_API);
+        assert_eq!(resolved.auth_url, SENTINEL_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_returns_defaults_when_injected_env_empty() {
+        let env = HashMapEnv::empty();
+        let resolved = resolve_urls(&env, None).expect("resolves");
+        assert_eq!(resolved.api_url, DEFAULT_API);
+        assert_eq!(resolved.auth_url, DEFAULT_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_partial_pair_only_api_set_returns_error() {
+        let env = HashMapEnv::with(&[("NO_TICKETS_API_URL", SENTINEL_API)]);
+        let err = resolve_urls(&env, None).expect_err("partial pair errors");
+        assert!(matches!(
+            err,
+            UrlError::PartialPair {
+                which: "NO_TICKETS_API_URL",
+                missing: "NO_TICKETS_AUTH_URL",
+                ..
+            }
+        ), "expected PartialPair (API set, AUTH missing); got {err:?}");
+    }
+
+    #[test]
+    fn resolve_urls_partial_pair_only_auth_set_returns_error() {
+        let env = HashMapEnv::with(&[("NO_TICKETS_AUTH_URL", SENTINEL_AUTH)]);
+        let err = resolve_urls(&env, None).expect_err("partial pair errors");
+        assert!(matches!(
+            err,
+            UrlError::PartialPair {
+                which: "NO_TICKETS_AUTH_URL",
+                missing: "NO_TICKETS_API_URL",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn resolve_urls_whitespace_only_injected_env_treated_as_unset() {
+        // Whitespace-only values should be treated as unset by the
+        // trim() inside resolve_urls — pinned both for the env-read
+        // semantics and to mirror the existing integration test
+        // `status_whitespace_only_env_url_counts_as_unset`.
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_API_URL", "   "),
+            ("NO_TICKETS_AUTH_URL", "\t\n"),
+        ]);
+        let resolved = resolve_urls(&env, None).expect("falls back to defaults");
+        assert_eq!(resolved.api_url, DEFAULT_API);
+        assert_eq!(resolved.auth_url, DEFAULT_AUTH);
+    }
 }

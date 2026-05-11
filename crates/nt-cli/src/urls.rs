@@ -70,18 +70,28 @@ pub fn resolve_urls(env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
 
     if api_set != auth_set {
         let (which, value, missing) = if api_set {
-            ("NO_TICKETS_API_URL", api_trim.to_string(), "NO_TICKETS_AUTH_URL")
+            (
+                "NO_TICKETS_API_URL",
+                api_trim.to_string(),
+                "NO_TICKETS_AUTH_URL",
+            )
         } else {
-            ("NO_TICKETS_AUTH_URL", auth_trim.to_string(), "NO_TICKETS_API_URL")
+            (
+                "NO_TICKETS_AUTH_URL",
+                auth_trim.to_string(),
+                "NO_TICKETS_API_URL",
+            )
         };
-        return Err(UrlError::PartialPair { which, value, missing });
+        return Err(UrlError::PartialPair {
+            which,
+            value,
+            missing,
+        });
     }
 
     // Both set or both unset by here. Read the env-preset knob so we can
     // enforce mutual exclusion before falling through to layer 1/2.
-    let preset = env
-        .var("NO_TICKETS_ENV")
-        .filter(|s| !s.trim().is_empty());
+    let preset = env.var("NO_TICKETS_ENV").filter(|s| !s.trim().is_empty());
 
     if api_set {
         if let Some(env_value) = preset {
@@ -152,14 +162,17 @@ mod tests {
     fn resolve_urls_partial_pair_only_api_set_returns_error() {
         let env = HashMapEnv::with(&[("NO_TICKETS_API_URL", SENTINEL_API)]);
         let err = resolve_urls(&env).expect_err("partial pair errors");
-        assert!(matches!(
-            err,
-            UrlError::PartialPair {
-                which: "NO_TICKETS_API_URL",
-                missing: "NO_TICKETS_AUTH_URL",
-                ..
-            }
-        ), "expected PartialPair (API set, AUTH missing); got {err:?}");
+        assert!(
+            matches!(
+                err,
+                UrlError::PartialPair {
+                    which: "NO_TICKETS_API_URL",
+                    missing: "NO_TICKETS_AUTH_URL",
+                    ..
+                }
+            ),
+            "expected PartialPair (API set, AUTH missing); got {err:?}"
+        );
     }
 
     #[test]
@@ -287,7 +300,10 @@ mod tests {
 
     #[test]
     fn env_and_pair_both_set_user_message_names_the_collision() {
-        let msg = UrlError::EnvAndPairBothSet { env_value: "staging".into() }.user_message();
+        let msg = UrlError::EnvAndPairBothSet {
+            env_value: "staging".into(),
+        }
+        .user_message();
         assert!(msg.contains("NO_TICKETS_ENV=staging"), "got: {msg}");
         assert!(msg.contains("NO_TICKETS_API_URL"), "got: {msg}");
         assert!(msg.contains("not both"), "got: {msg}");

@@ -5,9 +5,9 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::auth::{NOT_AUTH_MSG, ResolvedAuth, resolve_auth};
+use crate::auth::{resolve_auth, ResolvedAuth, NOT_AUTH_MSG};
 use crate::env::Env;
-use crate::urls::{ResolvedUrls, resolve_urls};
+use crate::urls::{resolve_urls, ResolvedUrls};
 
 /// Field order MUST match the TS object literal:
 /// `{ authenticated, source, tokenType, apiUrl, authUrl }`. serde_derive
@@ -120,7 +120,9 @@ mod tests {
         let auth = sample_auth(AuthSource::Env, TokenType::Push);
         let out = build_authenticated_output(&auth, sample_urls());
         let body = serde_json::to_string(&out).expect("serialises");
-        let a = body.find(r#""authenticated":"#).expect("authenticated present");
+        let a = body
+            .find(r#""authenticated":"#)
+            .expect("authenticated present");
         let s = body.find(r#""source":"#).expect("source present");
         let tt = body.find(r#""tokenType":"#).expect("tokenType present");
         let au = body.find(r#""apiUrl":"#).expect("apiUrl present");
@@ -219,7 +221,7 @@ mod tests {
         // Belt-and-braces: a different non-BrokenPipe kind also exits 1.
         // Confirms the guard discriminates on BrokenPipe specifically,
         // not on "some particular error" / "is_some" / etc.
-        let err = io::Error::new(io::ErrorKind::Other, "weird");
+        let err = io::Error::other("weird");
         assert_eq!(write_result_to_exit_code(Err(err)), 1);
     }
 }

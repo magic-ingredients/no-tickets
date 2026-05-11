@@ -28,11 +28,7 @@ use serde_json::Value;
 /// async code. Even though `nt-cli`'s runtime is current-thread today,
 /// future `--stream` work (Task 4b) may share a client across tasks.
 pub trait HttpClient: Send + Sync {
-    async fn post_json(
-        &self,
-        path: &str,
-        body: Vec<u8>,
-    ) -> Result<Value, TransportError>;
+    async fn post_json(&self, path: &str, body: Vec<u8>) -> Result<Value, TransportError>;
 }
 
 /// Default HTTP timeout. Picked generously for first-contact requests
@@ -104,11 +100,7 @@ impl Client {
 /// the trait owns transport (URL join, header injection, status mapping)
 /// without owning serialisation.
 impl HttpClient for Client {
-    async fn post_json(
-        &self,
-        path: &str,
-        body: Vec<u8>,
-    ) -> Result<Value, TransportError> {
+    async fn post_json(&self, path: &str, body: Vec<u8>) -> Result<Value, TransportError> {
         let url = self
             .base_url
             .join(path)
@@ -124,10 +116,7 @@ impl HttpClient for Client {
             .map_err(TransportError::Network)?;
 
         let status = response.status();
-        let body_text = response
-            .text()
-            .await
-            .map_err(TransportError::Network)?;
+        let body_text = response.text().await.map_err(TransportError::Network)?;
 
         if !status.is_success() {
             return Err(TransportError::HttpStatus {

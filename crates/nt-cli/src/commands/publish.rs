@@ -8,7 +8,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::auth::{NOT_AUTH_MSG, resolve_auth};
+use crate::auth::{resolve_auth, NOT_AUTH_MSG};
 use crate::env::Env;
 use crate::transport::{Client, HttpClient};
 use crate::urls::resolve_urls;
@@ -58,9 +58,9 @@ struct SourceAttributes<'a> {
 ///
 /// Production wires `Client` (reqwest); tests wire a `FakeHttpClient`
 /// that records the call and returns canned responses, enabling
-/// in-process coverage of the error-mapping branches without subprocess
-/// + wiremock. The integration tests in `tests/publish.rs` still own
-/// the end-to-end transport-level coverage (real reqwest, real TLS).
+/// in-process coverage of the error-mapping branches without
+/// subprocess-plus-wiremock. The integration tests in `tests/publish.rs`
+/// still own the end-to-end transport-level coverage (real reqwest, real TLS).
 ///
 /// Body serialisation happens here rather than at the transport
 /// boundary: the wire format (single-element JSON array of envelopes)
@@ -76,8 +76,7 @@ async fn publish_event<C: HttpClient>(
     // field is a primitive Serialize impl over owned/borrowed data —
     // so .expect is appropriate here. A panic would indicate a bug
     // in serde, not a runtime condition.
-    let body_bytes = serde_json::to_vec(&body)
-        .expect("envelope vec always serialises");
+    let body_bytes = serde_json::to_vec(&body).expect("envelope vec always serialises");
     match client.post_json("/v1/events", body_bytes).await {
         Ok(response) => {
             // Server response shape: `{ ingested, deduped, ids }`.
@@ -85,8 +84,7 @@ async fn publish_event<C: HttpClient>(
             // Value, so `.expect` is appropriate here.
             println!(
                 "{}",
-                serde_json::to_string(&response)
-                    .expect("serde_json::Value always serialises"),
+                serde_json::to_string(&response).expect("serde_json::Value always serialises"),
             );
             0
         }
@@ -111,11 +109,7 @@ async fn publish_event<C: HttpClient>(
 /// pinned by EventEnvelope's declaration order (serde_derive emits in
 /// declaration order) — the inline tests assert byte-positions of
 /// `"type"` / `"data"` / `"source"` in the serialised form.
-fn build_envelope<'a>(
-    type_id: &'a str,
-    data: &'a Value,
-    project: &'a str,
-) -> EventEnvelope<'a> {
+fn build_envelope<'a>(type_id: &'a str, data: &'a Value, project: &'a str) -> EventEnvelope<'a> {
     EventEnvelope {
         type_id,
         data,
@@ -204,11 +198,7 @@ mod tests {
     }
 
     impl HttpClient for FakeHttpClient {
-        async fn post_json(
-            &self,
-            path: &str,
-            body: Vec<u8>,
-        ) -> Result<Value, TransportError> {
+        async fn post_json(&self, path: &str, body: Vec<u8>) -> Result<Value, TransportError> {
             self.calls.lock().unwrap().push(RecordedCall {
                 path: path.to_string(),
                 body,
@@ -270,7 +260,10 @@ mod tests {
         let body_bytes = fake.calls()[0].body.clone();
         let body_str = String::from_utf8(body_bytes).expect("utf8 body");
         // Single-element array wrapping the envelope
-        assert!(body_str.starts_with('['), "wire body starts with [: {body_str}");
+        assert!(
+            body_str.starts_with('['),
+            "wire body starts with [: {body_str}"
+        );
         assert!(body_str.ends_with(']'), "wire body ends with ]: {body_str}");
         // Exactly one envelope — pins the "single-event" invariant so
         // a double-wrap regression (`[[{...}]]`) or accidental
@@ -360,7 +353,10 @@ mod tests {
         let data = json!({ "neutralKey": "neutralValue" });
         let body = vec![build_envelope("ai.task.completed.v1", &data, "demo")];
         let wire = serde_json::to_string(&body).expect("serialises");
-        assert!(wire.starts_with('['), "wire body must start with '[': {wire}");
+        assert!(
+            wire.starts_with('['),
+            "wire body must start with '[': {wire}"
+        );
         assert!(wire.ends_with(']'), "wire body must end with ']': {wire}");
         // Exactly one `"type":` key implies exactly one envelope.
         assert_eq!(

@@ -14,8 +14,7 @@ use std::path::Path;
 
 const DEFAULT_API: &str = "https://api.no-tickets.com";
 const DEFAULT_AUTH: &str = "https://app.no-tickets.com/api/auth/cli";
-const NOT_AUTH_MSG: &str =
-    "Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.";
+const NOT_AUTH_MSG: &str = "Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.";
 
 fn nt() -> Command {
     Command::cargo_bin("nt").expect("binary built")
@@ -90,10 +89,7 @@ fn status_emits_structurally_correct_json_for_env_push_token() {
     let api_url = p(r#""apiUrl":"#);
     let auth_url = p(r#""authUrl":"#);
     assert!(
-        authenticated < source
-            && source < token_type
-            && token_type < api_url
-            && api_url < auth_url,
+        authenticated < source && source < token_type && token_type < api_url && api_url < auth_url,
         "field order must be authenticated, source, tokenType, apiUrl, authUrl — got {trimmed}",
     );
 }
@@ -206,10 +202,7 @@ fn status_malformed_credentials_json_is_not_authenticated() {
 fn status_credentials_missing_required_field_is_not_authenticated() {
     let temp = tempfile::tempdir().unwrap();
     // Missing `expiresAt`. TS's isStoredCredentials shape check rejects this.
-    write_credentials(
-        temp.path(),
-        r#"{"token":"nt_push_abc","email":"a@b.com"}"#,
-    );
+    write_credentials(temp.path(), r#"{"token":"nt_push_abc","email":"a@b.com"}"#);
     isolate(&mut nt(), temp.path())
         .arg("status")
         .assert()
@@ -284,8 +277,7 @@ fn status_no_tickets_home_overrides_host_home() {
         real_home.path(),
         r#"{"token":"nt_push_host_home","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
     );
-    nt()
-        .env("NO_TICKETS_HOME", nt_home.path())
+    nt().env("NO_TICKETS_HOME", nt_home.path())
         .env("HOME", real_home.path())
         .env("USERPROFILE", real_home.path())
         .env_remove("NO_TICKETS_TOKEN")
@@ -343,8 +335,7 @@ fn status_credentials_file_with_custom_env_urls() {
         temp.path(),
         r#"{"token":"nt_session_creds","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
     );
-    nt()
-        .env("NO_TICKETS_HOME", temp.path())
+    nt().env("NO_TICKETS_HOME", temp.path())
         .env_remove("NO_TICKETS_TOKEN")
         .env("NO_TICKETS_API_URL", "https://x-api.example")
         .env("NO_TICKETS_AUTH_URL", "https://x-auth.example")

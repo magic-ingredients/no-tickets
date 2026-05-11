@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Stdio;
 
 use assert_cmd::cargo::cargo_bin;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -109,8 +109,7 @@ async fn publish_sends_post_to_v1_events_with_bearer_header_and_prints_response(
     .await;
 
     assert_eq!(out.code, 0, "expected success; stderr={:?}", out.stderr);
-    let body: Value =
-        serde_json::from_str(out.stdout.trim()).expect("stdout is JSON");
+    let body: Value = serde_json::from_str(out.stdout.trim()).expect("stdout is JSON");
     assert_eq!(body["ingested"], 1);
     assert_eq!(body["deduped"], 0);
     assert_eq!(body["ids"][0], "evt_abc123");
@@ -259,7 +258,11 @@ async fn publish_with_no_token_fails_before_request() {
         ],
     )
     .await;
-    assert_ne!(out.code, 0, "missing token must fail; stdout={:?}", out.stdout);
+    assert_ne!(
+        out.code, 0,
+        "missing token must fail; stdout={:?}",
+        out.stdout
+    );
     assert!(
         out.stderr.contains("Not authenticated"),
         "stderr must surface the auth error; got {:?}",

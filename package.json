@@ -41,7 +41,14 @@
     "test:coverage": "vitest run --coverage",
     "test:mutate": "npx stryker run",
     "typecheck": "tsc --noEmit",
-    "prepack": "chmod +x bin/no-tickets.js"
+    "prepack": "chmod +x bin/no-tickets.js",
+    "rust:check": "cargo check -p nt-cli --tests",
+    "rust:clippy": "cargo clippy -p nt-cli --all-targets -- -D warnings",
+    "rust:fmt": "cargo fmt --check -p nt-cli",
+    "rust:fmt:fix": "cargo fmt -p nt-cli",
+    "rust:test": "cargo test -p nt-cli",
+    "rust:mutants": "cargo mutants --package nt-cli",
+    "rust:precommit": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check"
   },
   "dependencies": {
     "@magic-ingredients/no-tickets-schemas": "^0.2.0",

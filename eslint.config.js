@@ -11,5 +11,5 @@ export default tseslint.config({
     '@typescript-eslint/consistent-type-imports': 'error',
   },
 }, {
-  ignores: ['**/dist/', '**/node_modules/'],
+  ignores: ['**/dist/', '**/node_modules/', '**/.stryker-tmp/', 'target/', 'crates/'],
 });

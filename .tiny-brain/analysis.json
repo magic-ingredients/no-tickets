@@ -67,7 +67,7 @@
       ],
       "commands": {
         "quality": "npx tsc --noEmit -p /Users/andyrichardson/work/repos/no-tickets/no-tickets/tsconfig.json",
-        "pipeline": null
+        "pipeline": "if [ -n \"$(git diff --name-only --cached --diff-filter=ACM | grep -vE '^(crates/|Cargo\\.(toml|lock)$|\\.tiny-brain/|docs/)')\" ]; then npx tsc --noEmit -p {config}; fi"
       },
       "categories": [
         "Reliability",

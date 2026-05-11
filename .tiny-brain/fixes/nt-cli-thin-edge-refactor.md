@@ -221,6 +221,9 @@ no time) and accept resolved inputs by reference.
 - `crates/nt-cli/src/commands/status.rs`
 
 ### 2. Introduce `HttpClient` trait and inject into `commands::publish::run`
+status: completed
+commitSha: 935b96e
+
 End-to-end task: define `HttpClient` trait with `post_json`, wrap
 `reqwest::Client` as `ReqwestHttpClient`, change `run()` to accept the
 client via parameter (or generic), wire `main.rs` to construct the
@@ -234,6 +237,11 @@ Existing `tests/publish.rs` MUST continue to pass unchanged.
 - `crates/nt-cli/src/main.rs`
 - `crates/nt-cli/Cargo.toml` (likely `async-trait` dep)
 - New: `crates/nt-cli/tests/publish_unit.rs` or inline `#[cfg(test)]`
+
+**Implementation notes:**
+- Trait method signature: `async fn post_json(&self, path: &str, body: Vec<u8>) -> Result<Value, TransportError>`. Body is pre-serialised by the caller — transport owns transport, not serialisation. Native async-in-trait (Rust 1.75+) rather than the `async-trait` macro; no extra dep.
+- Static dispatch via `<C: HttpClient>` rather than `&dyn HttpClient` — same DI benefit, no object-safety constraint, no boxing.
+- Tests live inline (`#[cfg(test)] mod tests` in publish.rs) rather than in a new `tests/publish_unit.rs` file — keeps the fake's visibility scoped to the module it tests.
 
 ### 3. Parameterise env reads via `Env` trait in `auth` and `urls`
 End-to-end task: define `Env` trait + `SystemEnv` production impl,

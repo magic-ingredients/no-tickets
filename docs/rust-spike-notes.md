@@ -142,3 +142,120 @@ in ~5 ms — well inside the fix doc's sub-50 ms target.
 Toolchain is solid. No toolchain-level surprises that change the
 plan. Proceed with Task 2 (`rmcp` spike) in parallel with Task 4
 (full CLI port).
+
+---
+
+# Task 14 — staging smoke findings
+
+**Date:** 2026-05-11
+**Binary commit:** `09a14700` (from `nt-cli-thin-edge-refactor`)
+**Tracked by fix:** `publish-spike-staging-smoke`
+
+Task 14's wiremock-only test plan was completed at `4844b43` but no actual staging publish was performed at that time. This section captures the first real end-to-end staging smoke, run after the `nt-cli-thin-edge-refactor` work landed.
+
+## Invocation
+
+```bash
+NO_TICKETS_TOKEN=$(jq -r '.projects.mystaging.pushToken' ~/.notickets/config.json) \
+  ./target/release/nt --profile staging publish \
+  --type ai.task.completed.v1 \
+  --data '<see "Working payload" below>' \
+  --project mystaging
+```
+
+- Token sourced from the local `mystaging` project entry in `~/.notickets/config.json` (the Rust binary doesn't yet read `projects.*.pushToken` directly — Task 5 of `cross-platform-cli-binary` will land that lookup; ADR-0002 reshapes it as `nt token add`).
+- `--profile staging` resolves to `https://api-staging.no-tickets.com` via the existing TS-compatible profile loader in `urls.rs`.
+- `--project mystaging` flows through to `source.attributes.project` on the wire (informational; routing was driven by the bearer token).
+
+## Result
+
+**Successful publish on the third attempt.** Exit 0. stdout:
+
+```json
+{"deduped":0,"ids":["4"],"ingested":1}
+```
+
+Confirmed by server response — event with `id=4` landed in `mystaging`'s event log.
+
+## What was validated end-to-end (previously only wiremock-asserted)
+
+| Concern | Result |
+|---|---|
+| TLS chain validation against real cert | ✅ rustls + webpki-roots accepts `*.no-tickets.com` cert chain. No `Network` errors from reqwest. |
+| Bearer auth with a real `nt_push_*` token | ✅ Server accepted the credential; no 401. Routed to the validation layer. |
+| `Authorization: Bearer <token>` header injection | ✅ Server saw the header (request reached the auth check). |
+| `Content-Type: application/json` header | ✅ Server parsed body as JSON (validation errors include `path` and `expected` fields — only generated against a parsed payload). |
+| Wire body shape: single-element JSON array of `{type, data, source}` envelopes | ✅ Server's batch validator returned a result keyed by `batchIndex: 0`, confirming it parsed a single-element batch. |
+| Response body shape `{ ingested, deduped, ids }` | ✅ all three fields present (though field-order differs — see findings). |
+| Exit-code mapping: 422 → exit 1 with stderr message; 2xx → exit 0 with stdout JSON | ✅ Both branches exercised. |
+
+## Findings — contract divergences from wiremock fixtures
+
+### 1. (High) `ai.task.completed.v1` schema is not what `tests/publish.rs` assumes
+
+The wiremock tests use `--data '{"taskId":"t-1"}'` (`publish.rs:99`, `publish.rs:152`, `publish.rs:203`, etc) as a representative payload for `ai.task.completed.v1`. The **real schema** requires:
+
+| Field | Type | Required? |
+|---|---|---|
+| `taskId` | string | yes |
+| `sessionId` | string | yes |
+| `startedAt` | string (ISO timestamp) | yes |
+| `completedAt` | string (ISO timestamp) | yes |
+| `outcome` | enum: `"success" \| "partial" \| "failed" \| "abandoned"` | yes |
+| `callCount` | number | yes |
+| `durationMs` | number | yes |
+
+It also rejects unknown keys — `summary` (which I sent on the first attempt) returned `unrecognized_keys`. So the schema is **strict-shape** (no extra fields allowed), not open-shape.
+
+**Impact on the test suite:** wiremock doesn't validate, so the existing 11 tests pass despite using a wrong payload shape. If the test plan ever moves to a real-server smoke (or to a wiremock fixture that mirrors the actual schema), every test fails until payloads are updated. This is exactly the contract-drift risk the `publish-spike-staging-smoke` fix doc warned about.
+
+**Recommended follow-up:** when `nt-schemas` becomes a real `build.rs`-fetched bundle (per `cross-platform-cli-binary` Task 3a), the wiremock fixture payloads should be regenerated from the actual schemas — or, more pragmatically, the tests should switch to using `--type` ids that don't have strict shapes (e.g. a `meta.test.payload.v1` synthetic type used only for transport-level testing).
+
+### 2. (Medium) Working payload for `ai.task.completed.v1`
+
+```json
+{
+  "taskId": "rust-spike-smoke-001",
+  "sessionId": "rust-spike-smoke-session-001",
+  "startedAt": "2026-05-11T20:30:00.000Z",
+  "completedAt": "2026-05-11T20:30:01.000Z",
+  "outcome": "success",
+  "callCount": 1,
+  "durationMs": 1000
+}
+```
+
+Documented here so the next person doing a smoke doesn't have to discover the schema by 422-error trial-and-error.
+
+### 3. (Low) Response field order from server: alphabetical, not docstring-order
+
+The TS reference and wiremock fixtures describe / use `{ ingested, deduped, ids }` (`tests/publish.rs:5`, `publish.rs:83`). The real server returns `{ deduped, ids, ingested }` (alphabetical):
+
+```json
+{"deduped":0,"ids":["4"],"ingested":1}
+```
+
+**Impact on tests:** zero. The wiremock tests access fields by name (`body["ingested"]`), not by position. The docstring at `tests/publish.rs:5` (`{ ingested, deduped, ids } response`) is now mildly misleading. No production code depends on response field order — `commands/publish.rs` just `serde_json::to_string`s the `Value` and prints it.
+
+**Recommended follow-up:** none required; optionally fix the docstring comment to reflect reality.
+
+### 4. (Low) Event ID format: small integer, not opaque string
+
+The wiremock fixture uses `"ids": ["evt_abc123"]` (`tests/publish.rs:85`, `:137`, `:184`, `:430`) implying an opaque alphanumeric event id. The real server returns `"ids": ["4"]` — a small integer encoded as a string. This is a representational difference (string in both cases) so nothing parses-incorrectly, but the fixture's "evt_" prefix is fictional.
+
+**Impact:** none — tests don't pin the id format. If the server's id format ever changes (e.g. moves to UUID, or starts prefixing), neither the fixture comment nor any production code needs to change.
+
+## Architectural validations holding
+
+- `rustls + webpki-roots` strategy validated against a real cert — no need to revisit the TLS backend choice.
+- `reqwest` 0.12 with `default-features = false` + `rustls-tls` features compiles and runs against staging — no surprise missing features.
+- `tokio` current-thread runtime is fine for a single-shot publish; sub-100ms end-to-end (mostly TLS handshake).
+- The post-`nt-cli-thin-edge-refactor` architecture (pure `build_envelope`, injected `HttpClient`, `Env` port) survived the real network path without regression — the wire format is byte-for-byte what wiremock asserted, even though the payload schema turned out to be different.
+
+## Verdict
+
+Task 14's stated goal ("single event to staging end-to-end") is now actually met. The publish path is real and works. The wiremock-based contract assertions are accurate at the transport level (HTTP headers, JSON envelope structure, response field-presence) but stale at the schema level (the payload type fixture is wrong against the real type's schema). Cleanest path forward:
+
+1. **No urgent code fix needed.** The Rust binary worked end-to-end.
+2. **Follow-up: switch wiremock fixtures to use a transport-only synthetic event type id** (or wait for `nt-schemas` build.rs work in Task 3a to regenerate real payloads). Tracked separately if the test fidelity matters enough — for now the wiremock contract validates *transport*, which is its job.
+3. **Document the working payload** (above) — done in this section.

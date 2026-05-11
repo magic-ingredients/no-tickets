@@ -53,6 +53,25 @@ const bundle = {
 };
 
 const typeIds = Object.keys(byTypeId).sort();
+
+// Fail loud on a zod-version mismatch. Zod 4 schemas carry a
+// `.toJSONSchema()` instance method; Zod 3 schemas do not. If the
+// schemas package ever resolves to a different zod major, we want a
+// readable error here rather than a downstream "schema is just {}"
+// surprise.
+if (typeIds.length > 0) {
+  const sample = byTypeId[typeIds[0]];
+  if (typeof sample?.toJSONSchema !== 'function') {
+    throw new Error(
+      `Schema for ${typeIds[0]} has no .toJSONSchema() method. ` +
+        'This usually means @magic-ingredients/no-tickets-schemas is ' +
+        'resolving to a zod version older than 4.x. The published ' +
+        'package declares "zod": "^4.3.6" — check pnpm resolution and ' +
+        'lockfile if you see this.',
+    );
+  }
+}
+
 for (const typeId of typeIds) {
   bundle.schemas[typeId] = byTypeId[typeId].toJSONSchema();
 }

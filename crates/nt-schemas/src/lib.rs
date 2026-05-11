@@ -35,17 +35,18 @@ const BUNDLE_JSON: &str =
 struct BundleFile {
     #[serde(rename = "bundleVersion")]
     bundle_version: String,
-    // BTreeMap preserves the alphabetised key order from the generator
-    // (which sorts keys explicitly), which `known_type_ids` returns
-    // verbatim.
+    // BTreeMap so `into_iter()` yields entries in deterministic sorted
+    // key order without an extra sort step. `known_type_ids` returns
+    // those keys verbatim — both the test ordering pin and TS object-
+    // literal stability ride on this.
     schemas: BTreeMap<String, Value>,
 }
 
 struct CompiledBundle {
-    version: &'static str,
+    version: String,
     /// Sorted vec of (type_id, compiled_validator). Vec rather than
-    /// HashMap so `known_type_ids` can return slices into stable storage
-    /// at no extra cost.
+    /// HashMap because n=11 and `known_type_ids` needs a stable
+    /// iteration order anyway.
     entries: Vec<(String, Validator)>,
 }
 
@@ -54,33 +55,40 @@ fn bundle() -> &'static CompiledBundle {
     CELL.get_or_init(|| {
         let parsed: BundleFile =
             serde_json::from_str(BUNDLE_JSON).expect("bundle JSON parses");
-        // Leak the version string so we can hand out &'static str.
-        // One-time allocation per process — trivial.
-        let version: &'static str = Box::leak(parsed.bundle_version.into_boxed_str());
-        let mut entries: Vec<(String, Validator)> = parsed
+        let entries: Vec<(String, Validator)> = parsed
             .schemas
             .into_iter()
             .map(|(type_id, schema)| {
-                let validator = jsonschema::draft202012::new(&schema)
+                // `should_validate_formats(true)` makes the validator
+                // enforce `format` keywords (date-time, email, etc.)
+                // as assertions instead of treating them as
+                // annotation-only per Draft 2020-12's default. The
+                // bundled schemas use `format: "date-time"`; without
+                // this, format violations would silently pass.
+                let validator = jsonschema::draft202012::options()
+                    .should_validate_formats(true)
+                    .build(&schema)
                     .unwrap_or_else(|e| {
                         panic!("schema for {type_id:?} failed to compile: {e}")
                     });
                 (type_id, validator)
             })
             .collect();
-        // BTreeMap already sorted; the .collect preserves order. Keep
-        // the explicit sort to be defensive against bundle format
-        // changes.
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        CompiledBundle { version, entries }
+        CompiledBundle {
+            version: parsed.bundle_version,
+            entries,
+        }
     })
 }
 
 /// Version of the upstream `@magic-ingredients/no-tickets-schemas`
 /// package the bundle was generated from. Pinned at the bundle file
-/// level (`bundleVersion` field); resolved lazily on first call.
+/// level (`bundleVersion` field); resolved on first call to any
+/// nt-schemas API (the OnceLock initialiser parses the bundle and
+/// compiles every schema, which is where any bundle-integrity bug
+/// would panic).
 pub fn bundle_version() -> &'static str {
-    bundle().version
+    bundle().version.as_str()
 }
 
 /// Sorted list of every event-type id the bundle knows about.

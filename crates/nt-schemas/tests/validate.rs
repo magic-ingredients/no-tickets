@@ -42,12 +42,30 @@ fn bundle_contains_every_expected_type_id() {
     );
 }
 
+/// The bundle's version is captured at generator-script time from the
+/// installed `@magic-ingredients/no-tickets-schemas` package. Read the
+/// same package's package.json at test time and compare. This catches
+/// "pnpm bumped the schemas package but no one re-ran the generator"
+/// drift without hardcoding a version literal that goes stale on the
+/// next bump.
 #[test]
-fn bundle_version_matches_upstream_schemas_package() {
+fn bundle_version_matches_installed_schemas_package() {
+    let pkg_json_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("node_modules/@magic-ingredients/no-tickets-schemas/package.json");
+    let pkg_json = std::fs::read_to_string(&pkg_json_path)
+        .unwrap_or_else(|e| panic!("read {pkg_json_path:?}: {e}"));
+    let parsed: Value = serde_json::from_str(&pkg_json).expect("package.json parses");
+    let installed = parsed["version"]
+        .as_str()
+        .expect("package.json has version string");
     assert_eq!(
         bundle_version(),
-        "0.2.0",
-        "bundle_version() must mirror the @magic-ingredients/no-tickets-schemas version embedded at generation time",
+        installed,
+        "bundle_version() out of sync with installed schemas package — re-run scripts/generate-schema-bundle.mjs",
     );
 }
 
@@ -179,7 +197,7 @@ fn min_length_violation_is_reported() {
 }
 
 #[test]
-fn additional_properties_are_rejected() {
+fn additional_properties_are_rejected_with_root_path() {
     let mut payload = valid_ai_task_completed();
     payload["unexpectedExtra"] = json!(42);
     let issues = validate("ai.task.completed.v1", &payload).expect("known type id");
@@ -187,6 +205,74 @@ fn additional_properties_are_rejected() {
         !issues.is_empty(),
         ".strict() Zod schemas convert to additionalProperties=false; extras must be rejected",
     );
+    // additionalProperties violations sit at the document root — their
+    // instance path is the empty pointer ("/"), which our translator
+    // renders as "". This is the only test that exercises the empty-
+    // path translation (json_pointer_to_dot_path's root-to-empty
+    // branch).
+    assert!(
+        issues.iter().any(|i| i.path.is_empty()),
+        "additionalProperties violation must carry an empty (root) path; got {issues:?}",
+    );
+}
+
+/// A payload with multiple independent violations must surface all of
+/// them, not just the first. jsonschema's `iter_errors` is the API
+/// we use for this, but it's been wrong elsewhere — pin the multi-
+/// issue behaviour explicitly.
+#[test]
+fn multiple_violations_surface_as_multiple_issues() {
+    // Three violations on one payload:
+    //   1. taskId removed → missing required
+    //   2. sessionId removed → missing required
+    //   3. durationMs wrong type
+    let mut payload = valid_ai_task_completed();
+    payload.as_object_mut().unwrap().remove("taskId");
+    payload.as_object_mut().unwrap().remove("sessionId");
+    payload["durationMs"] = json!("not a number");
+    let issues = validate("ai.task.completed.v1", &payload).expect("known type id");
+    assert!(
+        issues.len() >= 3,
+        "expected at least 3 issues for 3 violations; got {} ({issues:?})",
+        issues.len(),
+    );
+    let paths: std::collections::HashSet<&str> =
+        issues.iter().map(|i| i.path.as_str()).collect();
+    assert!(
+        paths.contains("durationMs"),
+        "missing durationMs issue in {issues:?}",
+    );
+    // Missing-required errors have empty path (the missing field name
+    // is in the message, not the path).
+    assert!(
+        paths.contains(""),
+        "missing root-path issue for missing required fields in {issues:?}",
+    );
+}
+
+/// Smoke-check every type id in the bundle. For each, validate an
+/// empty object: the validator must compile (so `Some(_)` is returned,
+/// not None and not a panic) and produce at least one issue (every
+/// bundled schema has at least one required field, so `{}` violates
+/// it). This is the parameterised coverage that the original suite
+/// didn't have — only ai.task.completed.v1 was deeply exercised.
+#[test]
+fn every_bundled_type_validates_an_empty_object_with_issues() {
+    let empty = json!({});
+    let ids = known_type_ids();
+    assert!(ids.len() >= 11, "expected at least 11 bundled types");
+    for id in ids {
+        let result = validate(id, &empty);
+        assert!(
+            result.is_some(),
+            "validate({id}, {{}}) must return Some(_) — schema for {id} did not compile",
+        );
+        let issues = result.unwrap();
+        assert!(
+            !issues.is_empty(),
+            "validate({id}, {{}}) returned empty issues — bundled schema for {id} may be effectively all-optional",
+        );
+    }
 }
 
 #[test]

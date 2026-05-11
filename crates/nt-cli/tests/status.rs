@@ -59,24 +59,47 @@ fn status_emits_structurally_correct_json_for_env_push_token() {
             .env("NO_TICKETS_TOKEN", "nt_push_abc123")
             .arg("status"),
     );
-    let trimmed = stdout.trim_end_matches('\n');
     assert!(
         stdout.ends_with('\n'),
         "stdout must end with newline (println! / console.log parity); got {stdout:?}",
     );
+    let trimmed = stdout.trim_end_matches('\n');
+
+    // Semantic check: parse as JSON, assert all five fields are present and
+    // exactly correct, no stray keys. (Uses serde_json's default Map, which
+    // is not insertion-ordered — so we don't rely on its key order here.)
     let v: Value = serde_json::from_str(trimmed).expect("valid JSON");
     assert_eq!(v["authenticated"], Value::Bool(true));
     assert_eq!(v["source"], "env");
     assert_eq!(v["tokenType"], "push");
     assert_eq!(v["apiUrl"], DEFAULT_API);
     assert_eq!(v["authUrl"], DEFAULT_AUTH);
-    // No stray keys leak in.
-    let obj = v.as_object().unwrap();
-    let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
     assert_eq!(
-        keys,
-        vec!["authenticated", "source", "tokenType", "apiUrl", "authUrl"],
-        "field order must match TS object-literal order",
+        v.as_object().unwrap().len(),
+        5,
+        "no stray keys allowed on the status payload",
+    );
+
+    // Wire-format check: pin field order by monotonic byte positions in the
+    // raw output. Decouples the contract from serde_json's internal Map
+    // ordering — we assert what crosses the stdout boundary, not how it was
+    // built. Matches the TS object-literal emission order.
+    let p = |needle: &str| {
+        trimmed
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing {needle:?} in {trimmed:?}"))
+    };
+    let authenticated = p(r#""authenticated":"#);
+    let source = p(r#""source":"#);
+    let token_type = p(r#""tokenType":"#);
+    let api_url = p(r#""apiUrl":"#);
+    let auth_url = p(r#""authUrl":"#);
+    assert!(
+        authenticated < source
+            && source < token_type
+            && token_type < api_url
+            && api_url < auth_url,
+        "field order must be authenticated, source, tokenType, apiUrl, authUrl — got {trimmed}",
     );
 }
 
@@ -218,11 +241,11 @@ fn status_credentials_wrong_type_field_is_not_authenticated() {
 
 /// Pin Rust behaviour: an unparseable expiresAt is treated as not-authenticated.
 ///
-/// Divergence from TS: `new Date("garbage").getTime()` returns NaN, and
-/// `NaN <= now` is false in JS — TS would (accidentally) accept the
-/// credential. The Rust port chooses the safer behaviour: reject. This is
-/// the intended contract; the divergence is documented in
-/// `docs/rust-spike-notes.md`.
+/// Deliberate divergence from the TS reference implementation. In TS,
+/// `new Date("garbage").getTime()` returns `NaN`, and `NaN <= Date.now()`
+/// evaluates to `false`, so TS would (accidentally) accept the credential.
+/// That's a JavaScript quirk, not a designed behaviour: a credential with
+/// an unparseable expiry is not trustworthy. The Rust port rejects it.
 #[test]
 fn status_credentials_unparseable_expires_at_is_not_authenticated() {
     let temp = tempfile::tempdir().unwrap();
@@ -251,10 +274,13 @@ fn status_no_env_no_file_is_not_authenticated() {
 
 // ─── Home resolution: NO_TICKETS_HOME beats real HOME ───────────────────────
 
-/// Sets HOME to a directory containing valid credentials, and
+/// Sets host-home env vars to a directory containing valid credentials, and
 /// NO_TICKETS_HOME to a different empty directory. The binary must read the
 /// NO_TICKETS_HOME directory (which has no credentials) and report
-/// not-authenticated — not pick up the HOME-side credentials.
+/// not-authenticated — not pick up the host-home credentials.
+///
+/// Sets both HOME (Unix) and USERPROFILE (Windows) since the GREEN impl
+/// may use a portable home-dir resolver.
 #[test]
 fn status_no_tickets_home_overrides_host_home() {
     let nt_home = tempfile::tempdir().unwrap();
@@ -266,6 +292,7 @@ fn status_no_tickets_home_overrides_host_home() {
     nt()
         .env("NO_TICKETS_HOME", nt_home.path())
         .env("HOME", real_home.path())
+        .env("USERPROFILE", real_home.path())
         .env_remove("NO_TICKETS_TOKEN")
         .env_remove("NO_TICKETS_API_URL")
         .env_remove("NO_TICKETS_AUTH_URL")
@@ -333,6 +360,9 @@ fn status_credentials_file_with_custom_env_urls() {
         .stdout(predicate::str::contains(r#""tokenType":"session""#))
         .stdout(predicate::str::contains(
             r#""apiUrl":"https://x-api.example""#,
+        ))
+        .stdout(predicate::str::contains(
+            r#""authUrl":"https://x-auth.example""#,
         ));
 }
 
@@ -426,12 +456,14 @@ fn status_profile_flag_accepts_equals_syntax() {
         ));
 }
 
+/// Unknown profile when others ARE configured — TS message:
+/// `profile "X" not found in {path}. Available: y, z.`
 #[test]
-fn status_profile_unknown_name_errors() {
+fn status_profile_unknown_name_with_available_hint() {
     let temp = tempfile::tempdir().unwrap();
     write_config(
         temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://s","authUrl":"https://s"}}}"#,
+        r#"{"profiles":{"staging":{"apiUrl":"https://s","authUrl":"https://s"},"prod":{"apiUrl":"https://p","authUrl":"https://p"}}}"#,
     );
     isolate(&mut nt(), temp.path())
         .env("NO_TICKETS_TOKEN", "nt_push_abc")
@@ -440,11 +472,16 @@ fn status_profile_unknown_name_errors() {
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("nonexistent"));
+        .stderr(predicate::str::contains("nonexistent"))
+        .stderr(predicate::str::contains("Available"))
+        .stderr(predicate::str::contains("staging"))
+        .stderr(predicate::str::contains("prod"));
 }
 
+/// Missing config.json — TS message:
+/// `profile "X" not found: {path} does not exist.` + "Create it with:" hint
 #[test]
-fn status_profile_missing_config_file_errors() {
+fn status_profile_missing_config_file_says_does_not_exist() {
     let temp = tempfile::tempdir().unwrap();
     // No config.json written.
     isolate(&mut nt(), temp.path())
@@ -455,11 +492,15 @@ fn status_profile_missing_config_file_errors() {
         .failure()
         .code(1)
         .stderr(predicate::str::contains("staging"))
-        .stderr(predicate::str::contains("config.json"));
+        .stderr(predicate::str::contains("config.json"))
+        .stderr(predicate::str::contains("does not exist"));
 }
 
+/// Config file exists but lacks a `profiles` key — TS message:
+/// `profile "X" not found in {path}.` (no Available hint, distinguishing this
+/// path from the unknown-when-others-exist case)
 #[test]
-fn status_profile_config_without_profiles_key_errors() {
+fn status_profile_config_without_profiles_key_no_available_hint() {
     let temp = tempfile::tempdir().unwrap();
     write_config(temp.path(), r#"{"something_else":true}"#);
     isolate(&mut nt(), temp.path())
@@ -469,7 +510,10 @@ fn status_profile_config_without_profiles_key_errors() {
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("staging"));
+        .stderr(predicate::str::contains("staging"))
+        .stderr(predicate::str::contains("not found"))
+        .stderr(predicate::str::contains("config.json"))
+        .stderr(predicate::str::contains("Available").not());
 }
 
 #[test]
@@ -486,6 +530,8 @@ fn status_profile_config_malformed_json_errors() {
         .stderr(predicate::str::contains("invalid JSON"));
 }
 
+/// Non-http(s) URL inside a profile — TS message:
+/// `profile "X" in {path} is invalid: apiUrl and authUrl must be http(s) URL strings.`
 #[test]
 fn status_profile_non_http_url_errors() {
     let temp = tempfile::tempdir().unwrap();
@@ -501,5 +547,27 @@ fn status_profile_non_http_url_errors() {
         .failure()
         .code(1)
         .stderr(predicate::str::contains("staging"))
-        .stderr(predicate::str::contains("http"));
+        .stderr(predicate::str::contains("invalid"))
+        .stderr(predicate::str::contains("apiUrl"));
+}
+
+/// Flag-before-subcommand parity: TS's argv parser is position-agnostic,
+/// so `no-tickets --profile staging status` works. Pin that here — forces
+/// the GREEN impl to expose --profile as a global arg, not a subcommand
+/// arg.
+#[test]
+fn status_profile_flag_works_before_subcommand() {
+    let temp = tempfile::tempdir().unwrap();
+    write_config(
+        temp.path(),
+        r#"{"profiles":{"staging":{"apiUrl":"https://before-api.example","authUrl":"https://before-auth.example"}}}"#,
+    );
+    isolate(&mut nt(), temp.path())
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .args(["--profile", "staging", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#""apiUrl":"https://before-api.example""#,
+        ));
 }

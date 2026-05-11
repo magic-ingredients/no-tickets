@@ -17,7 +17,6 @@ use directories::ProjectDirs;
 use crate::env::Env;
 
 /// Filename of the session credentials file inside [`config_dir`].
-#[allow(dead_code)] // wired by GREEN-phase credentials::load impl (Task 3)
 pub const CREDENTIALS_FILE: &str = "credentials";
 
 /// Returns the platform-native config directory used by the CLI.
@@ -29,7 +28,6 @@ pub const CREDENTIALS_FILE: &str = "credentials";
 /// 1. `NO_TICKETS_HOME=<dir>` (non-empty) → `<dir>/.notickets`
 /// 2. Platform-native via `directories` crate
 /// 3. `None` if neither resolves
-#[allow(dead_code)] // wired by GREEN-phase credentials::load impl (Task 3)
 pub fn config_dir(env: &dyn Env) -> Option<PathBuf> {
     if let Some(override_home) = env.var("NO_TICKETS_HOME").filter(|s| !s.is_empty()) {
         return Some(PathBuf::from(override_home).join(".notickets"));

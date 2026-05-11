@@ -125,7 +125,7 @@ fn status_falls_back_to_credentials_file_when_no_env_token() {
     let temp = tempfile::tempdir().unwrap();
     write_credentials(
         temp.path(),
-        r#"{"token":"nt_push_from_file","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
+        r#"{"token":"nt_push_from_file","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api.no-tickets.com"}"#,
     );
     isolate(&mut nt(), temp.path())
         .arg("status")
@@ -140,7 +140,7 @@ fn status_env_token_takes_precedence_over_credentials_file() {
     let temp = tempfile::tempdir().unwrap();
     write_credentials(
         temp.path(),
-        r#"{"token":"nt_session_from_file","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
+        r#"{"token":"nt_session_from_file","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api.no-tickets.com"}"#,
     );
     isolate(&mut nt(), temp.path())
         .env("NO_TICKETS_TOKEN", "nt_push_env_wins")
@@ -158,7 +158,7 @@ fn status_expired_credentials_count_as_not_authenticated() {
     let temp = tempfile::tempdir().unwrap();
     write_credentials(
         temp.path(),
-        r#"{"token":"nt_push_old","email":"a@b.com","expiresAt":"2000-01-01T00:00:00.000Z"}"#,
+        r#"{"token":"nt_push_old","email":"a@b.com","expiresAt":"2000-01-01T00:00:00.000Z","host":"https://api.no-tickets.com"}"#,
     );
     isolate(&mut nt(), temp.path())
         .arg("status")
@@ -176,7 +176,7 @@ fn status_expiry_boundary_inclusive_past() {
     let temp = tempfile::tempdir().unwrap();
     write_credentials(
         temp.path(),
-        r#"{"token":"nt_push_epoch","email":"a@b.com","expiresAt":"1970-01-01T00:00:00.000Z"}"#,
+        r#"{"token":"nt_push_epoch","email":"a@b.com","expiresAt":"1970-01-01T00:00:00.000Z","host":"https://api.no-tickets.com"}"#,
     );
     isolate(&mut nt(), temp.path())
         .arg("status")
@@ -217,7 +217,7 @@ fn status_credentials_wrong_type_field_is_not_authenticated() {
     // `token` is a number, not a string. TS shape check rejects this.
     write_credentials(
         temp.path(),
-        r#"{"token":12345,"email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
+        r#"{"token":12345,"email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api.no-tickets.com"}"#,
     );
     isolate(&mut nt(), temp.path())
         .arg("status")
@@ -299,7 +299,7 @@ fn status_no_tickets_home_overrides_host_home() {
     let real_home = tempfile::tempdir().unwrap();
     write_credentials(
         real_home.path(),
-        r#"{"token":"nt_push_host_home","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
+        r#"{"token":"nt_push_host_home","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api.no-tickets.com"}"#,
     );
     nt().env("NO_TICKETS_HOME", nt_home.path())
         .env("HOME", real_home.path())
@@ -357,7 +357,7 @@ fn status_credentials_file_with_custom_env_urls() {
     let temp = tempfile::tempdir().unwrap();
     write_credentials(
         temp.path(),
-        r#"{"token":"nt_session_creds","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z"}"#,
+        r#"{"token":"nt_session_creds","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://x-api.example"}"#,
     );
     nt().env("NO_TICKETS_HOME", temp.path())
         .env_remove("NO_TICKETS_TOKEN")

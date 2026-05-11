@@ -134,7 +134,17 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
 
     let auth = match resolve_auth(env, &urls.api_url) {
         AuthOutcome::Resolved(a) => a,
-        AuthOutcome::SessionHostMismatch { .. } | AuthOutcome::None => {
+        AuthOutcome::SessionHostMismatch {
+            stored_host,
+            current_host,
+        } => {
+            eprintln!(
+                "Warning: stored session was issued for {stored_host} but the current environment resolves to {current_host}. Run `nt init` to re-authenticate against the current environment.",
+            );
+            eprintln!("{NOT_AUTH_MSG}");
+            return 1;
+        }
+        AuthOutcome::None => {
             eprintln!("{NOT_AUTH_MSG}");
             return 1;
         }

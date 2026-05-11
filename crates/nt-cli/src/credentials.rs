@@ -5,15 +5,12 @@
 //! / expired / env-mismatched all map to non-Valid outcomes.
 
 use serde::Deserialize;
+use std::fs;
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
 use crate::env::Env;
-
-#[allow(unused_imports)] // wired by GREEN-phase load impl
 use crate::paths;
-#[allow(unused_imports)] // wired by GREEN-phase load impl
-use std::fs;
 
 /// Shape of the `credentials` file on disk.
 ///
@@ -32,9 +29,12 @@ use std::fs;
 /// The `host` field tags which environment (api_url) the session token was
 /// issued against. See ADR-0002 — sessions don't carry across envs.
 #[derive(Deserialize)]
-#[allow(dead_code)] // host/expires_at consumed by GREEN-phase load impl
 pub struct StoredCredentials {
     pub token: String,
+    /// Part of the shape contract (serde requires it as a String, which gives
+    /// shape validation for free against the TS `isStoredCredentials`). Unused
+    /// at runtime.
+    #[allow(dead_code)]
     pub email: String,
     #[serde(rename = "expiresAt")]
     pub expires_at: String,
@@ -47,23 +47,37 @@ pub struct StoredCredentials {
 /// the right user-visible message: `HostMismatch` triggers the
 /// "re-run nt init" warning per ADR-0002; `None` is the catch-all for
 /// missing / malformed / expired files.
-#[allow(dead_code)] // RED phase — variants constructed in GREEN
 pub enum LoadOutcome {
     Valid(StoredCredentials),
     HostMismatch { stored_host: String },
     None,
 }
 
-pub fn load(_env: &dyn Env, _current_api_url: &str) -> LoadOutcome {
-    // RED phase stub — replaced in GREEN.
-    LoadOutcome::None
+pub fn load(env: &dyn Env, current_api_url: &str) -> LoadOutcome {
+    let Some(path) = paths::config_dir(env).map(|d| d.join(paths::CREDENTIALS_FILE)) else {
+        return LoadOutcome::None;
+    };
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return LoadOutcome::None;
+    };
+    let Ok(parsed) = serde_json::from_str::<StoredCredentials>(&raw) else {
+        return LoadOutcome::None;
+    };
+    if !is_expires_in_future(&parsed.expires_at) {
+        return LoadOutcome::None;
+    }
+    if parsed.host != current_api_url {
+        return LoadOutcome::HostMismatch {
+            stored_host: parsed.host,
+        };
+    }
+    LoadOutcome::Valid(parsed)
 }
 
 /// Returns true iff the timestamp parses as ISO 8601 AND is strictly after
 /// now. Unparseable timestamps return false — deliberate divergence from
 /// TS's NaN-comparison accident (see test
 /// `status_credentials_unparseable_expires_at_is_not_authenticated`).
-#[allow(dead_code)] // used by GREEN-phase load impl
 fn is_expires_in_future(timestamp: &str) -> bool {
     let Ok(expires) = OffsetDateTime::parse(timestamp, &Iso8601::DEFAULT) else {
         return false;

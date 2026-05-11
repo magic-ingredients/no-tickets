@@ -68,7 +68,6 @@ pub struct ResolvedAuth {
 /// the credentials file's stored `host` doesn't match the caller's
 /// `current_api_url`, callers (status, publish, future identity commands)
 /// must warn the user and decline to use the stored session.
-#[allow(dead_code)] // RED phase — Resolved/SessionHostMismatch wired in GREEN
 pub enum AuthOutcome {
     Resolved(ResolvedAuth),
     None,

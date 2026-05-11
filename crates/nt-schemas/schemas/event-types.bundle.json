@@ -1,0 +1,546 @@
+{
+  "bundleVersion": "0.2.0",
+  "generatedFrom": "@magic-ingredients/no-tickets-schemas@0.2.0",
+  "jsonSchemaDraft": "https://json-schema.org/draft/2020-12/schema",
+  "schemas": {
+    "ai.completion.recorded.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "callId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "commitSha": {
+          "type": "string"
+        },
+        "entityId": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "anthropic",
+            "openai",
+            "google",
+            "bedrock",
+            "vertex",
+            "azure",
+            "other"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modelVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stopReason": {
+          "type": "string",
+          "enum": [
+            "end_turn",
+            "tool_use",
+            "max_tokens",
+            "stop_sequence",
+            "refusal",
+            "error"
+          ]
+        },
+        "toolCallCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "contextUsed": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "systemPromptHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "toolRegistryHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "callId",
+        "sessionId",
+        "agent",
+        "provider",
+        "model",
+        "modelVersion",
+        "inputTokens",
+        "outputTokens",
+        "durationMs",
+        "stopReason",
+        "toolCallCount",
+        "contextUsed",
+        "systemPromptHash",
+        "toolRegistryHash"
+      ],
+      "additionalProperties": false
+    },
+    "ai.review.completed.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "reviewId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commitSha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "local",
+            "ci"
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "grade": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "F",
+            "clean",
+            "issues",
+            "blocked"
+          ]
+        },
+        "mutationsKilled": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "mutationsSurvived": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "reviewId",
+        "entityId",
+        "commitSha",
+        "reviewer",
+        "source",
+        "score",
+        "grade"
+      ],
+      "additionalProperties": false
+    },
+    "ai.task.completed.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "success",
+            "partial",
+            "failed",
+            "abandoned"
+          ]
+        },
+        "callCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "taskDescription": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "taskId",
+        "sessionId",
+        "startedAt",
+        "completedAt",
+        "durationMs",
+        "outcome",
+        "callCount"
+      ],
+      "additionalProperties": false
+    },
+    "product.epic.created.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "epicId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "epicId",
+        "projectId",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "product.feature.archived.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "featureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "featureId"
+      ],
+      "additionalProperties": false
+    },
+    "product.feature.assigned.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "featureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assignee": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assigneeType": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent"
+          ]
+        }
+      },
+      "required": [
+        "featureId",
+        "assignee",
+        "assigneeType"
+      ],
+      "additionalProperties": false
+    },
+    "product.feature.created.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "featureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ideation",
+            "development",
+            "testing",
+            "review",
+            "done"
+          ]
+        },
+        "parentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assignee": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assigneeType": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent"
+          ]
+        }
+      },
+      "required": [
+        "featureId",
+        "projectId",
+        "title",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "product.feature.status_changed.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "featureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromStatus": {
+          "type": "string",
+          "enum": [
+            "ideation",
+            "development",
+            "testing",
+            "review",
+            "done"
+          ]
+        },
+        "toStatus": {
+          "type": "string",
+          "enum": [
+            "ideation",
+            "development",
+            "testing",
+            "review",
+            "done"
+          ]
+        },
+        "commitSha": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "featureId",
+        "fromStatus",
+        "toStatus"
+      ],
+      "additionalProperties": false
+    },
+    "product.task.assigned.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assignee": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assigneeType": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent"
+          ]
+        }
+      },
+      "required": [
+        "taskId",
+        "assignee",
+        "assigneeType"
+      ],
+      "additionalProperties": false
+    },
+    "product.task.created.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "featureId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ideation",
+            "development",
+            "testing",
+            "review",
+            "done"
+          ]
+        }
+      },
+      "required": [
+        "taskId",
+        "featureId",
+        "title",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "product.task.status_changed.v1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromStatus": {
+          "type": "string",
+          "enum": [
+            "ideation",
+            "development",
+            "testing",
+            "review",
+            "done"
+          ]
+        },
+        "toStatus": {
+          "type": "string",
+          "enum": [
+            "ideation",
+            "development",
+            "testing",
+            "review",
+            "done"
+          ]
+        }
+      },
+      "required": [
+        "taskId",
+        "fromStatus",
+        "toStatus"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

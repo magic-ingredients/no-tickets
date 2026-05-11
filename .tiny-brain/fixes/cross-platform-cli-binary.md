@@ -413,14 +413,34 @@ files; rmcp; reqwest+TLS+auth) are all proven. Task 4 becomes a
 mechanical port.
 
 ### 3. JSON Schema bundle integration
-status: not_started
+status: in_progress
 
-Pull JSON Schema build artifact from `no-tickets-service` (per release) and embed via `include_bytes!`. Wire `jsonschema` crate validation. Match the validation behavior in `validateEventLocally` from Phase 1.
+Validate the local Rust-side toolchain (jsonschema crate + bundle loading + TS-parity validator API) against a **locally-vendored JSON Schema bundle** generated from the existing `@magic-ingredients/no-tickets-schemas` Zod source via `scripts/generate-schema-bundle.mjs`. The vendored bundle is the interim source; the canonical source becomes the release-artifact bundle produced by the sister fix.
+
+**Cross-repo dependency (sister fix `client-roadmap-server-prerequisites` in `no-tickets-service`):**
+- Sister Task 6 — JSON Schema build artifact (status: not_started)
+- Sister Task 7 — Attach JSON Schema bundle to GitHub Releases (status: not_started)
+
+Once those land, this fix gets a follow-up to swap `include_str!` for a `build.rs` that fetches+sha256-verifies the release-artifact bundle. The Rust validator API surface doesn't change between vendored and release-artifact modes — only the bundle source.
+
+**Approach for the spike (this task):**
+- Shared crate `crates/nt-schemas/` consumed by both nt-cli and nt-mcp (rather than duplicating per binary).
+- Generator script `scripts/generate-schema-bundle.mjs` produces `crates/nt-schemas/schemas/event-types.bundle.json` from the npm `byTypeId` map. Uses each Zod schema's instance `.toJSONSchema()` method (not the top-level `z.toJSONSchema()` import) so cross-zod-instance type checks don't silently drop `.min()` / format / pattern constraints.
+- `nt-schemas::validate(type_id, data)` returns `Option<Vec<ValidationIssue>>`: `None` for unknown type ids, `Some(vec![])` for valid, `Some(issues)` for invalid. Mirrors TS `validateEventLocally` shape (`{ path, message }`); paths are dot-joined for TS parity.
+
+**Known divergence from server-side Zod (documented):**
+- Zod `.refine()` predicates do NOT survive JSON Schema conversion. JSON Schema can't express arbitrary predicates. Server-side Zod validation still catches refine violations; local Rust validation is a strict subset of server validation, never a superset. Payloads that pass local but fail server are still server-rejected; no false-positive publishes.
 
 **Files to modify/create:**
-- `crates/nt-cli/build.rs` — fetch + verify schema bundle by version
-- `crates/nt-cli/src/validate.rs`
-- `crates/nt-mcp/src/validate.rs`
+- `scripts/generate-schema-bundle.mjs` — Node generator (committed; re-run on schemas version bumps)
+- `crates/nt-schemas/Cargo.toml` (new workspace member)
+- `crates/nt-schemas/schemas/event-types.bundle.json` (generated, committed)
+- `crates/nt-schemas/src/lib.rs` — `validate(type_id, data)` + `known_type_ids()` + `BUNDLE_VERSION`
+- `crates/nt-schemas/tests/validate.rs` — bundle integrity + valid/invalid payloads + issue-shape parity
+- workspace `Cargo.toml` — add nt-schemas member
+
+**Follow-up task (created after sister Tasks 6+7 ship):**
+- Swap `include_str!` for a `build.rs` that downloads the GH Release asset, verifies sha256, embeds via `include_bytes!`. API surface unchanged.
 
 ### 4. Full CLI surface port
 status: not_started

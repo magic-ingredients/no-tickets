@@ -208,6 +208,9 @@ integration tests. Any failure here means the refactor is wrong.
 ## Tasks
 
 ### 1. Extract pure `build_envelope` and `build_output` builders
+status: completed
+commitSha: 2b8069b
+
 End-to-end task: failing unit tests for the pure builders, extract the
 literal blocks out of `run()`, run the existing integration tests to
 prove byte-for-byte parity. The builders MUST be pure (no I/O, no env,

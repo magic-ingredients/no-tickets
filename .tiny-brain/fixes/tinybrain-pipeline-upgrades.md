@@ -289,10 +289,10 @@ the false-invalidation noise but adds parsing complexity. **v1 prefers
 false-positive invalidations over false-negative acceptances** and
 ships with line-binding accordingly.
 
-Implementation: on each mutation run, the driver also reads the file
-at the listed `verified_sha` and computes the diff for the file
-between `verified_sha` and HEAD. If the diff touches lines at or above
-the allowlist entry's `line`, invalidate; otherwise keep.
+Implementation: on each mutation run, the driver computes
+`git diff <verified_sha>..HEAD -- <file>`. If any hunk's pre-image
+start line is ≤ entry.line (i.e. content inserted or removed at a
+line number that would shift entry.line), invalidate; otherwise keep.
 
 Convenience subcommand: `tiny-brain mutation allow --file <p>
 --line <n> --reason "..."` adds the current HEAD as `verified_sha`,
@@ -470,6 +470,8 @@ must handle this:
   instructing the user to invoke the adversarial-tests agent.
 - A `chore:` commit on a docs-only task triggers `adversarial-tests`
   which skips cleanly with "no test files in task diff" status.
+- The same docs-only task invoked with `--require-tests` set fails
+  the `adversarial-tests` phase rather than skipping.
 - Mistake protection: if the user commits `feat:` while still in RED
   phase, the commit-msg hook rejects (already does this; verify it
   still works with the new phase).
@@ -613,7 +615,9 @@ know their machine has the headroom.
 ### 11. Known-equivalent-mutant allowlist
 status: not_started
 
-`.tiny-brain/mutation-allowlist.toml` format + driver integration.
+`.tiny-brain-mutation-allowlist.toml` at the repo root (NOT under
+`.tiny-brain/` — see Design rationale: the directory is commonly
+gitignored). Format + driver integration.
 
 **Files to modify/create:**
 - allowlist parser
@@ -686,7 +690,8 @@ status: not_started
 Update tiny-brain's CLAUDE.md / docs:
 - The new phase ordering and what each phase does.
 - How to register a custom mutator.
-- How to add an entry to `mutation-allowlist.toml`.
+- How to add an entry to `.tiny-brain-mutation-allowlist.toml`
+  (note: file lives at repo root, not under `.tiny-brain/`).
 - The scope-mode trade-offs.
 - The task-scoped-diff model and how to recover from rebase.
 
@@ -816,7 +821,7 @@ Migration plan:
 ## Acceptance Criteria
 
 - [ ] Two distinct prompt templates ship: adversarial-tests, adversarial-impl
-- [ ] Pipeline phase sequence reorders to: red → adversarial-tests → green → adversarial-impl → mutation
+- [ ] Pipeline phase sequence reorders to: red → [differential?] → adversarial-tests → green → adversarial-impl → mutation (differential is opt-in for port tasks per Task 4)
 - [ ] `MutationAdapter` trait + registry exists; adapters for TS / Rust / Python / Go all functional
 - [ ] Per-language thresholds enforced separately (no averaging)
 - [ ] Allowlist mechanism for known-equivalent mutants with `verified_sha` freshness check

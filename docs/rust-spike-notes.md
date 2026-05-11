@@ -148,7 +148,7 @@ plan. Proceed with Task 2 (`rmcp` spike) in parallel with Task 4
 # Task 14 — staging smoke findings
 
 **Date:** 2026-05-11
-**Binary commit:** `09a14700` (from `nt-cli-thin-edge-refactor`)
+**Binary commit:** `09a1470b` (from `nt-cli-thin-edge-refactor`)
 **Tracked by fix:** `publish-spike-staging-smoke`
 
 Task 14's wiremock-only test plan was completed at `4844b43` but no actual staging publish was performed at that time. This section captures the first real end-to-end staging smoke, run after the `nt-cli-thin-edge-refactor` work landed.
@@ -169,13 +169,55 @@ NO_TICKETS_TOKEN=$(jq -r '.projects.mystaging.pushToken' ~/.notickets/config.jso
 
 ## Result
 
-**Successful publish on the third attempt.** Exit 0. stdout:
+**Successful publish on the third attempt.** First two attempts returned 422 with the verbatim server responses below; third attempt (with the correctly-shaped payload from "Working payload" further down) succeeded.
+
+### Attempt 1 — payload with `summary` field, missing required fields
+
+Sent: `{"taskId":"rust-spike-smoke-001","summary":"Rust nt publish smoke test","durationMs":42}`
+
+Server response (HTTP 422), exit 1, stderr:
+
+```
+server returned 422: {"error":"Validation failed","errors":[{"batchIndex":0,"issues":[{"expected":"string","code":"invalid_type","path":["sessionId"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["startedAt"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["completedAt"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_value","values":["success","partial","failed","abandoned"],"path":["outcome"],"message":"Invalid option: expected one of \"success\"|\"partial\"|\"failed\"|\"abandoned\""},{"expected":"number","code":"invalid_type","path":["callCount"],"message":"Invalid input: expected number, received undefined"},{"code":"unrecognized_keys","keys":["summary"],"path":[],"message":"Unrecognized key: \"summary\""}]}]}
+```
+
+### Attempt 2 — added all required string + enum fields, omitted `durationMs`
+
+Server response (HTTP 422), exit 1, stderr:
+
+```
+server returned 422: {"error":"Validation failed","errors":[{"batchIndex":0,"issues":[{"expected":"number","code":"invalid_type","path":["durationMs"],"message":"Invalid input: expected number, received undefined"}]}]}
+```
+
+### Attempt 3 — added `durationMs`
+
+Server response (HTTP 200), exit 0, stdout:
 
 ```json
 {"deduped":0,"ids":["4"],"ingested":1}
 ```
 
 Confirmed by server response — event with `id=4` landed in `mystaging`'s event log.
+
+### Error envelope shape (incidental finding)
+
+The 422 responses follow a consistent shape worth noting for whoever builds the structured-error contract (Task 4a of `cross-platform-cli-binary`):
+
+```
+{
+  "error": "Validation failed",
+  "errors": [
+    {
+      "batchIndex": <int>,
+      "issues": [
+        { "code": "<zod-code>", "path": [<string|int>...], "message": "<text>", "expected"?: "<type>", "values"?: [...], "keys"?: [...] }
+      ]
+    }
+  ]
+}
+```
+
+`batchIndex` is per-envelope (currently always 0 since the wire body is single-element); `issues` is a flat array of Zod-style validation problems. Useful for the structured-error contract to surface per-field validation errors with exit-code metadata.
 
 ## What was validated end-to-end (previously only wiremock-asserted)
 
@@ -241,7 +283,7 @@ The TS reference and wiremock fixtures describe / use `{ ingested, deduped, ids 
 
 ### 4. (Low) Event ID format: small integer, not opaque string
 
-The wiremock fixture uses `"ids": ["evt_abc123"]` (`tests/publish.rs:85`, `:137`, `:184`, `:430`) implying an opaque alphanumeric event id. The real server returns `"ids": ["4"]` — a small integer encoded as a string. This is a representational difference (string in both cases) so nothing parses-incorrectly, but the fixture's "evt_" prefix is fictional.
+The wiremock fixture uses `"ids": ["evt_abc123"]` (`tests/publish.rs:85`, `:112`, and `"ids": ["evt_1"]` at `:430`) implying an opaque alphanumeric event id. The real server returns `"ids": ["4"]` — a small integer encoded as a string. This is a representational difference (string in both cases) so nothing parses-incorrectly, but the fixture's "evt_" prefix is fictional.
 
 **Impact:** none — tests don't pin the id format. If the server's id format ever changes (e.g. moves to UUID, or starts prefixing), neither the fixture comment nor any production code needs to change.
 
@@ -249,7 +291,7 @@ The wiremock fixture uses `"ids": ["evt_abc123"]` (`tests/publish.rs:85`, `:137`
 
 - `rustls + webpki-roots` strategy validated against a real cert — no need to revisit the TLS backend choice.
 - `reqwest` 0.12 with `default-features = false` + `rustls-tls` features compiles and runs against staging — no surprise missing features.
-- `tokio` current-thread runtime is fine for a single-shot publish; sub-100ms end-to-end (mostly TLS handshake).
+- `tokio` current-thread runtime is fine for a single-shot publish; end-to-end latency was sub-second, not measured precisely.
 - The post-`nt-cli-thin-edge-refactor` architecture (pure `build_envelope`, injected `HttpClient`, `Env` port) survived the real network path without regression — the wire format is byte-for-byte what wiremock asserted, even though the payload schema turned out to be different.
 
 ## Verdict

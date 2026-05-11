@@ -8,11 +8,12 @@ resolved: 2026-05-11T00:00:00.000Z
 resolution:
   rootCause: "Task 14 of cross-platform-cli-binary was wiremock-only despite its 'end-to-end staging' title; no event ever crossed the wire, and the wiremock contract was inferred from the TS reference rather than verified against the real server."
   fix:
-    - "Built release binary at 09a14700, ran nt publish ai.task.completed.v1 against api-staging.no-tickets.com using mystaging project's pushToken from local config."
+    - "Built release binary at 09a1470b, ran nt publish ai.task.completed.v1 against api-staging.no-tickets.com using mystaging project's pushToken from local config."
     - "Successful publish on third attempt (after discovering real schema); event id=4 landed in mystaging's event log."
     - "Captured findings in docs/rust-spike-notes.md Task 14 section, including the real ai.task.completed.v1 schema, the working payload, and the four contract divergences from wiremock fixtures (one High, one Medium, two Low)."
   filesModified:
     - "docs/rust-spike-notes.md"
+archived: true
 ---
 
 # Fix: Actually publish an event to staging
@@ -59,7 +60,7 @@ The smoke must be run by the human (real token, real shared system, not autonomo
 
 ## Smoke Procedure
 
-The token is already in `~/.notickets/credentials` from prior CLI usage; the URL defaults (`api.no-tickets.com`) are what the credentials were issued against. Only the project name needs to be supplied per invocation.
+**Reproducing this smoke (post-completion reference).** The token is in `~/.notickets/config.json` under `projects.<name>.pushToken` (not in `~/.notickets/credentials` — that's the session token, which is a separate concept and isn't used by the Rust binary's publish path). The Rust binary doesn't yet read `projects.*.pushToken` directly (ADR-0002 reshapes this as `nt token add`), so the smoke threads the token via `NO_TICKETS_TOKEN`.
 
 Fresh build first to avoid staleness:
 
@@ -67,18 +68,21 @@ Fresh build first to avoid staleness:
 ~/.cargo/bin/cargo build --release --manifest-path crates/nt-cli/Cargo.toml
 ```
 
-Then:
+Then (project name `mystaging` here; substitute as appropriate):
 
 ```bash
-./target/release/nt publish \
+NO_TICKETS_TOKEN=$(jq -r '.projects.mystaging.pushToken' ~/.notickets/config.json) \
+  ./target/release/nt --profile staging publish \
   --type ai.task.completed.v1 \
-  --data '{"taskId":"rust-spike-smoke-001","summary":"Rust nt publish smoke test","durationMs":42}' \
-  --project <PROJECT_NAME>
+  --data '{"taskId":"rust-spike-smoke-001","sessionId":"rust-spike-smoke-session-001","startedAt":"2026-05-11T20:30:00.000Z","completedAt":"2026-05-11T20:30:01.000Z","outcome":"success","callCount":1,"durationMs":1000}' \
+  --project mystaging
 ```
 
-Expected on success: stdout prints `{"ingested":1,"deduped":0,"ids":["evt_..."]}`, exit 0.
+The payload shape above is the actual `ai.task.completed.v1` schema (discovered by 422 trial-and-error in the original smoke — see `docs/rust-spike-notes.md` Task 14 section for the schema table and verbatim error responses).
 
-Then verify in the dashboard / event log that an event with `id == evt_<that id>` landed with the expected payload.
+Expected on success: stdout prints `{"deduped":0,"ids":["<id>"],"ingested":1}` (alphabetical field order — not what the wiremock fixture suggests), exit 0.
+
+Then verify in the staging dashboard that the event with the returned `id` landed with the expected payload.
 
 ## Test Plan
 
@@ -86,10 +90,10 @@ Then verify in the dashboard / event log that an event with `id == evt_<that id>
 
 | File | Cases | Status |
 |------|-------|--------|
-| `crates/nt-cli/tests/publish.rs` | all 11 wiremock cases | ❌ |
-| `crates/nt-cli/tests/status.rs` | all 31 cases | ❌ |
+| `crates/nt-cli/tests/publish.rs` | all 11 wiremock cases | ✅ unaffected (doc-only fix; no code changed) |
+| `crates/nt-cli/tests/status.rs` | all 31 cases | ✅ unaffected (doc-only fix; no code changed) |
 
-No test changes from this fix unless the smoke reveals contract divergence — divergences become follow-up fixes with their own tests.
+This fix is doc-only — no production code changed. The wiremock tests still pass; their accuracy at the schema level is a known gap (finding #1) addressed by `cross-platform-cli-binary` Task 3a.
 
 ### 🆕 New Tests
 
@@ -110,7 +114,9 @@ End-to-end task: build the current release binary, run the documented smoke invo
 status: superseded
 commitSha: null
 
-Four divergences found (1 High, 1 Medium, 2 Low; full detail in `docs/rust-spike-notes.md` Task 14 section). All are documentation/fidelity issues, not code bugs — the Rust binary worked correctly end-to-end. The High finding (wiremock payload fixtures use a wrong shape for `ai.task.completed.v1`) is addressed naturally by `cross-platform-cli-binary` Task 3a (build.rs-fetched schema bundle from GH releases): once that lands, fixture payloads can be regenerated from real schemas, or the tests switch to a transport-only synthetic type id. The two Low findings (response field order, event id format) require no action. No follow-up fix doc warranted.
+Superseded by `cross-platform-cli-binary` Task 3a (build.rs-fetched schema bundle from GH releases). Once Task 3a lands, wiremock fixture payloads should be regenerated from the actual schemas — or, more pragmatically, tests should switch to a transport-only synthetic event-type id (e.g. `meta.test.payload.v1`) so they assert transport correctness without coupling to any one type's strict schema. **Until Task 3a lands, the High finding stands: `tests/publish.rs` payload fixtures for `ai.task.completed.v1` are wrong against the real schema.** Wiremock doesn't enforce schemas so tests pass — this is a fidelity gap, not a code bug.
+
+The two Low findings (response field order, event id format) require no action. The Medium finding (working payload documented) is captured in `docs/rust-spike-notes.md` and in this fix doc's Smoke Procedure section.
 
 **Files to modify:**
 - Per-divergence: new fix docs under `.tiny-brain/fixes/`.

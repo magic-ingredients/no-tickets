@@ -356,7 +356,38 @@ Once those land, this fix gets a follow-up to swap `include_str!` for a `build.r
 - workspace `Cargo.toml` — add nt-schemas member
 
 **Follow-up task (created after sister Tasks 6+7 ship):**
-- Swap `include_str!` for a `build.rs` that downloads the GH Release asset, verifies sha256, embeds via `include_bytes!`. API surface unchanged.
+- Swap `include_str!` for a `build.rs` that downloads the GH Release asset, verifies sha256, embeds via `include_bytes!`. API surface unchanged. ↳ now tracked as Task 3a below.
+
+### 3a. Swap `include_str!` for `build.rs` fetch + sha256-verify of GH release bundle
+status: not_started
+
+Sister Tasks 6+7 shipped — the no-tickets-service repo now publishes versioned JSON Schema bundles to GitHub Releases with sha256 sidecars (first cut: [schemas-v0.2.1](https://github.com/magic-ingredients/no-tickets-service/releases/tag/schemas-v0.2.1)). Swap `crates/nt-schemas/src/lib.rs:31` from `include_str!` of a locally-generated, in-tree bundle to a `build.rs` that downloads the release asset, verifies its sha256, writes the bundle to `$OUT_DIR`, and re-exposes it via `include_str!(concat!(env!("OUT_DIR"), "/event-types.bundle.json"))`. Validator API surface stays identical.
+
+**Versioning:**
+- Schemas version is **independent of nt-cli / nt-mcp version**. Pin it in `crates/nt-schemas/Cargo.toml` under `[package.metadata.no-tickets-schemas] version = "0.2.1"` (or as a const `SCHEMAS_VERSION` in `build.rs`). Bumping schemas is a one-line change.
+- The pinned version flows into both the download URL (`releases/download/schemas-v{VERSION}/...`) and the `BUNDLE_VERSION` assertion in `tests/validate.rs`, so a version-bump that mismatches the published asset fails compile / fails the integrity test.
+
+**Offline-build policy:** none. Per discussion: builds only happen in GH Actions (network available) and on developer machines (where missing network already blocks dev work). `build.rs` fails fast with a clear error if the asset is missing, the sha256 doesn't match, or the network is unavailable. Documented in `docs/rust-spike-notes.md`.
+
+**`cargo install nt` consideration:** this means downstream `cargo install nt` invocations also require network to `github.com/magic-ingredients/no-tickets-service` at build time. Acceptable trade-off — `cargo install` already requires network to crates.io; the additional release-asset fetch is a single HTTP round-trip with a clear failure mode.
+
+**Retire the local generator:** `scripts/generate-schema-bundle.mjs` and `crates/nt-schemas/schemas/event-types.bundle.json` are no longer the source of truth — delete both once the build.rs path is green. The vendored bundle line in Task 3 was a spike artefact; the canonical source is the release asset from this task forward.
+
+**Files to modify/create:**
+- `crates/nt-schemas/build.rs` (new) — minimal HTTP fetch (use `ureq` or `reqwest::blocking` as a `[build-dependencies]` crate), sha256 verify (`sha2`), write to `$OUT_DIR/event-types.bundle.json`
+- `crates/nt-schemas/Cargo.toml` — add `[package.metadata.no-tickets-schemas] version = "0.2.1"`; add `[build-dependencies]` for the HTTP + sha256 crates
+- `crates/nt-schemas/src/lib.rs:31` — swap `include_str!("../schemas/event-types.bundle.json")` for `include_str!(concat!(env!("OUT_DIR"), "/event-types.bundle.json"))`
+- `crates/nt-schemas/schemas/event-types.bundle.json` — **delete** (no longer vendored)
+- `crates/nt-schemas/tests/validate.rs` — assert `bundle_version()` matches the pinned metadata version
+- `scripts/generate-schema-bundle.mjs` — **delete**
+- `package.json` — remove the generator script reference if any
+- `docs/rust-spike-notes.md` — append Task 3a notes (fetch URL pattern, sha256 verify approach, offline-build trade-off)
+
+**Acceptance:**
+- Clean `cargo build` downloads `schemas-v{pinned}` bundle + `.sha256`, verifies, embeds. No vendored bundle in the source tree.
+- Bumping `[package.metadata.no-tickets-schemas].version` in Cargo.toml is the only change needed to track a new schemas release.
+- Sha256 mismatch (simulated by editing the pinned hash, or by stale cache) fails the build with a clear error.
+- `nt-schemas`'s public API (`validate`, `known_type_ids`, `bundle_version`) is byte-for-byte unchanged; all existing `tests/validate.rs` cases pass.
 
 ### 4. Full CLI surface port
 status: not_started

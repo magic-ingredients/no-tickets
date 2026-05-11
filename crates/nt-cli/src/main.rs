@@ -17,7 +17,8 @@ use crate::env::SystemEnv;
     about = "no-tickets — ticketless project management for AI teams"
 )]
 struct Cli {
-    /// Profile name from ~/.notickets/config.json.
+    /// Profile name from the `profiles` block of `config.json` in the
+    /// resolved config directory (platform-native, or `$NO_TICKETS_HOME/.notickets`).
     /// Alternative to NO_TICKETS_API_URL / NO_TICKETS_AUTH_URL env vars.
     /// Global: works both before and after the subcommand.
     #[arg(long, global = true)]

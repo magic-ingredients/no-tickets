@@ -61,7 +61,7 @@ impl UrlError {
                 )
             }
             UrlError::HomeUnresolvable => {
-                "Could not resolve home directory. Set NO_TICKETS_HOME, HOME, or USERPROFILE.".to_string()
+                "Could not resolve a config directory. Set NO_TICKETS_HOME=<dir> to override the platform-native location.".to_string()
             }
             UrlError::ProfileFileMissing { name, path } => format!(
                 "profile \"{name}\" not found: {path} does not exist.\n\
@@ -153,7 +153,7 @@ pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls
 }
 
 fn load_profile(name: &str, env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
-    let path = paths::config_path(env).ok_or(UrlError::HomeUnresolvable)?;
+    let path = paths::config_dir(env).ok_or(UrlError::HomeUnresolvable)?.join(paths::CONFIG_FILE);
 
     if !path.exists() {
         return Err(UrlError::ProfileFileMissing {
@@ -271,6 +271,19 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn home_unresolvable_user_message_points_at_no_tickets_home_override() {
+        // The `HomeUnresolvable` branch fires only when `ProjectDirs::from`
+        // returns None — unreachable on Unix/macOS hosts that have a passwd
+        // entry, which is why the previous integration test that exercised
+        // it via env-unset was deleted. This unit test pins the message
+        // text so the fixed-string mentions only the documented override.
+        let msg = UrlError::HomeUnresolvable.user_message();
+        assert!(msg.contains("NO_TICKETS_HOME"), "got: {msg}");
+        assert!(!msg.contains("HOME, or USERPROFILE"), "stale advice leaked: {msg}");
+        assert!(!msg.contains("USERPROFILE"), "stale advice leaked: {msg}");
     }
 
     #[test]

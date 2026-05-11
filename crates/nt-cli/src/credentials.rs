@@ -1,4 +1,6 @@
-//! `~/.notickets/credentials` loader. Mirrors `src/sdk/credentials.ts`:
+//! Session credentials loader. Reads the `credentials` file inside
+//! `paths::config_dir` (platform-native by default, `<dir>/.notickets/` when
+//! `NO_TICKETS_HOME=<dir>` is set). Mirrors `src/sdk/credentials.ts`:
 //! `{ token, email, expiresAt }`, JSON; missing / malformed / shape-invalid
 //! / expired all map to `None`.
 
@@ -10,7 +12,7 @@ use time::format_description::well_known::Iso8601;
 use crate::env::Env;
 use crate::paths;
 
-/// Shape of `~/.notickets/credentials` on disk.
+/// Shape of the `credentials` file on disk.
 ///
 /// Invariant: a value of this type produced by [`load`] has been
 /// shape-validated (all three fields present, all strings) AND its
@@ -32,7 +34,7 @@ pub struct StoredCredentials {
 }
 
 pub fn load(env: &dyn Env) -> Option<StoredCredentials> {
-    let path = paths::credentials_path(env)?;
+    let path = paths::config_dir(env)?.join(paths::CREDENTIALS_FILE);
     let raw = fs::read_to_string(&path).ok()?;
     let parsed: StoredCredentials = serde_json::from_str(&raw).ok()?;
     if !is_expires_in_future(&parsed.expires_at) {

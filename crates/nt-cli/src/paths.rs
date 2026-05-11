@@ -22,22 +22,18 @@ use crate::env::Env;
 /// 1. `NO_TICKETS_HOME=<dir>` (non-empty) → `<dir>/.notickets`
 /// 2. Platform-native via `directories` crate
 /// 3. `None` if neither resolves
+/// Filename of the session credentials file inside [`config_dir`].
+pub const CREDENTIALS_FILE: &str = "credentials";
+
+/// Filename of the project/token registry inside [`config_dir`].
+pub const CONFIG_FILE: &str = "config.json";
+
 pub fn config_dir(env: &dyn Env) -> Option<PathBuf> {
     if let Some(override_home) = env.var("NO_TICKETS_HOME").filter(|s| !s.is_empty()) {
         return Some(PathBuf::from(override_home).join(".notickets"));
     }
     ProjectDirs::from("com", "magic-ingredients", "no-tickets")
         .map(|d| d.config_dir().to_path_buf())
-}
-
-/// Path to the session credentials file inside [`config_dir`].
-pub fn credentials_path(env: &dyn Env) -> Option<PathBuf> {
-    Some(config_dir(env)?.join("credentials"))
-}
-
-/// Path to the project/token registry file inside [`config_dir`].
-pub fn config_path(env: &dyn Env) -> Option<PathBuf> {
-    Some(config_dir(env)?.join("config.json"))
 }
 
 #[cfg(test)]
@@ -57,44 +53,38 @@ mod tests {
 
     #[test]
     fn config_dir_empty_no_tickets_home_falls_through_to_platform_native() {
-        // Empty override must not short-circuit — platform-native should
-        // still resolve (or return None, matching ProjectDirs's own answer).
+        // Empty override must not short-circuit. We assert against a
+        // non-None ProjectDirs result so the test refuses to pass
+        // vacuously on a sandbox where ProjectDirs returns None — both
+        // sides being None would otherwise let drift through.
+        let expected = ProjectDirs::from("com", "magic-ingredients", "no-tickets")
+            .map(|d| d.config_dir().to_path_buf())
+            .expect("test host must have a resolvable platform config dir");
         let env = HashMapEnv::with(&[("NO_TICKETS_HOME", "")]);
-        let expected =
-            ProjectDirs::from("com", "magic-ingredients", "no-tickets")
-                .map(|d| d.config_dir().to_path_buf());
-        assert_eq!(config_dir(&env), expected);
+        assert_eq!(config_dir(&env), Some(expected));
     }
 
     #[test]
     fn config_dir_no_override_returns_platform_native_path() {
-        // Test pins that paths.rs delegates to ProjectDirs with the
-        // ADR-specified qualifier triple — the test recomputes the same
-        // call and compares, so any drift in the triple breaks here.
+        // Pins that paths.rs delegates to ProjectDirs with the
+        // ADR-specified qualifier triple ("com", "magic-ingredients",
+        // "no-tickets"). Asserts non-None so a sandboxed run where
+        // ProjectDirs::from returns None doesn't quietly pass and let
+        // qualifier drift through.
+        let expected = ProjectDirs::from("com", "magic-ingredients", "no-tickets")
+            .map(|d| d.config_dir().to_path_buf())
+            .expect("test host must have a resolvable platform config dir");
         let env = HashMapEnv::empty();
-        let expected =
-            ProjectDirs::from("com", "magic-ingredients", "no-tickets")
-                .map(|d| d.config_dir().to_path_buf());
-        assert_eq!(config_dir(&env), expected);
+        assert_eq!(config_dir(&env), Some(expected));
     }
 
     #[test]
-    fn credentials_path_joins_credentials_to_config_dir() {
-        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", SENTINEL_HOME)]);
-        let path = credentials_path(&env).expect("resolves");
-        assert_eq!(
-            path,
-            PathBuf::from(SENTINEL_HOME).join(".notickets").join("credentials"),
-        );
+    fn credentials_file_constant_pins_filename() {
+        assert_eq!(CREDENTIALS_FILE, "credentials");
     }
 
     #[test]
-    fn config_path_joins_config_json_to_config_dir() {
-        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", SENTINEL_HOME)]);
-        let path = config_path(&env).expect("resolves");
-        assert_eq!(
-            path,
-            PathBuf::from(SENTINEL_HOME).join(".notickets").join("config.json"),
-        );
+    fn config_file_constant_pins_filename() {
+        assert_eq!(CONFIG_FILE, "config.json");
     }
 }

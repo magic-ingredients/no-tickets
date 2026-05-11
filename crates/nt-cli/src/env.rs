@@ -1,6 +1,6 @@
 //! Environment-variable read port.
 //!
-//! Threads through `auth`, `urls`, `credentials`, and `home` instead of
+//! Threads through `auth`, `urls`, `credentials`, and `paths` instead of
 //! the inline `std::env::var(...)` calls that used to be sprinkled
 //! across those modules. Production wires `SystemEnv`; tests substitute
 //! a fake so resolution-branch coverage works without process-env
@@ -24,7 +24,7 @@ pub trait Env {
 /// **The trait makes no judgment about what "set" means semantically.**
 /// Different callers have different rules — `urls.rs` treats
 /// whitespace-only as unset (via `trim().is_empty()`); `auth.rs` treats
-/// empty as unset; `home.rs` treats empty as unset for `NO_TICKETS_HOME`.
+/// empty as unset; `paths.rs` treats empty as unset for `NO_TICKETS_HOME`.
 /// Each caller applies its own filter on top. Keeping the trait honest
 /// about what's actually in the env (rather than collapsing) lets
 /// callers express their own semantics without losing information.

@@ -13,7 +13,6 @@
 use std::fmt;
 use std::time::Duration;
 
-use serde::Serialize;
 use serde_json::Value;
 
 /// Transport-layer port. Production wires `Client` (reqwest-backed); tests
@@ -99,13 +98,17 @@ impl Client {
         })
     }
 
-    /// POST `path` (relative to `base_url`) with the given JSON-serialisable
-    /// body. Returns the response body as a `Value` on 2xx; an
-    /// `HttpStatus` error otherwise.
-    pub async fn post_json<T: Serialize>(
+}
+
+/// Production transport. Delegates to reqwest with Bearer auth header
+/// injection and JSON Content-Type. Caller pre-serialises the body, so
+/// the trait owns transport (URL join, header injection, status mapping)
+/// without owning serialisation.
+impl HttpClient for Client {
+    async fn post_json(
         &self,
         path: &str,
-        body: &T,
+        body: Vec<u8>,
     ) -> Result<Value, TransportError> {
         let url = self
             .base_url
@@ -115,9 +118,8 @@ impl Client {
             .inner
             .post(url)
             .bearer_auth(&self.token)
-            // .json() sets Content-Type: application/json itself; no
-            // explicit .header(...) needed.
-            .json(body)
+            .header("content-type", "application/json")
+            .body(body)
             .send()
             .await
             .map_err(TransportError::Network)?;

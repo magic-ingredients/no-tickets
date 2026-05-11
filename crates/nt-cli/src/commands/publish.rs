@@ -55,19 +55,46 @@ struct SourceAttributes<'a> {
 
 /// Stateless core: takes an injected `HttpClient`, the resolved + parsed
 /// inputs, sends the publish request, maps the result to an exit code.
-/// Stub for RED phase; GREEN extracts the post-and-respond block from
-/// `run()` and replaces this body.
 ///
-/// Production wires `Client` (reqwest); tests wire a fake that records
-/// the call and returns canned responses, enabling in-process coverage
-/// of the error-mapping branches without subprocess + wiremock.
+/// Production wires `Client` (reqwest); tests wire a `FakeHttpClient`
+/// that records the call and returns canned responses, enabling
+/// in-process coverage of the error-mapping branches without subprocess
+/// + wiremock. The integration tests in `tests/publish.rs` still own
+/// the end-to-end transport-level coverage (real reqwest, real TLS).
+///
+/// Body serialisation happens here rather than at the transport
+/// boundary: the wire format (single-element JSON array of envelopes)
+/// is a publish-flow concern, not a transport-layer concern.
 async fn publish_event<C: HttpClient>(
-    _client: &C,
-    _type_id: &str,
-    _data: &Value,
-    _project: &str,
+    client: &C,
+    type_id: &str,
+    data: &Value,
+    project: &str,
 ) -> i32 {
-    unimplemented!("publish_event: extracted in GREEN phase")
+    let body = vec![build_envelope(type_id, data, project)];
+    // serde_json::to_vec on `Vec<EventEnvelope>` cannot fail — every
+    // field is a primitive Serialize impl over owned/borrowed data —
+    // so .expect is appropriate here. A panic would indicate a bug
+    // in serde, not a runtime condition.
+    let body_bytes = serde_json::to_vec(&body)
+        .expect("envelope vec always serialises");
+    match client.post_json("/v1/events", body_bytes).await {
+        Ok(response) => {
+            // Server response shape: `{ ingested, deduped, ids }`.
+            // serde_json::Value serialisation cannot fail for valid
+            // Value, so `.expect` is appropriate here.
+            println!(
+                "{}",
+                serde_json::to_string(&response)
+                    .expect("serde_json::Value always serialises"),
+            );
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
 }
 
 /// Pure builder for a single event envelope. Caller passes the resolved
@@ -134,29 +161,8 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
         }
     };
 
-    // Wire body is a JSON array. Wrapping the single envelope at the
-    // call site keeps build_envelope honest about its scope (one event)
-    // and isolates the array shape — a transport concern — to run().
-    let body = vec![build_envelope(args.type_id, &parsed_data, args.project)];
-
-    match client.post_json("/v1/events", &body).await {
-        Ok(response) => {
-            // Print verbatim. Server response shape:
-            // `{ ingested, deduped, ids }`. serde_json::Value
-            // serialisation cannot fail for valid Value, so `.expect`
-            // is appropriate here.
-            println!(
-                "{}",
-                serde_json::to_string(&response)
-                    .expect("serde_json::Value always serialises"),
-            );
-            0
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            1
-        }
-    }
+    // Edge done. Delegate to the testable core.
+    publish_event(&client, args.type_id, &parsed_data, args.project).await
 }
 
 #[cfg(test)]

@@ -450,6 +450,27 @@ fn status_emits_staging_urls_when_no_tickets_env_is_staging() {
 }
 
 #[test]
+fn status_emits_default_urls_when_no_tickets_env_is_prod() {
+    // `prod` is one of three legal preset values and must produce the
+    // same URLs as the unset / default case — pinned here at the
+    // integration layer so the preset table's prod-row can't silently
+    // drift away from the defaults.
+    let temp = tempfile::tempdir().unwrap();
+    isolate(&mut nt(), temp.path())
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env("NO_TICKETS_ENV", "prod")
+        .arg("status")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            r#""apiUrl":"{DEFAULT_API}""#
+        )))
+        .stdout(predicate::str::contains(format!(
+            r#""authUrl":"{DEFAULT_AUTH}""#
+        )));
+}
+
+#[test]
 fn status_emits_local_urls_when_no_tickets_env_is_local() {
     let temp = tempfile::tempdir().unwrap();
     isolate(&mut nt(), temp.path())

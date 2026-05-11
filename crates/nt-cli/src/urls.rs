@@ -231,6 +231,25 @@ mod tests {
     }
 
     #[test]
+    fn resolve_urls_unknown_env_with_pair_set_surfaces_mutual_exclusion_not_unknown_env() {
+        // When NO_TICKETS_ENV is invalid AND the explicit pair is set,
+        // EnvAndPairBothSet wins over UnknownEnv — the mutual-exclusion
+        // check runs before preset-value validation. Pinning this so a
+        // future refactor that reorders the checks has to break this
+        // test deliberately.
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_ENV", "bogus"),
+            ("NO_TICKETS_API_URL", SENTINEL_API),
+            ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
+        ]);
+        let err = resolve_urls(&env).expect_err("unknown env + pair errors");
+        assert!(
+            matches!(&err, UrlError::EnvAndPairBothSet { env_value } if env_value == "bogus"),
+            "mutual-exclusion must win over unknown-preset validation; got {err:?}",
+        );
+    }
+
+    #[test]
     fn resolve_urls_explicit_pair_wins_over_env_preset_when_only_pair_set() {
         // Layer 3 (explicit pair, both set) takes precedence when
         // NO_TICKETS_ENV is unset. The pair is the documented escape hatch.

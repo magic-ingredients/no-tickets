@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/nt-cli"]
+members = ["crates/nt-cli", "crates/nt-mcp"]
 resolver = "2"
 
 [workspace.package]

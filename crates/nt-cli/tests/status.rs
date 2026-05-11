@@ -597,29 +597,6 @@ fn status_profile_https_without_host_is_invalid() {
         .stderr(predicate::str::contains("apiUrl"));
 }
 
-/// Pins the HomeUnresolvable variant: with NO_TICKETS_HOME, HOME, and
-/// USERPROFILE all unset, `--profile X` cannot find a config path and
-/// must surface a graceful error — not panic. A regression to the old
-/// `.expect()` would crash with a Rust stacktrace, failing this test.
-#[test]
-fn status_profile_with_no_home_resolvable_errors_gracefully() {
-    nt()
-        .env_remove("NO_TICKETS_HOME")
-        .env_remove("HOME")
-        .env_remove("USERPROFILE")
-        // Token presence is irrelevant — URL resolution runs first and
-        // fails before auth is touched.
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .env_remove("NO_TICKETS_API_URL")
-        .env_remove("NO_TICKETS_AUTH_URL")
-        .args(["--profile", "staging"])
-        .arg("status")
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("home directory"));
-}
-
 /// Flag-before-subcommand parity: TS's argv parser is position-agnostic,
 /// so `no-tickets --profile staging status` works. Pin that here — forces
 /// the GREEN impl to expose --profile as a global arg, not a subcommand

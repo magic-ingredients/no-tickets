@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::env::Env;
-use crate::home;
+use crate::paths;
 
 pub const DEFAULT_API: &str = "https://api.no-tickets.com";
 pub const DEFAULT_AUTH: &str = "https://app.no-tickets.com/api/auth/cli";
@@ -153,7 +153,7 @@ pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls
 }
 
 fn load_profile(name: &str, env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
-    let path = home::config_path(env).ok_or(UrlError::HomeUnresolvable)?;
+    let path = paths::config_path(env).ok_or(UrlError::HomeUnresolvable)?;
 
     if !path.exists() {
         return Err(UrlError::ProfileFileMissing {

@@ -12,6 +12,8 @@
 
 use std::path::PathBuf;
 
+use directories::ProjectDirs;
+
 use crate::env::Env;
 
 /// Returns the directory in which `credentials` and `config.json` live.
@@ -20,9 +22,12 @@ use crate::env::Env;
 /// 1. `NO_TICKETS_HOME=<dir>` (non-empty) → `<dir>/.notickets`
 /// 2. Platform-native via `directories` crate
 /// 3. `None` if neither resolves
-pub fn config_dir(_env: &dyn Env) -> Option<PathBuf> {
-    // RED phase stub — replaced in GREEN.
-    None
+pub fn config_dir(env: &dyn Env) -> Option<PathBuf> {
+    if let Some(override_home) = env.var("NO_TICKETS_HOME").filter(|s| !s.is_empty()) {
+        return Some(PathBuf::from(override_home).join(".notickets"));
+    }
+    ProjectDirs::from("com", "magic-ingredients", "no-tickets")
+        .map(|d| d.config_dir().to_path_buf())
 }
 
 /// Path to the session credentials file inside [`config_dir`].

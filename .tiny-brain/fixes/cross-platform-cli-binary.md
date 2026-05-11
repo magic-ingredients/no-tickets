@@ -538,7 +538,8 @@ README + docs covering:
 - `docs/migration-from-ts-cli.md` (new)
 
 ### 14. Publish spike — single event to staging end-to-end
-status: not_started
+status: completed
+commitSha: 4844b43
 
 Third toolchain-validation spike, matching the discipline of Tasks 1
 and 2. Validates the **last untested major toolchain piece**: HTTPS

@@ -17,13 +17,6 @@ use crate::env::SystemEnv;
     about = "no-tickets — ticketless project management for AI teams"
 )]
 struct Cli {
-    /// Profile name from the `profiles` block of `config.json` in the
-    /// resolved config directory (platform-native, or `$NO_TICKETS_HOME/.notickets`).
-    /// Alternative to NO_TICKETS_API_URL / NO_TICKETS_AUTH_URL env vars.
-    /// Global: works both before and after the subcommand.
-    #[arg(long, global = true)]
-    profile: Option<String>,
-
     #[command(subcommand)]
     command: Commands,
 }
@@ -54,7 +47,7 @@ async fn main() {
     let cli = Cli::parse();
     let env = SystemEnv;
     let exit = match cli.command {
-        Commands::Status => commands::status::run(cli.profile.as_deref(), &env),
+        Commands::Status => commands::status::run(&env),
         Commands::Publish {
             r#type,
             data,
@@ -65,7 +58,6 @@ async fn main() {
                     type_id: &r#type,
                     data: &data,
                     project: &project,
-                    profile: cli.profile.as_deref(),
                 },
                 &env,
             )

@@ -20,7 +20,6 @@ pub struct PublishArgs<'a> {
     /// dispatch-only; doesn't short-circuit with its own exit calls).
     pub data: &'a str,
     pub project: &'a str,
-    pub profile: Option<&'a str>,
 }
 
 /// Serialised event envelope. Field declaration order is preserved by
@@ -129,9 +128,9 @@ fn build_envelope<'a>(
 }
 
 pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
-    // URL resolution first (matches handleStatus pattern). A profile
-    // error or partial-pair env-var setup wins over auth missing.
-    let urls = match resolve_urls(env, args.profile) {
+    // URL resolution first (matches handleStatus pattern). A partial-pair
+    // env-var setup or unknown-preset error wins over auth missing.
+    let urls = match resolve_urls(env) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("{}", e.user_message());

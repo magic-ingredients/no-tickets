@@ -22,11 +22,12 @@ fn nt() -> Command {
 }
 
 /// Isolate the binary from any host environment that could leak into auth /
-/// URL resolution. Sets NO_TICKETS_HOME to the tempdir; clears the four env
-/// vars the binary reads.
+/// URL resolution. Sets NO_TICKETS_HOME to the tempdir; clears the env vars
+/// the binary reads.
 fn isolate<'a>(cmd: &'a mut Command, home: &Path) -> &'a mut Command {
     cmd.env("NO_TICKETS_HOME", home)
         .env_remove("NO_TICKETS_TOKEN")
+        .env_remove("NO_TICKETS_ENV")
         .env_remove("NO_TICKETS_API_URL")
         .env_remove("NO_TICKETS_AUTH_URL")
 }
@@ -35,12 +36,6 @@ fn write_credentials(home: &Path, body: &str) {
     let dir = home.join(".notickets");
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("credentials"), body).unwrap();
-}
-
-fn write_config(home: &Path, body: &str) {
-    let dir = home.join(".notickets");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("config.json"), body).unwrap();
 }
 
 fn run_status_stdout(cmd: &mut Command) -> String {
@@ -303,10 +298,10 @@ fn status_no_tickets_home_overrides_host_home() {
         .stderr(predicate::str::contains(NOT_AUTH_MSG));
 }
 
-// ─── URL resolution: defaults / env-vars / pair validation / --profile ─────
+// ─── URL resolution: defaults / NO_TICKETS_ENV preset / explicit pair ──────
 
 #[test]
-fn status_emits_default_urls_when_no_env_no_profile() {
+fn status_emits_default_urls_when_no_env_set() {
     let temp = tempfile::tempdir().unwrap();
     isolate(&mut nt(), temp.path())
         .env("NO_TICKETS_TOKEN", "nt_push_abc")
@@ -435,187 +430,73 @@ fn status_rejects_partial_env_url_pair_auth_only() {
         .stderr(predicate::str::contains("Set both"));
 }
 
+// ─── URL resolution: NO_TICKETS_ENV preset (ADR-0002 layer 2) ───────────────
+
 #[test]
-fn status_profile_flag_loads_from_config_file() {
+fn status_emits_staging_urls_when_no_tickets_env_is_staging() {
     let temp = tempfile::tempdir().unwrap();
-    write_config(
-        temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://staging-api.example","authUrl":"https://staging-auth.example"}}}"#,
-    );
     isolate(&mut nt(), temp.path())
         .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env("NO_TICKETS_ENV", "staging")
         .arg("status")
-        .args(["--profile", "staging"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            r#""apiUrl":"https://staging-api.example""#,
+            r#""apiUrl":"https://api-staging.no-tickets.com""#,
         ))
         .stdout(predicate::str::contains(
-            r#""authUrl":"https://staging-auth.example""#,
+            r#""authUrl":"https://app-staging.no-tickets.com/api/auth/cli""#,
         ));
 }
 
-/// clap should accept the `--profile=value` form as well as `--profile value`.
 #[test]
-fn status_profile_flag_accepts_equals_syntax() {
+fn status_emits_local_urls_when_no_tickets_env_is_local() {
     let temp = tempfile::tempdir().unwrap();
-    write_config(
-        temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://eq-api.example","authUrl":"https://eq-auth.example"}}}"#,
-    );
     isolate(&mut nt(), temp.path())
         .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env("NO_TICKETS_ENV", "local")
         .arg("status")
-        .arg("--profile=staging")
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            r#""apiUrl":"https://eq-api.example""#,
-        ));
-}
-
-/// Unknown profile when others ARE configured — TS message:
-/// `profile "X" not found in {path}. Available: y, z.`
-///
-/// Uses a profile declaration order (`staging`, `prod`, `dev`) that
-/// differs from alphabetical order (`dev`, `prod`, `staging`). The
-/// "Available" hint MUST reflect the on-disk insertion order. This
-/// pins the IndexMap choice — a regression to BTreeMap would emit
-/// alphabetical order and fail this assertion.
-#[test]
-fn status_profile_unknown_name_with_available_hint_preserves_insertion_order() {
-    let temp = tempfile::tempdir().unwrap();
-    write_config(
-        temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://s","authUrl":"https://s"},"prod":{"apiUrl":"https://p","authUrl":"https://p"},"dev":{"apiUrl":"https://d","authUrl":"https://d"}}}"#,
-    );
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .arg("status")
-        .args(["--profile", "nonexistent"])
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("nonexistent"))
-        .stderr(predicate::str::contains(
-            "Available: staging, prod, dev",
-        ));
-}
-
-/// Missing config.json — TS message:
-/// `profile "X" not found: {path} does not exist.` + "Create it with:" hint
-#[test]
-fn status_profile_missing_config_file_says_does_not_exist() {
-    let temp = tempfile::tempdir().unwrap();
-    // No config.json written.
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .arg("status")
-        .args(["--profile", "staging"])
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("staging"))
-        .stderr(predicate::str::contains("config.json"))
-        .stderr(predicate::str::contains("does not exist"));
-}
-
-/// Config file exists but lacks a `profiles` key — TS message:
-/// `profile "X" not found in {path}.` (no Available hint, distinguishing this
-/// path from the unknown-when-others-exist case)
-#[test]
-fn status_profile_config_without_profiles_key_no_available_hint() {
-    let temp = tempfile::tempdir().unwrap();
-    write_config(temp.path(), r#"{"something_else":true}"#);
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .arg("status")
-        .args(["--profile", "staging"])
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("staging"))
-        .stderr(predicate::str::contains("not found"))
-        .stderr(predicate::str::contains("config.json"))
-        .stderr(predicate::str::contains("Available").not());
-}
-
-#[test]
-fn status_profile_config_malformed_json_errors() {
-    let temp = tempfile::tempdir().unwrap();
-    write_config(temp.path(), "{ not json");
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .arg("status")
-        .args(["--profile", "staging"])
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("invalid JSON"));
-}
-
-/// Non-http(s) URL inside a profile — TS message:
-/// `profile "X" in {path} is invalid: apiUrl and authUrl must be http(s) URL strings.`
-#[test]
-fn status_profile_non_http_url_errors() {
-    let temp = tempfile::tempdir().unwrap();
-    write_config(
-        temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"ftp://nope","authUrl":"https://ok"}}}"#,
-    );
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .arg("status")
-        .args(["--profile", "staging"])
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("staging"))
-        .stderr(predicate::str::contains("invalid"))
-        .stderr(predicate::str::contains("apiUrl"));
-}
-
-/// Pins the strict-URL validator: `https://` with an empty host is
-/// rejected (TS's `new URL("https://")` throws; a naive `starts_with`
-/// check would accept it). Forces the GREEN impl to do real URL parsing.
-#[test]
-fn status_profile_https_without_host_is_invalid() {
-    let temp = tempfile::tempdir().unwrap();
-    write_config(
-        temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://","authUrl":"https://ok"}}}"#,
-    );
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .arg("status")
-        .args(["--profile", "staging"])
-        .assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("invalid"))
-        .stderr(predicate::str::contains("apiUrl"));
-}
-
-/// Flag-before-subcommand parity: TS's argv parser is position-agnostic,
-/// so `no-tickets --profile staging status` works. Pin that here — forces
-/// the GREEN impl to expose --profile as a global arg, not a subcommand
-/// arg.
-#[test]
-fn status_profile_flag_works_before_subcommand() {
-    let temp = tempfile::tempdir().unwrap();
-    write_config(
-        temp.path(),
-        r#"{"profiles":{"staging":{"apiUrl":"https://before-api.example","authUrl":"https://before-auth.example"}}}"#,
-    );
-    isolate(&mut nt(), temp.path())
-        .env("NO_TICKETS_TOKEN", "nt_push_abc")
-        .args(["--profile", "staging", "status"])
-        .assert()
-        .success()
+            r#""apiUrl":"http://localhost:5002""#,
+        ))
         .stdout(predicate::str::contains(
-            r#""apiUrl":"https://before-api.example""#,
+            r#""authUrl":"http://localhost:5001/api/auth/cli""#,
         ));
+}
+
+#[test]
+fn status_rejects_unknown_no_tickets_env_value() {
+    let temp = tempfile::tempdir().unwrap();
+    isolate(&mut nt(), temp.path())
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env("NO_TICKETS_ENV", "qa")
+        .arg("status")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("NO_TICKETS_ENV=qa"))
+        .stderr(predicate::str::contains("staging"))
+        .stderr(predicate::str::contains("local"))
+        .stderr(predicate::str::contains("prod"));
+}
+
+#[test]
+fn status_rejects_no_tickets_env_and_explicit_pair_both_set() {
+    let temp = tempfile::tempdir().unwrap();
+    isolate(&mut nt(), temp.path())
+        .env("NO_TICKETS_TOKEN", "nt_push_abc")
+        .env("NO_TICKETS_ENV", "staging")
+        .env("NO_TICKETS_API_URL", "https://x-api.example")
+        .env("NO_TICKETS_AUTH_URL", "https://x-auth.example")
+        .arg("status")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("NO_TICKETS_ENV=staging"))
+        .stderr(predicate::str::contains("NO_TICKETS_API_URL"))
+        .stderr(predicate::str::contains("not both"));
 }
 
 // ─── Broken-pipe: stdout closed by consumer exits 0, not 1 ──────────────────

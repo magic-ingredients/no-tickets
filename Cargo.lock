@@ -1114,7 +1114,6 @@ dependencies = [
  "assert_cmd",
  "clap",
  "directories",
- "indexmap",
  "predicates",
  "reqwest",
  "serde",

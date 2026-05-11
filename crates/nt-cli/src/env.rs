@@ -7,9 +7,9 @@
 //! mutation (and runs in parallel without env races).
 //!
 //! Scope: env-var reads only. Filesystem reads (credentials file,
-//! config.json profile loader) stay direct — the OS is the OS — and
-//! tests sandbox those via `NO_TICKETS_HOME`, which is itself an env
-//! var routed through this trait.
+//! config.json) stay direct — the OS is the OS — and tests sandbox
+//! those via `NO_TICKETS_HOME`, which is itself an env var routed
+//! through this trait.
 
 pub trait Env {
     fn var(&self, key: &str) -> Option<String>;

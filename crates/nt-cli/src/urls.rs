@@ -1,13 +1,12 @@
-//! URL resolution: --profile > env vars > defaults.
-//! Mirrors `src/sdk/url-resolver.ts::resolveUrls`.
-
-use indexmap::IndexMap;
-use serde::Deserialize;
-use std::fs;
-use std::path::PathBuf;
+//! URL resolution per ADR-0002 (three layers):
+//!
+//! 1. **Default** — production URLs (`api.no-tickets.com` + `app.no-tickets.com/api/auth/cli`).
+//! 2. **Preset** — `NO_TICKETS_ENV=staging|local|prod` picks from a closed table. Unknown values error.
+//! 3. **Explicit pair** — `NO_TICKETS_API_URL` + `NO_TICKETS_AUTH_URL` (both required) — the escape hatch.
+//!
+//! Layers 2 and 3 are mutually exclusive: setting both errors with `EnvAndPairBothSet`.
 
 use crate::env::Env;
-use crate::paths;
 
 pub const DEFAULT_API: &str = "https://api.no-tickets.com";
 pub const DEFAULT_AUTH: &str = "https://app.no-tickets.com/api/auth/cli";
@@ -31,28 +30,6 @@ pub enum UrlError {
         value: String,
         missing: &'static str,
     },
-    HomeUnresolvable,
-    ProfileFileMissing {
-        name: String,
-        path: PathBuf,
-    },
-    ProfileFileUnreadable {
-        path: PathBuf,
-        message: String,
-    },
-    ProfileFileInvalidJson {
-        path: PathBuf,
-        message: String,
-    },
-    ProfileNotFound {
-        name: String,
-        path: PathBuf,
-        available: Vec<String>,
-    },
-    ProfileInvalidUrls {
-        name: String,
-        path: PathBuf,
-    },
     UnknownEnv {
         value: String,
     },
@@ -72,38 +49,6 @@ impl UrlError {
                      Set both (or neither) so the API and auth flow agree on which environment to use.",
                 )
             }
-            UrlError::HomeUnresolvable => {
-                "Could not resolve a config directory. Set NO_TICKETS_HOME=<dir> to override the platform-native location.".to_string()
-            }
-            UrlError::ProfileFileMissing { name, path } => format!(
-                "profile \"{name}\" not found: {path} does not exist.\n\
-                 Create it with:\n  \
-                 {{ \"profiles\": {{ \"{name}\": {{ \"apiUrl\": \"https://…\", \"authUrl\": \"https://…\" }} }} }}",
-                path = path.display(),
-            ),
-            UrlError::ProfileFileUnreadable { path, message } => format!(
-                "{path} could not be read: {message}",
-                path = path.display(),
-            ),
-            UrlError::ProfileFileInvalidJson { path, message } => format!(
-                "{path} contains invalid JSON: {message}",
-                path = path.display(),
-            ),
-            UrlError::ProfileNotFound { name, path, available } => {
-                let hint = if available.is_empty() {
-                    String::new()
-                } else {
-                    format!(" Available: {}.", available.join(", "))
-                };
-                format!(
-                    "profile \"{name}\" not found in {path}.{hint}",
-                    path = path.display(),
-                )
-            }
-            UrlError::ProfileInvalidUrls { name, path } => format!(
-                "profile \"{name}\" in {path} is invalid: apiUrl and authUrl must be http(s) URL strings.",
-                path = path.display(),
-            ),
             UrlError::UnknownEnv { value } => format!(
                 "NO_TICKETS_ENV={value} is not a known preset. Known: staging, local, prod.",
             ),
@@ -115,28 +60,7 @@ impl UrlError {
     }
 }
 
-/// IndexMap preserves insertion order from the on-disk JSON — required so
-/// the "Available: a, b, c" hint matches the TS `Object.keys()` order, not
-/// alphabetical.
-#[derive(Deserialize)]
-struct ConfigFile {
-    #[serde(default)]
-    profiles: Option<IndexMap<String, ProfileConfig>>,
-}
-
-#[derive(Deserialize)]
-struct ProfileConfig {
-    #[serde(rename = "apiUrl")]
-    api_url: String,
-    #[serde(rename = "authUrl")]
-    auth_url: String,
-}
-
-pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls, UrlError> {
-    if let Some(name) = profile {
-        return load_profile(name, env);
-    }
-
+pub fn resolve_urls(env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
     let env_api = env.var("NO_TICKETS_API_URL").unwrap_or_default();
     let env_auth = env.var("NO_TICKETS_AUTH_URL").unwrap_or_default();
     let api_trim = env_api.trim();
@@ -153,85 +77,41 @@ pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls
         return Err(UrlError::PartialPair { which, value, missing });
     }
 
-    // By here, api_set == auth_set: the partial-pair branch above
-    // returned early if they disagreed. So either both are set (use
-    // env-supplied URLs) or both are unset (fall through to defaults).
-    // Single-operand check rather than `api_set && auth_set` — the
-    // `&&` form was a mutation-equivalent redundancy.
+    // Both set or both unset by here. Read the env-preset knob so we can
+    // enforce mutual exclusion before falling through to layer 1/2.
+    let preset = env
+        .var("NO_TICKETS_ENV")
+        .filter(|s| !s.trim().is_empty());
+
     if api_set {
+        if let Some(env_value) = preset {
+            return Err(UrlError::EnvAndPairBothSet { env_value });
+        }
+        // Layer 3 — explicit pair wins.
         return Ok(ResolvedUrls {
             api_url: api_trim.to_string(),
             auth_url: auth_trim.to_string(),
         });
     }
 
-    Ok(ResolvedUrls {
-        api_url: DEFAULT_API.to_string(),
-        auth_url: DEFAULT_AUTH.to_string(),
-    })
-}
-
-fn load_profile(name: &str, env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
-    let path = paths::config_dir(env).ok_or(UrlError::HomeUnresolvable)?.join(paths::CONFIG_FILE);
-
-    if !path.exists() {
-        return Err(UrlError::ProfileFileMissing {
-            name: name.to_string(),
-            path,
-        });
+    // Layer 2 — preset table. Unset/empty preset falls through to layer 1.
+    match preset.as_deref() {
+        Some("staging") => Ok(ResolvedUrls {
+            api_url: STAGING_API.to_string(),
+            auth_url: STAGING_AUTH.to_string(),
+        }),
+        Some("local") => Ok(ResolvedUrls {
+            api_url: LOCAL_API.to_string(),
+            auth_url: LOCAL_AUTH.to_string(),
+        }),
+        Some("prod") | None => Ok(ResolvedUrls {
+            api_url: DEFAULT_API.to_string(),
+            auth_url: DEFAULT_AUTH.to_string(),
+        }),
+        Some(unknown) => Err(UrlError::UnknownEnv {
+            value: unknown.to_string(),
+        }),
     }
-
-    let raw = fs::read_to_string(&path).map_err(|e| UrlError::ProfileFileUnreadable {
-        path: path.clone(),
-        message: e.to_string(),
-    })?;
-
-    let parsed: ConfigFile =
-        serde_json::from_str(&raw).map_err(|e| UrlError::ProfileFileInvalidJson {
-            path: path.clone(),
-            message: e.to_string(),
-        })?;
-
-    let profiles = parsed.profiles.unwrap_or_default();
-    let profile = match profiles.get(name) {
-        Some(p) => p,
-        None => {
-            let available: Vec<String> = profiles.keys().cloned().collect();
-            return Err(UrlError::ProfileNotFound {
-                name: name.to_string(),
-                path,
-                available,
-            });
-        }
-    };
-
-    if !is_http_url(&profile.api_url) || !is_http_url(&profile.auth_url) {
-        return Err(UrlError::ProfileInvalidUrls {
-            name: name.to_string(),
-            path,
-        });
-    }
-
-    Ok(ResolvedUrls {
-        api_url: profile.api_url.clone(),
-        auth_url: profile.auth_url.clone(),
-    })
-}
-
-/// Matches TS `new URL(s)` then `protocol === 'http:' || protocol === 'https:'`.
-/// Stricter than a `starts_with` prefix check: rejects malformed URLs that
-/// happen to begin with the scheme (e.g. `https://`, `http:// nope`,
-/// embedded newlines).
-fn is_http_url(s: &str) -> bool {
-    let Ok(parsed) = url::Url::parse(s) else {
-        return false;
-    };
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return false;
-    }
-    // `new URL("https://")` throws in JS; `url::Url::parse("https://")`
-    // accepts it with empty host. Require a non-empty host for parity.
-    parsed.host_str().is_some_and(|h| !h.is_empty())
 }
 
 #[cfg(test)]
@@ -251,7 +131,7 @@ mod tests {
             ("NO_TICKETS_API_URL", SENTINEL_API),
             ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
         ]);
-        let resolved = resolve_urls(&env, None).expect("resolves");
+        let resolved = resolve_urls(&env).expect("resolves");
         assert_eq!(resolved.api_url, SENTINEL_API);
         assert_eq!(resolved.auth_url, SENTINEL_AUTH);
     }
@@ -259,7 +139,7 @@ mod tests {
     #[test]
     fn resolve_urls_returns_defaults_when_injected_env_empty() {
         let env = HashMapEnv::empty();
-        let resolved = resolve_urls(&env, None).expect("resolves");
+        let resolved = resolve_urls(&env).expect("resolves");
         assert_eq!(resolved.api_url, DEFAULT_API);
         assert_eq!(resolved.auth_url, DEFAULT_AUTH);
     }
@@ -267,7 +147,7 @@ mod tests {
     #[test]
     fn resolve_urls_partial_pair_only_api_set_returns_error() {
         let env = HashMapEnv::with(&[("NO_TICKETS_API_URL", SENTINEL_API)]);
-        let err = resolve_urls(&env, None).expect_err("partial pair errors");
+        let err = resolve_urls(&env).expect_err("partial pair errors");
         assert!(matches!(
             err,
             UrlError::PartialPair {
@@ -281,7 +161,7 @@ mod tests {
     #[test]
     fn resolve_urls_partial_pair_only_auth_set_returns_error() {
         let env = HashMapEnv::with(&[("NO_TICKETS_AUTH_URL", SENTINEL_AUTH)]);
-        let err = resolve_urls(&env, None).expect_err("partial pair errors");
+        let err = resolve_urls(&env).expect_err("partial pair errors");
         assert!(matches!(
             err,
             UrlError::PartialPair {
@@ -292,25 +172,12 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn home_unresolvable_user_message_points_at_no_tickets_home_override() {
-        // The `HomeUnresolvable` branch fires only when `ProjectDirs::from`
-        // returns None — unreachable on Unix/macOS hosts that have a passwd
-        // entry, which is why the previous integration test that exercised
-        // it via env-unset was deleted. This unit test pins the message
-        // text so the fixed-string mentions only the documented override.
-        let msg = UrlError::HomeUnresolvable.user_message();
-        assert!(msg.contains("NO_TICKETS_HOME"), "got: {msg}");
-        assert!(!msg.contains("HOME, or USERPROFILE"), "stale advice leaked: {msg}");
-        assert!(!msg.contains("USERPROFILE"), "stale advice leaked: {msg}");
-    }
-
     // ─── Three-layer resolution (ADR-0002) ───────────────────────────────
 
     #[test]
     fn resolve_urls_no_env_no_pair_returns_default_prod_urls() {
         let env = HashMapEnv::empty();
-        let resolved = resolve_urls(&env, None).expect("layer 1 — defaults");
+        let resolved = resolve_urls(&env).expect("layer 1 — defaults");
         assert_eq!(resolved.api_url, DEFAULT_API);
         assert_eq!(resolved.auth_url, DEFAULT_AUTH);
     }
@@ -318,7 +185,7 @@ mod tests {
     #[test]
     fn resolve_urls_env_preset_staging_returns_staging_urls() {
         let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "staging")]);
-        let resolved = resolve_urls(&env, None).expect("layer 2 — staging preset");
+        let resolved = resolve_urls(&env).expect("layer 2 — staging preset");
         assert_eq!(resolved.api_url, STAGING_API);
         assert_eq!(resolved.auth_url, STAGING_AUTH);
     }
@@ -326,7 +193,7 @@ mod tests {
     #[test]
     fn resolve_urls_env_preset_local_returns_local_urls() {
         let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "local")]);
-        let resolved = resolve_urls(&env, None).expect("layer 2 — local preset");
+        let resolved = resolve_urls(&env).expect("layer 2 — local preset");
         assert_eq!(resolved.api_url, LOCAL_API);
         assert_eq!(resolved.auth_url, LOCAL_AUTH);
     }
@@ -334,7 +201,7 @@ mod tests {
     #[test]
     fn resolve_urls_env_preset_prod_returns_default_prod_urls() {
         let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "prod")]);
-        let resolved = resolve_urls(&env, None).expect("layer 2 — explicit prod preset");
+        let resolved = resolve_urls(&env).expect("layer 2 — explicit prod preset");
         assert_eq!(resolved.api_url, DEFAULT_API);
         assert_eq!(resolved.auth_url, DEFAULT_AUTH);
     }
@@ -342,7 +209,7 @@ mod tests {
     #[test]
     fn resolve_urls_unknown_env_preset_returns_unknown_env_error() {
         let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "bogus")]);
-        let err = resolve_urls(&env, None).expect_err("unknown preset errors");
+        let err = resolve_urls(&env).expect_err("unknown preset errors");
         assert!(
             matches!(&err, UrlError::UnknownEnv { value } if value == "bogus"),
             "expected UnknownEnv {{ value: \"bogus\" }}; got {err:?}",
@@ -356,7 +223,7 @@ mod tests {
             ("NO_TICKETS_API_URL", SENTINEL_API),
             ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
         ]);
-        let err = resolve_urls(&env, None).expect_err("env + pair both set errors");
+        let err = resolve_urls(&env).expect_err("env + pair both set errors");
         assert!(
             matches!(&err, UrlError::EnvAndPairBothSet { env_value } if env_value == "staging"),
             "expected EnvAndPairBothSet {{ env_value: \"staging\" }}; got {err:?}",
@@ -371,9 +238,19 @@ mod tests {
             ("NO_TICKETS_API_URL", SENTINEL_API),
             ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
         ]);
-        let resolved = resolve_urls(&env, None).expect("layer 3 — explicit pair");
+        let resolved = resolve_urls(&env).expect("layer 3 — explicit pair");
         assert_eq!(resolved.api_url, SENTINEL_API);
         assert_eq!(resolved.auth_url, SENTINEL_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_whitespace_only_env_preset_falls_through_to_defaults() {
+        // Whitespace-only NO_TICKETS_ENV must behave like unset, not like
+        // an unknown preset. Filter happens before the match.
+        let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "   ")]);
+        let resolved = resolve_urls(&env).expect("whitespace-only treated as unset");
+        assert_eq!(resolved.api_url, DEFAULT_API);
+        assert_eq!(resolved.auth_url, DEFAULT_AUTH);
     }
 
     #[test]
@@ -403,7 +280,7 @@ mod tests {
             ("NO_TICKETS_API_URL", "   "),
             ("NO_TICKETS_AUTH_URL", "\t\n"),
         ]);
-        let resolved = resolve_urls(&env, None).expect("falls back to defaults");
+        let resolved = resolve_urls(&env).expect("falls back to defaults");
         assert_eq!(resolved.api_url, DEFAULT_API);
         assert_eq!(resolved.auth_url, DEFAULT_AUTH);
     }

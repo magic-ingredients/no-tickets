@@ -50,12 +50,12 @@ fn build_authenticated_output(auth: &ResolvedAuth, urls: ResolvedUrls) -> Status
     }
 }
 
-pub fn run(profile: Option<&str>, env: &dyn Env) -> i32 {
+pub fn run(env: &dyn Env) -> i32 {
     // URL resolution runs before auth resolution — matches TS handleStatus,
     // where urlsForFlagsOrFail returns before describeAuthStatus is called.
-    // This is what makes the profile-error tests work even when
+    // This is what makes URL-error scenarios surface even when
     // NO_TICKETS_TOKEN is set (URL error wins).
-    let urls = match resolve_urls(env, profile) {
+    let urls = match resolve_urls(env) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("{}", e.user_message());

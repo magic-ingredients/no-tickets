@@ -12,6 +12,12 @@ use crate::paths;
 pub const DEFAULT_API: &str = "https://api.no-tickets.com";
 pub const DEFAULT_AUTH: &str = "https://app.no-tickets.com/api/auth/cli";
 
+pub const STAGING_API: &str = "https://api-staging.no-tickets.com";
+pub const STAGING_AUTH: &str = "https://app-staging.no-tickets.com/api/auth/cli";
+
+pub const LOCAL_API: &str = "http://localhost:5002";
+pub const LOCAL_AUTH: &str = "http://localhost:5001/api/auth/cli";
+
 #[derive(Debug)]
 pub struct ResolvedUrls {
     pub api_url: String,
@@ -46,6 +52,12 @@ pub enum UrlError {
     ProfileInvalidUrls {
         name: String,
         path: PathBuf,
+    },
+    UnknownEnv {
+        value: String,
+    },
+    EnvAndPairBothSet {
+        env_value: String,
     },
 }
 
@@ -91,6 +103,13 @@ impl UrlError {
             UrlError::ProfileInvalidUrls { name, path } => format!(
                 "profile \"{name}\" in {path} is invalid: apiUrl and authUrl must be http(s) URL strings.",
                 path = path.display(),
+            ),
+            UrlError::UnknownEnv { value } => format!(
+                "NO_TICKETS_ENV={value} is not a known preset. Known: staging, local, prod.",
+            ),
+            UrlError::EnvAndPairBothSet { env_value } => format!(
+                "NO_TICKETS_ENV={env_value} is set together with NO_TICKETS_API_URL/NO_TICKETS_AUTH_URL. \
+                 Set NO_TICKETS_ENV (preset) OR both URL vars (escape hatch), not both.",
             ),
         }
     }
@@ -284,6 +303,94 @@ mod tests {
         assert!(msg.contains("NO_TICKETS_HOME"), "got: {msg}");
         assert!(!msg.contains("HOME, or USERPROFILE"), "stale advice leaked: {msg}");
         assert!(!msg.contains("USERPROFILE"), "stale advice leaked: {msg}");
+    }
+
+    // ─── Three-layer resolution (ADR-0002) ───────────────────────────────
+
+    #[test]
+    fn resolve_urls_no_env_no_pair_returns_default_prod_urls() {
+        let env = HashMapEnv::empty();
+        let resolved = resolve_urls(&env, None).expect("layer 1 — defaults");
+        assert_eq!(resolved.api_url, DEFAULT_API);
+        assert_eq!(resolved.auth_url, DEFAULT_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_env_preset_staging_returns_staging_urls() {
+        let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "staging")]);
+        let resolved = resolve_urls(&env, None).expect("layer 2 — staging preset");
+        assert_eq!(resolved.api_url, STAGING_API);
+        assert_eq!(resolved.auth_url, STAGING_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_env_preset_local_returns_local_urls() {
+        let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "local")]);
+        let resolved = resolve_urls(&env, None).expect("layer 2 — local preset");
+        assert_eq!(resolved.api_url, LOCAL_API);
+        assert_eq!(resolved.auth_url, LOCAL_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_env_preset_prod_returns_default_prod_urls() {
+        let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "prod")]);
+        let resolved = resolve_urls(&env, None).expect("layer 2 — explicit prod preset");
+        assert_eq!(resolved.api_url, DEFAULT_API);
+        assert_eq!(resolved.auth_url, DEFAULT_AUTH);
+    }
+
+    #[test]
+    fn resolve_urls_unknown_env_preset_returns_unknown_env_error() {
+        let env = HashMapEnv::with(&[("NO_TICKETS_ENV", "bogus")]);
+        let err = resolve_urls(&env, None).expect_err("unknown preset errors");
+        assert!(
+            matches!(&err, UrlError::UnknownEnv { value } if value == "bogus"),
+            "expected UnknownEnv {{ value: \"bogus\" }}; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn resolve_urls_env_and_explicit_pair_both_set_returns_mutual_exclusion_error() {
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_ENV", "staging"),
+            ("NO_TICKETS_API_URL", SENTINEL_API),
+            ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
+        ]);
+        let err = resolve_urls(&env, None).expect_err("env + pair both set errors");
+        assert!(
+            matches!(&err, UrlError::EnvAndPairBothSet { env_value } if env_value == "staging"),
+            "expected EnvAndPairBothSet {{ env_value: \"staging\" }}; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn resolve_urls_explicit_pair_wins_over_env_preset_when_only_pair_set() {
+        // Layer 3 (explicit pair, both set) takes precedence when
+        // NO_TICKETS_ENV is unset. The pair is the documented escape hatch.
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_API_URL", SENTINEL_API),
+            ("NO_TICKETS_AUTH_URL", SENTINEL_AUTH),
+        ]);
+        let resolved = resolve_urls(&env, None).expect("layer 3 — explicit pair");
+        assert_eq!(resolved.api_url, SENTINEL_API);
+        assert_eq!(resolved.auth_url, SENTINEL_AUTH);
+    }
+
+    #[test]
+    fn unknown_env_user_message_lists_known_presets() {
+        let msg = UrlError::UnknownEnv { value: "qa".into() }.user_message();
+        assert!(msg.contains("NO_TICKETS_ENV=qa"), "got: {msg}");
+        assert!(msg.contains("staging"), "got: {msg}");
+        assert!(msg.contains("local"), "got: {msg}");
+        assert!(msg.contains("prod"), "got: {msg}");
+    }
+
+    #[test]
+    fn env_and_pair_both_set_user_message_names_the_collision() {
+        let msg = UrlError::EnvAndPairBothSet { env_value: "staging".into() }.user_message();
+        assert!(msg.contains("NO_TICKETS_ENV=staging"), "got: {msg}");
+        assert!(msg.contains("NO_TICKETS_API_URL"), "got: {msg}");
+        assert!(msg.contains("not both"), "got: {msg}");
     }
 
     #[test]

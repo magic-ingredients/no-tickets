@@ -11,7 +11,7 @@
 
 use serde_json::{Value, json};
 
-use nt_schemas::{BUNDLE_VERSION, ValidationIssue, known_type_ids, validate};
+use nt_schemas::{ValidationIssue, bundle_version, known_type_ids, validate};
 
 // ─── Bundle integrity ──────────────────────────────────────────────────────
 
@@ -45,8 +45,9 @@ fn bundle_contains_every_expected_type_id() {
 #[test]
 fn bundle_version_matches_upstream_schemas_package() {
     assert_eq!(
-        BUNDLE_VERSION, "0.2.0",
-        "BUNDLE_VERSION must mirror the @magic-ingredients/no-tickets-schemas version embedded at generation time",
+        bundle_version(),
+        "0.2.0",
+        "bundle_version() must mirror the @magic-ingredients/no-tickets-schemas version embedded at generation time",
     );
 }
 
@@ -90,12 +91,13 @@ fn valid_ai_task_completed_returns_empty_issues() {
 
 #[test]
 fn valid_product_feature_created_returns_empty_issues() {
+    // Per the bundled schema: required = [featureId, projectId, title, status].
+    // Optional: parentId, assignee, assigneeType. additionalProperties: false.
     let payload = json!({
         "featureId": "f-1",
-        "epicId": "e-1",
+        "projectId": "p-1",
         "title": "X",
-        "createdBy": "u-1",
-        "createdAt": "2026-05-01T00:00:00.000Z",
+        "status": "ideation",
     });
     let issues = validate("product.feature.created.v1", &payload);
     assert_eq!(
@@ -107,12 +109,13 @@ fn valid_product_feature_created_returns_empty_issues() {
 
 #[test]
 fn valid_product_task_status_changed_returns_empty_issues() {
+    // Per the bundled schema: required = [taskId, fromStatus, toStatus].
+    // (TS Zod uses fromStatus/toStatus, not from/to. Both reuse
+    // productStatusSchema's enum: ideation/development/testing/review/done.)
     let payload = json!({
         "taskId": "t-1",
-        "from": "todo",
-        "to": "in_progress",
-        "changedBy": "u-1",
-        "changedAt": "2026-05-01T00:00:00.000Z",
+        "fromStatus": "ideation",
+        "toStatus": "development",
     });
     let issues = validate("product.task.status_changed.v1", &payload);
     assert_eq!(

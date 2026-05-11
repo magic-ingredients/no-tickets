@@ -1,10 +1,29 @@
 ---
 id: nt-cli-thin-edge-refactor
 title: "Align nt-cli with thin-edge / stateless-core / DI-friendly principles"
-status: in_progress
+status: completed
 severity: medium
 reported: 2026-05-11T00:00:00.000Z
-resolved: null
+resolved: 2026-05-11T00:00:00.000Z
+resolution:
+  rootCause: "Spike rush in Tasks 1/2/14 of cross-platform-cli-binary left commands::*::run thick with inline envelope/status construction, concrete reqwest::Client, and direct std::env::var reads — making error-mapping and resolution branches untestable without subprocess + wiremock."
+  fix:
+    - "Extracted pure build_envelope + build_authenticated_output builders from run()."
+    - "Extracted pure write_result_to_exit_code from status::run for stdout-error classification."
+    - "Introduced HttpClient trait + impl for Client; extracted publish_event<C: HttpClient> testable core."
+    - "Introduced Env trait + SystemEnv (prod) + HashMapEnv (test); routed auth/urls/credentials/home env reads through env.var()."
+  filesModified:
+    - "crates/nt-cli/src/main.rs"
+    - "crates/nt-cli/src/env.rs"
+    - "crates/nt-cli/src/transport.rs"
+    - "crates/nt-cli/src/home.rs"
+    - "crates/nt-cli/src/credentials.rs"
+    - "crates/nt-cli/src/auth.rs"
+    - "crates/nt-cli/src/urls.rs"
+    - "crates/nt-cli/src/commands/publish.rs"
+    - "crates/nt-cli/src/commands/status.rs"
+    - "crates/nt-cli/tests/status.rs"
+archived: true
 ---
 
 # Fix: Align nt-cli with thin-edge / stateless-core / DI-friendly principles
@@ -244,6 +263,9 @@ Existing `tests/publish.rs` MUST continue to pass unchanged.
 - Tests live inline (`#[cfg(test)] mod tests` in publish.rs) rather than in a new `tests/publish_unit.rs` file — keeps the fake's visibility scoped to the module it tests.
 
 ### 3. Parameterise env reads via `Env` trait in `auth` and `urls`
+status: completed
+commitSha: 2daa3a9
+
 End-to-end task: define `Env` trait + `SystemEnv` production impl,
 widen `resolve_auth` and `resolve_urls` signatures to take `&dyn Env`,
 update call sites in `commands::publish::run`, `commands::status::run`,

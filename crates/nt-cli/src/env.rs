@@ -16,10 +16,18 @@ pub trait Env {
 }
 
 /// Production impl. Reads from the calling process's actual environment
-/// via `std::env::var`. Empty-string / unset / NotUnicode all collapse
-/// to `None` — the historic semantics of the inline reads this module
-/// replaces (every prior call site did `std::env::var(k).ok()` followed
-/// by an `if !s.is_empty()` check at the caller).
+/// via `std::env::var`.
+///
+/// Returns `Some(value)` if the var is set (including the empty string)
+/// and is valid Unicode; `None` if the var is unset or not valid Unicode.
+///
+/// **The trait makes no judgment about what "set" means semantically.**
+/// Different callers have different rules — `urls.rs` treats
+/// whitespace-only as unset (via `trim().is_empty()`); `auth.rs` treats
+/// empty as unset; `home.rs` treats empty as unset for `NO_TICKETS_HOME`.
+/// Each caller applies its own filter on top. Keeping the trait honest
+/// about what's actually in the env (rather than collapsing) lets
+/// callers express their own semantics without losing information.
 pub struct SystemEnv;
 
 impl Env for SystemEnv {

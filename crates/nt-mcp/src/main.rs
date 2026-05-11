@@ -1,4 +1,29 @@
-fn main() {
-    eprintln!("nt-mcp: not yet implemented");
-    std::process::exit(2);
+mod fixtures;
+mod server;
+
+use rmcp::{ServiceExt, transport::stdio};
+use server::NtServer;
+use tracing_subscriber::EnvFilter;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
+    // CRITICAL: route ALL logging to stderr. Anything to stdout corrupts
+    // the MCP JSON-RPC stream and causes Claude Code to silently
+    // disconnect. The stdout-purity integration test pins this.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
+
+    tracing::info!("nt-mcp starting (stdio transport)");
+
+    let service = NtServer::new().serve(stdio()).await.inspect_err(|e| {
+        tracing::error!("rmcp serve error: {e:?}");
+    })?;
+    service.waiting().await?;
+    Ok(())
 }

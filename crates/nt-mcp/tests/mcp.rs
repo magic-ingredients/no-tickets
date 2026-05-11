@@ -22,6 +22,10 @@ struct McpClient {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
+    /// Every line read from stdout, in order. Used by the stdout-purity
+    /// test to inspect raw protocol bytes without racing the child for
+    /// post-EOF reads.
+    captured_stdout: Vec<String>,
 }
 
 impl McpClient {
@@ -40,6 +44,7 @@ impl McpClient {
             stdin,
             stdout,
             next_id: 1,
+            captured_stdout: Vec::new(),
         }
     }
 
@@ -58,6 +63,7 @@ impl McpClient {
             .await
             .expect("response within timeout")
             .expect("read response");
+        self.captured_stdout.push(buf.clone());
         buf
     }
 
@@ -100,15 +106,30 @@ impl McpClient {
         init
     }
 
-    async fn shutdown(mut self) -> (String, String) {
+    /// Shuts the server down and returns:
+    /// - the lines this client captured from stdout (everything we read
+    ///   line-by-line via the BufReader during the test), and
+    /// - stderr in full from the now-exited child.
+    ///
+    /// Reading stdout via `wait_with_output()` after we've already
+    /// consumed the protocol frames via BufReader would yield nothing —
+    /// the captured_stdout buffer is the source of truth for what
+    /// crossed the wire.
+    async fn shutdown(mut self) -> (Vec<String>, String) {
         drop(self.stdin);
+        // Drop the BufReader to release its hold on child.stdout so
+        // wait_with_output() doesn't deadlock waiting on a borrow.
+        // We use a different approach: spawn drain + wait separately.
+        let captured = std::mem::take(&mut self.captured_stdout);
+        // The remaining child holds onto stdout via BufReader; convert
+        // it back so we can let wait() reap the process.
+        drop(self.stdout);
         let output = timeout(READ_TIMEOUT, self.child.wait_with_output())
             .await
             .expect("child exits within timeout")
             .expect("child output");
-        let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
         let stderr = String::from_utf8(output.stderr).expect("stderr utf8");
-        (stdout, stderr)
+        (captured, stderr)
     }
 }
 
@@ -341,18 +362,18 @@ async fn stdout_contains_only_jsonrpc_frames() {
         .await;
     }
 
-    let (stdout, _stderr) = c.shutdown().await;
+    let (captured, _stderr) = c.shutdown().await;
 
     // Every non-empty line must parse as a JSON-RPC response.
     let mut frame_count = 0_usize;
-    for (i, raw_line) in stdout.lines().enumerate() {
+    for (i, raw_line) in captured.iter().enumerate() {
         let line = raw_line.trim();
         if line.is_empty() {
             continue;
         }
         let value: Value = serde_json::from_str(line).unwrap_or_else(|e| {
             panic!(
-                "stdout line {i} is not valid JSON: {e}\nline: {line:?}\nfull stdout: {stdout:?}"
+                "stdout line {i} is not valid JSON: {e}\nline: {line:?}\nfull capture: {captured:?}"
             )
         });
         assert_eq!(
@@ -394,14 +415,14 @@ async fn stderr_receives_logs_without_polluting_stdout() {
     )
     .await;
 
-    let (stdout, stderr) = c.shutdown().await;
+    let (captured, stderr) = c.shutdown().await;
     assert!(
         !stderr.is_empty(),
         "tracing-subscriber must be routing to stderr; got empty stderr",
     );
     // Cross-check: stdout must remain pure JSON-RPC regardless of how
     // chatty stderr is.
-    for line in stdout.lines() {
+    for line in &captured {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;

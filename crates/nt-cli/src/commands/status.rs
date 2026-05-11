@@ -23,20 +23,29 @@ struct StatusOutput {
     auth_url: String,
 }
 
-/// Pure builder for the status JSON payload. Caller passes the resolved
-/// auth + URLs; result serialises to the wire JSON written to stdout by
-/// `run()`. Field order matches the TS handleStatus object literal.
+/// Pure builder for the authenticated status JSON payload.
 ///
-/// Pure: no I/O, no env reads, no time. `authenticated` is always true
-/// because `run()` short-circuits with a stderr message + non-zero exit
-/// before reaching this builder if auth resolution fails.
-fn build_output(auth: &ResolvedAuth, urls: &ResolvedUrls) -> StatusOutput {
+/// **Precondition (encoded in the name):** caller has already established
+/// the user is authenticated. `run()` short-circuits with a stderr
+/// message + non-zero exit if auth resolution fails, so this builder is
+/// only ever reached on the happy path. The hardcoded `authenticated: true`
+/// reflects that invariant; the name signals it to readers.
+///
+/// `urls` is taken by value (moved) rather than by reference — `run()`
+/// has no further use for it and the alternative requires two String
+/// clones per invocation. `auth` stays by reference since we only read
+/// its enum tags (no allocation).
+///
+/// Pure: no I/O, no env reads, no time. Field order on the wire is
+/// pinned by StatusOutput's declaration order (serde_derive emits in
+/// declaration order) — matches the TS `handleStatus` object literal.
+fn build_authenticated_output(auth: &ResolvedAuth, urls: ResolvedUrls) -> StatusOutput {
     StatusOutput {
         authenticated: true,
         source: auth.source.as_str(),
         token_type: auth.token_type.as_str(),
-        api_url: urls.api_url.clone(),
-        auth_url: urls.auth_url.clone(),
+        api_url: urls.api_url,
+        auth_url: urls.auth_url,
     }
 }
 
@@ -58,7 +67,7 @@ pub fn run(profile: Option<&str>) -> i32 {
         return 1;
     };
 
-    let out = build_output(&auth, &urls);
+    let out = build_authenticated_output(&auth, urls);
     let json = serde_json::to_string(&out).expect("status payload serializes");
     // Broken-pipe (stdout closed by consumer — `| head -n 1`, etc.) is a
     // normal exit, not a panic. Anything else from stdout is a hard failure.
@@ -77,7 +86,7 @@ mod tests {
 
     fn sample_auth(source: AuthSource, token_type: TokenType) -> ResolvedAuth {
         ResolvedAuth {
-            token: "ignored-by-build_output".to_string(),
+            token: "unused-by-builder".to_string(),
             source,
             token_type,
         }
@@ -91,84 +100,77 @@ mod tests {
     }
 
     #[test]
-    fn build_output_field_order_is_authenticated_source_tokentype_apiurl_authurl() {
+    fn build_authenticated_output_field_order_matches_ts_object_literal() {
         let auth = sample_auth(AuthSource::Env, TokenType::Push);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
+        let out = build_authenticated_output(&auth, sample_urls());
         let body = serde_json::to_string(&out).expect("serialises");
         let a = body.find(r#""authenticated":"#).expect("authenticated present");
         let s = body.find(r#""source":"#).expect("source present");
         let tt = body.find(r#""tokenType":"#).expect("tokenType present");
         let au = body.find(r#""apiUrl":"#).expect("apiUrl present");
-        let urlk = body.find(r#""authUrl":"#).expect("authUrl present");
+        let aurl = body.find(r#""authUrl":"#).expect("authUrl present");
         assert!(
-            a < s && s < tt && tt < au && au < urlk,
+            a < s && s < tt && tt < au && au < aurl,
             "field order must match TS object literal; got {body}",
         );
     }
 
     #[test]
-    fn build_output_authenticated_is_true() {
+    fn build_authenticated_output_always_emits_authenticated_true() {
+        // Precondition: builder only runs on the authenticated path
+        // (run() short-circuits otherwise). The hardcoded `true` is
+        // part of the contract — pinned here so a future refactor
+        // that adds a bool parameter has to delete this test
+        // deliberately.
         let auth = sample_auth(AuthSource::Env, TokenType::Push);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
+        let out = build_authenticated_output(&auth, sample_urls());
         let body = serde_json::to_string(&out).expect("serialises");
         assert!(body.contains(r#""authenticated":true"#));
     }
 
+    /// Table-driven coverage of every AuthSource × TokenType variant.
+    /// Consolidates what were six near-identical single-variant tests;
+    /// each row pins one variant to its expected wire string and the
+    /// table forces exhaustiveness when new variants are added.
     #[test]
-    fn build_output_auth_source_env_renders_as_env() {
-        let auth = sample_auth(AuthSource::Env, TokenType::Unknown);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
-        let body = serde_json::to_string(&out).expect("serialises");
-        assert!(body.contains(r#""source":"env""#), "got {body}");
+    fn build_authenticated_output_renders_every_auth_source_and_token_type_variant() {
+        let source_cases: &[(AuthSource, &str)] = &[
+            (AuthSource::Env, r#""source":"env""#),
+            (AuthSource::Credentials, r#""source":"credentials""#),
+        ];
+        let token_cases: &[(TokenType, &str)] = &[
+            (TokenType::Push, r#""tokenType":"push""#),
+            (TokenType::Session, r#""tokenType":"session""#),
+            (TokenType::Unknown, r#""tokenType":"unknown""#),
+        ];
+
+        for (source_variant, expected_source) in source_cases {
+            for (token_variant, expected_token) in token_cases {
+                let auth = sample_auth(*source_variant, *token_variant);
+                let out = build_authenticated_output(&auth, sample_urls());
+                let body = serde_json::to_string(&out).expect("serialises");
+                assert!(
+                    body.contains(expected_source),
+                    "expected {expected_source:?} for source variant rendered as {:?}; got {body}",
+                    source_variant.as_str(),
+                );
+                assert!(
+                    body.contains(expected_token),
+                    "expected {expected_token:?} for token variant rendered as {:?}; got {body}",
+                    token_variant.as_str(),
+                );
+            }
+        }
     }
 
     #[test]
-    fn build_output_auth_source_credentials_renders_as_credentials() {
-        let auth = sample_auth(AuthSource::Credentials, TokenType::Unknown);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
-        let body = serde_json::to_string(&out).expect("serialises");
-        assert!(body.contains(r#""source":"credentials""#), "got {body}");
-    }
-
-    #[test]
-    fn build_output_token_type_push_renders_as_push() {
-        let auth = sample_auth(AuthSource::Env, TokenType::Push);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
-        let body = serde_json::to_string(&out).expect("serialises");
-        assert!(body.contains(r#""tokenType":"push""#), "got {body}");
-    }
-
-    #[test]
-    fn build_output_token_type_session_renders_as_session() {
-        let auth = sample_auth(AuthSource::Env, TokenType::Session);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
-        let body = serde_json::to_string(&out).expect("serialises");
-        assert!(body.contains(r#""tokenType":"session""#), "got {body}");
-    }
-
-    #[test]
-    fn build_output_token_type_unknown_renders_as_unknown() {
-        let auth = sample_auth(AuthSource::Env, TokenType::Unknown);
-        let urls = sample_urls();
-        let out = build_output(&auth, &urls);
-        let body = serde_json::to_string(&out).expect("serialises");
-        assert!(body.contains(r#""tokenType":"unknown""#), "got {body}");
-    }
-
-    #[test]
-    fn build_output_passes_through_api_and_auth_urls() {
+    fn build_authenticated_output_passes_through_api_and_auth_urls() {
         let auth = sample_auth(AuthSource::Env, TokenType::Push);
         let urls = ResolvedUrls {
             api_url: "https://staging-api.no-tickets.com".to_string(),
             auth_url: "https://staging.no-tickets.com/api/auth/cli".to_string(),
         };
-        let out = build_output(&auth, &urls);
+        let out = build_authenticated_output(&auth, urls);
         let body = serde_json::to_string(&out).expect("serialises");
         assert!(body.contains(r#""apiUrl":"https://staging-api.no-tickets.com""#));
         assert!(body.contains(r#""authUrl":"https://staging.no-tickets.com/api/auth/cli""#));

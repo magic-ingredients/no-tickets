@@ -53,9 +53,15 @@ struct SourceAttributes<'a> {
     project: &'a str,
 }
 
-/// Pure builder for the wire-body single-event array. Caller passes the
-/// resolved type_id, the already-parsed data payload, and the project
-/// name; result is the single-element array body that POSTs to /v1/events.
+/// Pure builder for a single event envelope. Caller passes the resolved
+/// type_id, the already-parsed data payload, and the project name.
+///
+/// Returns a single `EventEnvelope`, not a one-element Vec — the wire
+/// format wraps a single event in `[...]`, but the array shape is a
+/// transport concern owned by the caller (`run()` does `vec![envelope]`),
+/// not by this builder. Keeps the builder honest about its scope
+/// (single-event) and avoids advertising a batching capability that
+/// doesn't exist in this spike.
 ///
 /// Pure: no I/O, no env reads, no time. Field order on the wire is
 /// pinned by EventEnvelope's declaration order (serde_derive emits in
@@ -65,8 +71,8 @@ fn build_envelope<'a>(
     type_id: &'a str,
     data: &'a Value,
     project: &'a str,
-) -> Vec<EventEnvelope<'a>> {
-    vec![EventEnvelope {
+) -> EventEnvelope<'a> {
+    EventEnvelope {
         type_id,
         data,
         source: Source {
@@ -74,7 +80,7 @@ fn build_envelope<'a>(
             sdk_version: env!("CARGO_PKG_VERSION"),
             attributes: Some(SourceAttributes { project }),
         },
-    }]
+    }
 }
 
 pub async fn run(args: PublishArgs<'_>) -> i32 {
@@ -111,7 +117,10 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
         }
     };
 
-    let body = build_envelope(args.type_id, &parsed_data, args.project);
+    // Wire body is a JSON array. Wrapping the single envelope at the
+    // call site keeps build_envelope honest about its scope (one event)
+    // and isolates the array shape — a transport concern — to run().
+    let body = vec![build_envelope(args.type_id, &parsed_data, args.project)];
 
     match client.post_json("/v1/events", &body).await {
         Ok(response) => {
@@ -138,21 +147,24 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    #[test]
-    fn build_envelope_emits_single_element_array() {
-        let data = json!({ "taskId": "t-1" });
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
-        assert_eq!(envelope.len(), 1, "wire body is a single-element JSON array");
+    /// Serialise a single envelope. Field-order assertions run on this
+    /// string. The data payload below deliberately contains no `type`,
+    /// `data`, `source`, `name`, `sdkVersion`, `attributes`, or `project`
+    /// keys, so each envelope-level key appears exactly once and the
+    /// assertions don't risk false positives from payload content.
+    fn serialise_with_neutral_data(project: &str) -> String {
+        let data = json!({ "neutralKey": "neutralValue" });
+        let envelope = build_envelope("ai.task.completed.v1", &data, project);
+        serde_json::to_string(&envelope).expect("envelope serialises")
     }
 
     #[test]
     fn build_envelope_field_order_is_type_data_source() {
-        let data = json!({ "taskId": "t-1", "sessionId": "s-1" });
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
-        let body = serde_json::to_string(&envelope).expect("envelope serialises");
-        let t = body.find(r#""type":"ai.task.completed.v1""#).expect("type present");
-        let d = body.find(r#""data":{"#).expect("data present");
-        let s = body.find(r#""source":{"name":"nt-cli""#).expect("source present");
+        let body = serialise_with_neutral_data("demo");
+        // Key-only locators — no coupling to value content.
+        let t = body.find(r#""type":"#).expect("type key present");
+        let d = body.find(r#""data":"#).expect("data key present");
+        let s = body.find(r#""source":"#).expect("source key present");
         assert!(
             t < d && d < s,
             "wire field order must be type, data, source — got {body}",
@@ -160,10 +172,27 @@ mod tests {
     }
 
     #[test]
+    fn build_envelope_wraps_into_single_element_json_array_at_call_site() {
+        // build_envelope itself returns a single EventEnvelope; the
+        // array wrapping is the caller's (run's) responsibility. Pin
+        // that the wire body is a JSON array containing exactly one
+        // element by serialising the same wrapping run() uses.
+        let data = json!({ "neutralKey": "neutralValue" });
+        let body = vec![build_envelope("ai.task.completed.v1", &data, "demo")];
+        let wire = serde_json::to_string(&body).expect("serialises");
+        assert!(wire.starts_with('['), "wire body must start with '[': {wire}");
+        assert!(wire.ends_with(']'), "wire body must end with ']': {wire}");
+        // Exactly one `"type":` key implies exactly one envelope.
+        assert_eq!(
+            wire.matches(r#""type":"#).count(),
+            1,
+            "wire body must contain exactly one envelope: {wire}",
+        );
+    }
+
+    #[test]
     fn build_envelope_source_name_is_nt_cli() {
-        let data = json!({});
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
-        let body = serde_json::to_string(&envelope).expect("serialises");
+        let body = serialise_with_neutral_data("demo");
         assert!(
             body.contains(r#""name":"nt-cli""#),
             "source.name must be \"nt-cli\"; got {body}",
@@ -172,9 +201,7 @@ mod tests {
 
     #[test]
     fn build_envelope_source_sdk_version_is_crate_version() {
-        let data = json!({});
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
-        let body = serde_json::to_string(&envelope).expect("serialises");
+        let body = serialise_with_neutral_data("demo");
         let expected = format!(r#""sdkVersion":"{}""#, env!("CARGO_PKG_VERSION"));
         assert!(
             body.contains(&expected),
@@ -184,9 +211,7 @@ mod tests {
 
     #[test]
     fn build_envelope_writes_project_into_source_attributes() {
-        let data = json!({});
-        let envelope = build_envelope("ai.task.completed.v1", &data, "my-project");
-        let body = serde_json::to_string(&envelope).expect("serialises");
+        let body = serialise_with_neutral_data("my-project");
         assert!(
             body.contains(r#""attributes":{"project":"my-project"}"#),
             "source.attributes.project must reflect the input; got {body}",
@@ -194,13 +219,58 @@ mod tests {
     }
 
     #[test]
-    fn build_envelope_preserves_data_payload_verbatim() {
+    fn build_envelope_emits_empty_string_when_project_is_empty() {
+        // Pin behaviour for empty project — the builder does not
+        // reject, validate, or substitute. Empty-string project flows
+        // through verbatim. (Validation, if needed, lives outside the
+        // pure builder.)
+        let body = serialise_with_neutral_data("");
+        assert!(
+            body.contains(r#""attributes":{"project":""}"#),
+            "empty project must serialise as empty string; got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_preserves_object_data_payload_verbatim() {
         let data = json!({ "taskId": "t-1", "sessionId": "s-1", "nested": { "x": 42 } });
         let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
         let body = serde_json::to_string(&envelope).expect("serialises");
-        // taskId/sessionId/nested all present — payload not transformed
         assert!(body.contains(r#""taskId":"t-1""#));
         assert!(body.contains(r#""sessionId":"s-1""#));
         assert!(body.contains(r#""nested":{"x":42}"#));
+    }
+
+    #[test]
+    fn build_envelope_preserves_string_data_payload() {
+        let data = Value::String("plain-string-payload".to_string());
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        assert!(
+            body.contains(r#""data":"plain-string-payload""#),
+            "string payload must serialise as-is; got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_preserves_null_data_payload() {
+        let data = Value::Null;
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        assert!(
+            body.contains(r#""data":null"#),
+            "null payload must serialise as JSON null; got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_preserves_array_data_payload() {
+        let data = json!([1, 2, 3]);
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        assert!(
+            body.contains(r#""data":[1,2,3]"#),
+            "array payload must serialise as-is; got {body}",
+        );
     }
 }

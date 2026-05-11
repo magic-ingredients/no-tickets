@@ -137,6 +137,7 @@ Specific items to confirm a Rust rewrite is feasible against current TS surface:
 - [ ] **OAuth callback flow** — `axum` for the localhost listener + callback route, **`oauth2` crate for the PKCE state machine / CSRF token / code-verifier exchange** (replaces hand-rolled protocol logic), `opener` crate for browser. Confirm 0.0.0.0 binding and timeout semantics match the TS implementation.
 - [ ] **Cross-compile toolchain** — `cargo-zigbuild` (preferred for CI — no Docker-per-target) or `cross`. Both mature. Confirm CI matrix builds cleanly without per-platform runners (cost driver).
 - [ ] **Auth file format** — keep `~/.notickets/credentials` and `~/.notickets/config.json` byte-compatible with the TS implementation so users can switch back if needed during rollout.
+- [ ] **HTTPS client + Bearer auth + wire-contract** — `reqwest` with `rustls-tls` + `webpki-roots`, single POST to `/v1/events` with `Authorization: Bearer` header. Covered by Task 2c spike; clears the path for Task 4's full surface port.
 
 ## Public binary contract (consumed by per-language wrappers)
 
@@ -325,6 +326,91 @@ Implement one MCP tool (`list_event_types`) using the official `rmcp` SDK with s
 - An IDE-loaded MCP client can list event types via the Rust MCP server
 - Round-trip JSON-RPC traces match the TS server
 - Stdout-purity test passes: under repeated tool invocation, every stdout byte is part of a valid JSON-RPC frame
+
+### 2c. Publish spike — single event to staging end-to-end
+status: not_started
+
+Third toolchain-validation spike, matching the discipline of Tasks 1
+and 2. Validates the **last untested major toolchain piece**: HTTPS
+client + Bearer auth header injection + JSON request/response + error
+mapping. After this lands, end-to-end staging publish from Rust works
+and Task 4 (full CLI surface port) becomes mechanical command-by-
+command porting against proven plumbing.
+
+Scope: a single subcommand, single event, no batching, no streaming,
+no local schema validation, no source merging. The minimum surface
+that crosses the wire.
+
+```
+nt publish --type <typeId> --data <json> --project <name>
+```
+
+Matches the TS reference at `src/transport/events.ts::publish`:
+- POST `{apiUrl}/v1/events`
+- Body: JSON array with one event object (`{ type, data, source }`)
+- Header: `Authorization: Bearer {token}` (token from Task 1's auth resolution)
+- Response success: `{ ingested, deduped, ids }` printed to stdout
+- Response error: structured error to stderr, non-zero exit
+
+**Toolchain additions verified by this spike:**
+- `reqwest` with `default-features = false` + `rustls-tls` + `webpki-roots`
+  features. Pure-Rust TLS, no OpenSSL coupling, static-binary friendly.
+- Switch `nt-cli` from sync to `#[tokio::main]` (currently sync; reqwest needs async).
+- `wiremock` as a dev-dep for fast offline HTTP wire-contract tests.
+- Tracing still gated to stderr only (mirrors the MCP gotcha; CLI binary
+  isn't an MCP stream, but the discipline keeps `--json` output clean
+  for downstream `| jq` consumers).
+
+**Files to modify/create:**
+- `crates/nt-cli/Cargo.toml` — add reqwest, tokio runtime, wiremock dev-dep
+- `crates/nt-cli/src/main.rs` — switch to `#[tokio::main(flavor = "current_thread")]`
+- `crates/nt-cli/src/transport.rs` (new) — HTTPS client + Bearer header injection + POST helper
+- `crates/nt-cli/src/commands/mod.rs` (new) — `pub mod publish; pub mod status;`
+- `crates/nt-cli/src/commands/publish.rs` (new) — publish command body
+- `crates/nt-cli/src/commands/status.rs` — moved from `src/status.rs` for consistency
+- `crates/nt-cli/tests/publish.rs` (new) — wiremock-driven wire-contract tests
+- `docs/rust-spike-notes.md` — appended Task 2c findings section
+
+**Tests (the wiremock suite, no real network for unit tests):**
+- POST body is a JSON array of one object with field order matching TS
+  emission (`type`, `data`, `source`, ...).
+- `Authorization: Bearer <token>` is present, token sourced from
+  NO_TICKETS_TOKEN env (regression-pin: missing/empty token must not
+  send the header AND must fail before the request).
+- Success response body printed verbatim to stdout, exit 0.
+- 401 → exit 1, stderr names auth failure.
+- 403 → exit 1, stderr names permission denied.
+- 4xx with a structured error body (unknown event type, validation
+  failure) → exit 1, stderr surfaces the server message.
+- 5xx / connection refused → exit 1, stderr describes transport failure.
+- Field order on the wire body pinned by monotonic-byte-position
+  assertion (same pattern as nt status and list_event_types tests).
+
+**Acceptance:**
+- All wiremock tests pass.
+- Manual smoke against staging: with a real `NO_TICKETS_TOKEN`,
+  `nt publish --type <real.type.v1> --data '{...}' --project <name>`
+  publishes one event and prints `{"ingested":1,"deduped":0,"ids":[...]}`.
+  Confirmed by checking the event lands server-side.
+- Mutation review (cargo-mutants) clean on the changed files.
+- Adversarial review clean on test-quality and impl-quality.
+
+**Explicitly OUT of scope (deferred to later tasks):**
+- Multi-event batches → Task 4
+- `--stream` mode → Task 4b
+- Local JSON Schema validation → Task 3 (server validates anyway, so
+  unblocked for now)
+- Full structured-error-contract polish (the 7-exit-code table in §
+  "Public binary contract") → Task 4a; this spike uses exit 0/1 only
+- Retry/backoff on transient errors → Task 4
+- Source auto-detection / merging → Task 4
+- Idempotency keys → Task 4
+- All other commands (`init`, `project link/list/unlink`, `validate`,
+  `connect`, `disconnect`, `token`) → Task 4
+
+After this spike: the three highest-risk toolchain pieces (clap+config
+files; rmcp; reqwest+TLS+auth) are all proven. Task 4 becomes a
+mechanical port.
 
 ### 3. JSON Schema bundle integration
 status: not_started
@@ -561,7 +647,8 @@ no-tickets/                       (existing repo)
 ## Dependencies & Coordination
 
 - **Phase 1 must ship first.** This fix ports Phase 1's surface to Rust; if Phase 1 changes the publish/MCP shape after the Rust port begins, the port has to keep up.
-- **Server-side coordination.** The JSON Schema build artifact must be published as a release asset of `no-tickets-service`. Coordinate with the server team to set up that pipeline (it's a thin transformation step over the existing Zod schemas).
+- **Spike dependency order.** Tasks 1, 2, and 2c are independent toolchain spikes covering the three highest-risk integrations (clap+config files; rmcp; reqwest+TLS+auth). Run in any order; all must land before Task 4. Task 4 depends on all three; Task 3 (JSON Schema bundle) is independent and can run in parallel with the spikes.
+- **Server-side coordination.** The JSON Schema build artifact must be published as a release asset of `no-tickets-service`. Coordinate with the server team to set up that pipeline (it's a thin transformation step over the existing Zod schemas). Task 2c is **not** blocked by this — server-side validation runs regardless, so staging publish from Rust works without a local-validation pass.
 - **Code-signing / notarization** for macOS and Windows binaries — important for end-user trust but deferred to a post-Phase-3 follow-up. Initial release ships unsigned with a documented "right-click to open" workaround on macOS.
 - **Auto-update mechanism** (`nt self-update`) — **in scope**, see Task 11. Targets install.sh / direct-download users only (every package-manager channel updates via its own manager). Built on the `self_update` crate. Velopack was evaluated and rejected as GUI-app-shaped and the wrong fit for a CLI/MCP binary.
 

@@ -12,7 +12,7 @@ pub enum AuthSource {
 }
 
 impl AuthSource {
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             AuthSource::Env => "env",
             AuthSource::Credentials => "credentials",
@@ -37,7 +37,7 @@ impl TokenType {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             TokenType::Push => "push",
             TokenType::Session => "session",

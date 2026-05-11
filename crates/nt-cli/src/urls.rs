@@ -1,9 +1,10 @@
 //! URL resolution: --profile > env vars > defaults.
 //! Mirrors `src/sdk/url-resolver.ts::resolveUrls`.
 
+use indexmap::IndexMap;
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 use crate::home;
@@ -22,9 +23,14 @@ pub enum UrlError {
         value: String,
         missing: &'static str,
     },
+    HomeUnresolvable,
     ProfileFileMissing {
         name: String,
         path: PathBuf,
+    },
+    ProfileFileUnreadable {
+        path: PathBuf,
+        message: String,
     },
     ProfileFileInvalidJson {
         path: PathBuf,
@@ -44,14 +50,25 @@ pub enum UrlError {
 impl UrlError {
     pub fn user_message(&self) -> String {
         match self {
-            UrlError::PartialPair { which, value, missing } => format!(
-                "{which}={value:?} is set but {missing} is not. \
-                 Set both (or neither) so the API and auth flow agree on which environment to use.",
-            ),
+            UrlError::PartialPair { which, value, missing } => {
+                let quoted = serde_json::to_string(value)
+                    .unwrap_or_else(|_| format!("{value:?}"));
+                format!(
+                    "{which}={quoted} is set but {missing} is not. \
+                     Set both (or neither) so the API and auth flow agree on which environment to use.",
+                )
+            }
+            UrlError::HomeUnresolvable => {
+                "Could not resolve home directory. Set NO_TICKETS_HOME, HOME, or USERPROFILE.".to_string()
+            }
             UrlError::ProfileFileMissing { name, path } => format!(
                 "profile \"{name}\" not found: {path} does not exist.\n\
                  Create it with:\n  \
                  {{ \"profiles\": {{ \"{name}\": {{ \"apiUrl\": \"https://…\", \"authUrl\": \"https://…\" }} }} }}",
+                path = path.display(),
+            ),
+            UrlError::ProfileFileUnreadable { path, message } => format!(
+                "{path} could not be read: {message}",
                 path = path.display(),
             ),
             UrlError::ProfileFileInvalidJson { path, message } => format!(
@@ -77,10 +94,13 @@ impl UrlError {
     }
 }
 
+/// IndexMap preserves insertion order from the on-disk JSON — required so
+/// the "Available: a, b, c" hint matches the TS `Object.keys()` order, not
+/// alphabetical.
 #[derive(Deserialize)]
 struct ConfigFile {
     #[serde(default)]
-    profiles: Option<BTreeMap<String, ProfileConfig>>,
+    profiles: Option<IndexMap<String, ProfileConfig>>,
 }
 
 #[derive(Deserialize)]
@@ -126,8 +146,7 @@ pub fn resolve_urls(profile: Option<&str>) -> Result<ResolvedUrls, UrlError> {
 }
 
 fn load_profile(name: &str) -> Result<ResolvedUrls, UrlError> {
-    let path = home::config_path()
-        .expect("home directory resolvable (NO_TICKETS_HOME, HOME, or USERPROFILE must be set)");
+    let path = home::config_path().ok_or(UrlError::HomeUnresolvable)?;
 
     if !path.exists() {
         return Err(UrlError::ProfileFileMissing {
@@ -136,9 +155,19 @@ fn load_profile(name: &str) -> Result<ResolvedUrls, UrlError> {
         });
     }
 
-    let raw = fs::read_to_string(&path).map_err(|e| UrlError::ProfileFileInvalidJson {
-        path: path.clone(),
-        message: e.to_string(),
+    let raw = fs::read_to_string(&path).map_err(|e| {
+        // IO read failure (permission, symlink loop, not-a-file, etc.) is
+        // distinct from invalid JSON — surface it as such.
+        match e.kind() {
+            io::ErrorKind::InvalidData => UrlError::ProfileFileInvalidJson {
+                path: path.clone(),
+                message: e.to_string(),
+            },
+            _ => UrlError::ProfileFileUnreadable {
+                path: path.clone(),
+                message: e.to_string(),
+            },
+        }
     })?;
 
     let parsed: ConfigFile =
@@ -173,6 +202,18 @@ fn load_profile(name: &str) -> Result<ResolvedUrls, UrlError> {
     })
 }
 
+/// Matches TS `new URL(s)` then `protocol === 'http:' || protocol === 'https:'`.
+/// Stricter than a `starts_with` prefix check: rejects malformed URLs that
+/// happen to begin with the scheme (e.g. `https://`, `http:// nope`,
+/// embedded newlines).
 fn is_http_url(s: &str) -> bool {
-    s.starts_with("http://") || s.starts_with("https://")
+    let Ok(parsed) = url::Url::parse(s) else {
+        return false;
+    };
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return false;
+    }
+    // `new URL("https://")` throws in JS; `url::Url::parse("https://")`
+    // accepts it with empty host. Require a non-empty host for parity.
+    parsed.host_str().is_some_and(|h| !h.is_empty())
 }

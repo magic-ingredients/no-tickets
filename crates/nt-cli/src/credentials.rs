@@ -9,6 +9,18 @@ use time::format_description::well_known::Iso8601;
 
 use crate::home;
 
+/// Shape of `~/.notickets/credentials` on disk.
+///
+/// Invariant: a value of this type produced by [`load`] has been
+/// shape-validated (all three fields present, all strings) AND its
+/// `expires_at` is strictly in the future. Direct construction via struct
+/// literal bypasses both checks — only call sites that have validated
+/// elsewhere should construct one directly.
+///
+/// The `email` field is unused at runtime; it's part of the on-disk shape
+/// contract — serde's `Deserialize` requires it to be present as a string,
+/// which gives us shape validation for free against the TS reference's
+/// `isStoredCredentials` predicate.
 #[derive(Deserialize)]
 pub struct StoredCredentials {
     pub token: String,

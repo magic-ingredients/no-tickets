@@ -1,6 +1,8 @@
 //! `nt status` command: resolve URLs, resolve auth, print JSON to stdout.
 //! Mirrors `src/cli.ts::handleStatus`.
 
+use std::io::{self, Write};
+
 use serde::Serialize;
 
 use crate::auth::{NOT_AUTH_MSG, resolve_auth};
@@ -46,6 +48,13 @@ pub fn run(profile: Option<&str>) -> i32 {
         api_url: urls.api_url,
         auth_url: urls.auth_url,
     };
-    println!("{}", serde_json::to_string(&out).expect("status payload serializes"));
-    0
+    let json = serde_json::to_string(&out).expect("status payload serializes");
+    // Broken-pipe (stdout closed by consumer — `| head -n 1`, etc.) is a
+    // normal exit, not a panic. Anything else from stdout is a hard failure.
+    let stdout = io::stdout();
+    match writeln!(stdout.lock(), "{json}") {
+        Ok(()) => 0,
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => 0,
+        Err(_) => 1,
+    }
 }

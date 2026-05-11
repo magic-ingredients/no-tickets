@@ -400,6 +400,25 @@ fn status_rejects_partial_env_url_pair_api_only() {
         .stderr(predicate::str::contains("Set both"));
 }
 
+/// Precedence: URL error wins over not-authenticated. Without this test,
+/// a swapped impl (auth first, URL second) would still pass every other
+/// failure-path test because each of them sets NO_TICKETS_TOKEN. Here we
+/// strip the token AND leave a partial URL pair — TS reports the URL
+/// error, not the auth error.
+#[test]
+fn status_url_error_takes_precedence_over_not_authenticated() {
+    let temp = tempfile::tempdir().unwrap();
+    isolate(&mut nt(), temp.path())
+        // No NO_TICKETS_TOKEN, no credentials file written.
+        .env("NO_TICKETS_API_URL", "https://only-api.example")
+        .arg("status")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Set both"))
+        .stderr(predicate::str::contains(NOT_AUTH_MSG).not());
+}
+
 #[test]
 fn status_rejects_partial_env_url_pair_auth_only() {
     let temp = tempfile::tempdir().unwrap();

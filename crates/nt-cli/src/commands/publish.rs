@@ -53,14 +53,28 @@ struct SourceAttributes<'a> {
     project: &'a str,
 }
 
-/// Pure builder for the wire-body single-event array. Stub for RED phase;
-/// GREEN extracts the literal from `run()` and replaces this body.
+/// Pure builder for the wire-body single-event array. Caller passes the
+/// resolved type_id, the already-parsed data payload, and the project
+/// name; result is the single-element array body that POSTs to /v1/events.
+///
+/// Pure: no I/O, no env reads, no time. Field order on the wire is
+/// pinned by EventEnvelope's declaration order (serde_derive emits in
+/// declaration order) — the inline tests assert byte-positions of
+/// `"type"` / `"data"` / `"source"` in the serialised form.
 fn build_envelope<'a>(
-    _type_id: &'a str,
-    _data: &'a Value,
-    _project: &'a str,
+    type_id: &'a str,
+    data: &'a Value,
+    project: &'a str,
 ) -> Vec<EventEnvelope<'a>> {
-    unimplemented!("build_envelope: extracted in GREEN phase")
+    vec![EventEnvelope {
+        type_id,
+        data,
+        source: Source {
+            name: "nt-cli",
+            sdk_version: env!("CARGO_PKG_VERSION"),
+            attributes: Some(SourceAttributes { project }),
+        },
+    }]
 }
 
 pub async fn run(args: PublishArgs<'_>) -> i32 {
@@ -97,18 +111,7 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
         }
     };
 
-    let envelope = EventEnvelope {
-        type_id: args.type_id,
-        data: &parsed_data,
-        source: Source {
-            name: "nt-cli",
-            sdk_version: env!("CARGO_PKG_VERSION"),
-            attributes: Some(SourceAttributes {
-                project: args.project,
-            }),
-        },
-    };
-    let body = vec![envelope];
+    let body = build_envelope(args.type_id, &parsed_data, args.project);
 
     match client.post_json("/v1/events", &body).await {
         Ok(response) => {

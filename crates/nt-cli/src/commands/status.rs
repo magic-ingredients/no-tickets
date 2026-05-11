@@ -23,10 +23,21 @@ struct StatusOutput {
     auth_url: String,
 }
 
-/// Pure builder for the status JSON payload. Stub for RED phase; GREEN
-/// extracts the literal from `run()` and replaces this body.
-fn build_output(_auth: &ResolvedAuth, _urls: &ResolvedUrls) -> StatusOutput {
-    unimplemented!("build_output: extracted in GREEN phase")
+/// Pure builder for the status JSON payload. Caller passes the resolved
+/// auth + URLs; result serialises to the wire JSON written to stdout by
+/// `run()`. Field order matches the TS handleStatus object literal.
+///
+/// Pure: no I/O, no env reads, no time. `authenticated` is always true
+/// because `run()` short-circuits with a stderr message + non-zero exit
+/// before reaching this builder if auth resolution fails.
+fn build_output(auth: &ResolvedAuth, urls: &ResolvedUrls) -> StatusOutput {
+    StatusOutput {
+        authenticated: true,
+        source: auth.source.as_str(),
+        token_type: auth.token_type.as_str(),
+        api_url: urls.api_url.clone(),
+        auth_url: urls.auth_url.clone(),
+    }
 }
 
 pub fn run(profile: Option<&str>) -> i32 {
@@ -47,13 +58,7 @@ pub fn run(profile: Option<&str>) -> i32 {
         return 1;
     };
 
-    let out = StatusOutput {
-        authenticated: true,
-        source: auth.source.as_str(),
-        token_type: auth.token_type.as_str(),
-        api_url: urls.api_url,
-        auth_url: urls.auth_url,
-    };
+    let out = build_output(&auth, &urls);
     let json = serde_json::to_string(&out).expect("status payload serializes");
     // Broken-pipe (stdout closed by consumer — `| head -n 1`, etc.) is a
     // normal exit, not a panic. Anything else from stdout is a hard failure.

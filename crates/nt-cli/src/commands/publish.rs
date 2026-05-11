@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::auth::{NOT_AUTH_MSG, resolve_auth};
-use crate::transport::Client;
+use crate::transport::{Client, HttpClient};
 use crate::urls::resolve_urls;
 
 pub struct PublishArgs<'a> {
@@ -51,6 +51,23 @@ struct Source<'a> {
 #[derive(Serialize)]
 struct SourceAttributes<'a> {
     project: &'a str,
+}
+
+/// Stateless core: takes an injected `HttpClient`, the resolved + parsed
+/// inputs, sends the publish request, maps the result to an exit code.
+/// Stub for RED phase; GREEN extracts the post-and-respond block from
+/// `run()` and replaces this body.
+///
+/// Production wires `Client` (reqwest); tests wire a fake that records
+/// the call and returns canned responses, enabling in-process coverage
+/// of the error-mapping branches without subprocess + wiremock.
+async fn publish_event<C: HttpClient>(
+    _client: &C,
+    _type_id: &str,
+    _data: &Value,
+    _project: &str,
+) -> i32 {
+    unimplemented!("publish_event: extracted in GREEN phase")
 }
 
 /// Pure builder for a single event envelope. Caller passes the resolved
@@ -145,7 +162,140 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::TransportError;
     use serde_json::json;
+    use std::sync::Mutex;
+
+    /// Records every `post_json` call and returns canned responses.
+    /// One canned response per call, in FIFO order; missing canned
+    /// responses panic so a test mismatch fails loudly.
+    ///
+    /// Async fn in trait is fine on a current-thread runtime; no Send
+    /// bound issues for our usage. Mutex over the recorded calls and
+    /// the response queue keeps the type Send + Sync per the trait.
+    struct FakeHttpClient {
+        responses: Mutex<Vec<Result<Value, TransportError>>>,
+        calls: Mutex<Vec<RecordedCall>>,
+    }
+
+    #[derive(Clone, Debug)]
+    struct RecordedCall {
+        path: String,
+        body: Vec<u8>,
+    }
+
+    impl FakeHttpClient {
+        fn with_response(response: Result<Value, TransportError>) -> Self {
+            Self {
+                responses: Mutex::new(vec![response]),
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<RecordedCall> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl HttpClient for FakeHttpClient {
+        async fn post_json(
+            &self,
+            path: &str,
+            body: Vec<u8>,
+        ) -> Result<Value, TransportError> {
+            self.calls.lock().unwrap().push(RecordedCall {
+                path: path.to_string(),
+                body: body.clone(),
+            });
+            self.responses
+                .lock()
+                .unwrap()
+                .remove(0) // panics if no more canned responses
+        }
+    }
+
+    // ─── publish_event: orchestration tests via injected HttpClient ──────
+
+    #[tokio::test]
+    async fn publish_event_returns_zero_on_2xx_response() {
+        let fake = FakeHttpClient::with_response(Ok(json!({
+            "ingested": 1, "deduped": 0, "ids": ["evt_1"],
+        })));
+        let data = json!({ "taskId": "t-1" });
+        let code = publish_event(&fake, "ai.task.completed.v1", &data, "demo").await;
+        assert_eq!(code, 0, "2xx must map to exit code 0");
+    }
+
+    #[tokio::test]
+    async fn publish_event_posts_to_v1_events_path() {
+        let fake = FakeHttpClient::with_response(Ok(json!({
+            "ingested": 1, "deduped": 0, "ids": ["x"],
+        })));
+        let data = json!({});
+        let _ = publish_event(&fake, "x.y.z.v1", &data, "demo").await;
+        let calls = fake.calls();
+        assert_eq!(calls.len(), 1, "exactly one HTTP call");
+        assert_eq!(calls[0].path, "/v1/events", "must POST to /v1/events");
+    }
+
+    #[tokio::test]
+    async fn publish_event_posts_serialised_envelope_array() {
+        let fake = FakeHttpClient::with_response(Ok(json!({
+            "ingested": 1, "deduped": 0, "ids": ["x"],
+        })));
+        let data = json!({ "taskId": "t-1" });
+        let _ = publish_event(&fake, "ai.task.completed.v1", &data, "my-project").await;
+        let body_bytes = fake.calls()[0].body.clone();
+        let body_str = String::from_utf8(body_bytes).expect("utf8 body");
+        // Single-element array wrapping the envelope
+        assert!(body_str.starts_with('['), "wire body starts with [: {body_str}");
+        assert!(body_str.ends_with(']'), "wire body ends with ]: {body_str}");
+        // Envelope fields present
+        assert!(body_str.contains(r#""type":"ai.task.completed.v1""#));
+        assert!(body_str.contains(r#""name":"nt-cli""#));
+        assert!(body_str.contains(r#""project":"my-project""#));
+    }
+
+    #[tokio::test]
+    async fn publish_event_returns_one_on_http_401_response() {
+        let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
+            status: 401,
+            body: r#"{"error":"unauthorized"}"#.to_string(),
+        }));
+        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        assert_eq!(code, 1, "401 must map to exit code 1");
+    }
+
+    #[tokio::test]
+    async fn publish_event_returns_one_on_http_422_response() {
+        let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
+            status: 422,
+            body: r#"{"error":"validation_error"}"#.to_string(),
+        }));
+        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        assert_eq!(code, 1, "422 must map to exit code 1");
+    }
+
+    #[tokio::test]
+    async fn publish_event_returns_one_on_http_5xx_response() {
+        let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
+            status: 503,
+            body: String::new(),
+        }));
+        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        assert_eq!(code, 1, "5xx must map to exit code 1");
+    }
+
+    #[tokio::test]
+    async fn publish_event_returns_one_on_config_error() {
+        let fake = FakeHttpClient::with_response(Err(TransportError::Config(
+            "invalid path \"/v1/events\"".to_string(),
+        )));
+        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        assert_eq!(code, 1, "Config error must map to exit code 1");
+    }
+
+    // ─── build_envelope: pure builder tests ──────────────────────────────
 
     /// Serialise a single envelope. Field-order assertions run on this
     /// string. The data payload below deliberately contains no `type`,

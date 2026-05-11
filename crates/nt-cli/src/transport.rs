@@ -16,6 +16,26 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::Value;
 
+/// Transport-layer port. Production wires `Client` (reqwest-backed); tests
+/// substitute a fake that records calls and returns canned responses,
+/// enabling in-process coverage of `commands::publish::publish_event`'s
+/// error-mapping branches without subprocess + wiremock.
+///
+/// Body is pre-serialised by the caller — the trait owns transport, not
+/// serialisation. `Vec<u8>` flows by value so reqwest can pass it
+/// straight to its request builder without an extra copy.
+///
+/// `Send + Sync` bounds let the trait work behind shared references in
+/// async code. Even though `nt-cli`'s runtime is current-thread today,
+/// future `--stream` work (Task 4b) may share a client across tasks.
+pub trait HttpClient: Send + Sync {
+    async fn post_json(
+        &self,
+        path: &str,
+        body: Vec<u8>,
+    ) -> Result<Value, TransportError>;
+}
+
 /// Default HTTP timeout. Picked generously for first-contact requests
 /// against staging; can be tuned in Task 5 once we have data.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);

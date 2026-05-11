@@ -97,7 +97,6 @@ impl Client {
             token,
         })
     }
-
 }
 
 /// Production transport. Delegates to reqwest with Bearer auth header

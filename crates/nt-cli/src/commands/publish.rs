@@ -211,16 +211,32 @@ mod tests {
         ) -> Result<Value, TransportError> {
             self.calls.lock().unwrap().push(RecordedCall {
                 path: path.to_string(),
-                body: body.clone(),
+                body,
             });
-            self.responses
-                .lock()
-                .unwrap()
-                .remove(0) // panics if no more canned responses
+            let mut responses = self.responses.lock().unwrap();
+            if responses.is_empty() {
+                panic!(
+                    "FakeHttpClient: no canned response left for call to {path:?}. \
+                     Did the test set up enough .with_response() entries?",
+                );
+            }
+            responses.remove(0)
         }
     }
 
     // ─── publish_event: orchestration tests via injected HttpClient ──────
+    //
+    // Coverage note: the success-path stdout content (`println!` of the
+    // server response) is exercised end-to-end by
+    // `publish_sends_post_to_v1_events_with_bearer_header_and_prints_response`
+    // and `publish_response_passes_through_unknown_fields` in
+    // tests/publish.rs. Capturing process stdout from inside the same
+    // process requires either fd-level redirection or refactoring
+    // println! through a Write-trait seam — both heavier than the
+    // integration coverage that already pins the behaviour. The
+    // in-process tests below cover branch selection (exit codes +
+    // call shape); the integration tests own the stdout/stderr
+    // contract.
 
     #[tokio::test]
     async fn publish_event_returns_zero_on_2xx_response() {
@@ -256,6 +272,14 @@ mod tests {
         // Single-element array wrapping the envelope
         assert!(body_str.starts_with('['), "wire body starts with [: {body_str}");
         assert!(body_str.ends_with(']'), "wire body ends with ]: {body_str}");
+        // Exactly one envelope — pins the "single-event" invariant so
+        // a double-wrap regression (`[[{...}]]`) or accidental
+        // batching can't slip through.
+        assert_eq!(
+            body_str.matches(r#""type":"#).count(),
+            1,
+            "wire body must contain exactly one envelope: {body_str}",
+        );
         // Envelope fields present
         assert!(body_str.contains(r#""type":"ai.task.completed.v1""#));
         assert!(body_str.contains(r#""name":"nt-cli""#));

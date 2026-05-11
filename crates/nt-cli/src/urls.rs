@@ -134,7 +134,12 @@ pub fn resolve_urls(env: &dyn Env, profile: Option<&str>) -> Result<ResolvedUrls
         return Err(UrlError::PartialPair { which, value, missing });
     }
 
-    if api_set && auth_set {
+    // By here, api_set == auth_set: the partial-pair branch above
+    // returned early if they disagreed. So either both are set (use
+    // env-supplied URLs) or both are unset (fall through to defaults).
+    // Single-operand check rather than `api_set && auth_set` — the
+    // `&&` form was a mutation-equivalent redundancy.
+    if api_set {
         return Ok(ResolvedUrls {
             api_url: api_trim.to_string(),
             auth_url: auth_trim.to_string(),

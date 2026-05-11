@@ -11,26 +11,24 @@ use std::path::PathBuf;
 
 use crate::env::Env;
 
+/// Platform-conditional name of the OS-home env var. The platform gate
+/// lives on the constant; the lookup logic in `home_dir` is platform-
+/// agnostic. This keeps the same filter+map expression in a single
+/// location, so coverage on either platform exercises both NO_TICKETS_HOME
+/// and OS-home branches.
+#[cfg(unix)]
+const OS_HOME_KEY: &str = "HOME";
+#[cfg(windows)]
+const OS_HOME_KEY: &str = "USERPROFILE";
+
 pub fn home_dir(env: &dyn Env) -> Option<PathBuf> {
-    // All three branches share the same "set and non-empty" semantics —
-    // expressed identically via `.filter(...).map(...)`. Same shape
-    // everywhere keeps readers from wondering whether the NO_TICKETS_HOME
-    // path was somehow special.
-    if let Some(p) = env
-        .var("NO_TICKETS_HOME")
+    // Resolves to the first key with a non-empty value. Same filter+map
+    // expression for both — the platform-specific bit is the OS-home
+    // key name, not the lookup shape.
+    env.var("NO_TICKETS_HOME")
         .filter(|s| !s.is_empty())
+        .or_else(|| env.var(OS_HOME_KEY).filter(|s| !s.is_empty()))
         .map(PathBuf::from)
-    {
-        return Some(p);
-    }
-    #[cfg(unix)]
-    {
-        env.var("HOME").filter(|s| !s.is_empty()).map(PathBuf::from)
-    }
-    #[cfg(windows)]
-    {
-        env.var("USERPROFILE").filter(|s| !s.is_empty()).map(PathBuf::from)
-    }
 }
 
 pub fn credentials_path(env: &dyn Env) -> Option<PathBuf> {
@@ -75,6 +73,13 @@ mod tests {
         );
     }
 
+    /// Platform-appropriate OS-home value. Tests use this so the same
+    /// assertion set runs on both unix and windows.
+    #[cfg(unix)]
+    const OS_HOME_VALUE: &str = "/from/os/home";
+    #[cfg(windows)]
+    const OS_HOME_VALUE: &str = "C:\\from\\os\\home";
+
     #[test]
     fn home_dir_returns_none_when_injected_env_has_no_known_keys() {
         // None of NO_TICKETS_HOME, HOME, USERPROFILE present → unresolvable.
@@ -86,52 +91,25 @@ mod tests {
     #[test]
     fn home_dir_empty_no_tickets_home_falls_through_to_os_home() {
         // Empty NO_TICKETS_HOME must not short-circuit — the OS-home
-        // branch should still resolve. Use the platform-appropriate
-        // OS-home key so the test runs on both unix and windows CI.
-        #[cfg(unix)]
+        // lookup should still resolve.
         let env = HashMapEnv::with(&[
             ("NO_TICKETS_HOME", ""),
-            ("HOME", "/from/os/home"),
-        ]);
-        #[cfg(windows)]
-        let env = HashMapEnv::with(&[
-            ("NO_TICKETS_HOME", ""),
-            ("USERPROFILE", "C:\\from\\os\\home"),
+            (OS_HOME_KEY, OS_HOME_VALUE),
         ]);
         let resolved = home_dir(&env).expect("falls back to OS home");
-        #[cfg(unix)]
-        assert_eq!(resolved, PathBuf::from("/from/os/home"));
-        #[cfg(windows)]
-        assert_eq!(resolved, PathBuf::from("C:\\from\\os\\home"));
+        assert_eq!(resolved, PathBuf::from(OS_HOME_VALUE));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn home_dir_unix_uses_HOME_when_NO_TICKETS_HOME_absent() {
-        let env = HashMapEnv::with(&[("HOME", "/unix/host/home")]);
-        let resolved = home_dir(&env).expect("HOME resolves");
-        assert_eq!(resolved, PathBuf::from("/unix/host/home"));
+    fn home_dir_uses_os_home_key_when_no_tickets_home_absent() {
+        let env = HashMapEnv::with(&[(OS_HOME_KEY, OS_HOME_VALUE)]);
+        let resolved = home_dir(&env).expect("OS-home key resolves");
+        assert_eq!(resolved, PathBuf::from(OS_HOME_VALUE));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn home_dir_unix_empty_HOME_returns_none() {
-        let env = HashMapEnv::with(&[("HOME", "")]);
-        assert_eq!(home_dir(&env), None);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn home_dir_windows_uses_USERPROFILE_when_NO_TICKETS_HOME_absent() {
-        let env = HashMapEnv::with(&[("USERPROFILE", "C:\\windows\\host\\home")]);
-        let resolved = home_dir(&env).expect("USERPROFILE resolves");
-        assert_eq!(resolved, PathBuf::from("C:\\windows\\host\\home"));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn home_dir_windows_empty_USERPROFILE_returns_none() {
-        let env = HashMapEnv::with(&[("USERPROFILE", "")]);
+    fn home_dir_empty_os_home_key_returns_none() {
+        let env = HashMapEnv::with(&[(OS_HOME_KEY, "")]);
         assert_eq!(home_dir(&env), None);
     }
 }

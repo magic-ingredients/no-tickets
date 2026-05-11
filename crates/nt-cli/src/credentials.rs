@@ -49,5 +49,45 @@ fn is_expires_in_future(timestamp: &str) -> bool {
     let Ok(expires) = OffsetDateTime::parse(timestamp, &Iso8601::DEFAULT) else {
         return false;
     };
-    expires > OffsetDateTime::now_utc()
+    is_strictly_after(expires, OffsetDateTime::now_utc())
+}
+
+/// Pure helper for the strict-after comparison. Extracted so the
+/// boundary case (a == b) can be tested directly — `is_expires_in_future`
+/// uses `now_utc()` as one operand, which makes the boundary
+/// impossible to pin from outside. Mutation testing flagged the `>`
+/// in `is_expires_in_future` as untested for `>` vs `>=`; this helper
+/// kills that mutant.
+fn is_strictly_after(a: OffsetDateTime, b: OffsetDateTime) -> bool {
+    a > b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn is_strictly_after_returns_true_when_a_is_later_than_b() {
+        let b = OffsetDateTime::now_utc();
+        let a = b + Duration::from_secs(60);
+        assert!(is_strictly_after(a, b));
+    }
+
+    #[test]
+    fn is_strictly_after_returns_false_when_a_equals_b() {
+        // Pins the strict-greater-than semantics. `>=` would return true
+        // here; `>` returns false. Mutation testing surfaced this exact
+        // boundary.
+        let b = OffsetDateTime::now_utc();
+        let a = b;
+        assert!(!is_strictly_after(a, b));
+    }
+
+    #[test]
+    fn is_strictly_after_returns_false_when_a_is_earlier_than_b() {
+        let b = OffsetDateTime::now_utc();
+        let a = b - Duration::from_secs(60);
+        assert!(!is_strictly_after(a, b));
+    }
 }

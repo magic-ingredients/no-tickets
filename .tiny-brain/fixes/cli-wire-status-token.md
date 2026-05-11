@@ -25,24 +25,7 @@ resolution:
     - src/sdk/__tests__/auth.test.ts
     - src/sdk/__tests__/credentials.test.ts
     - package.json
-resolution:
-  rootCause: CLI surface was incomplete — commands existed as separate modules but were never dispatched from src/cli.ts
-  fix:
-    - Wired `status` command with shared describeAuthStatus() helper reused by the MCP status tool
-    - Wired `token list | create | revoke` subcommands with allowlist-based value-flag parsing
-    - Added NO_TICKETS_HOME override to isolate e2e tests from machine-state credentials
-  filesModified:
-    - src/cli.ts
-    - src/sdk/auth.ts
-    - src/sdk/credentials.ts
-    - src/mcp/tools/status.ts
-    - src/__tests__/status-e2e.test.ts
-    - src/__tests__/token-cli-e2e.test.ts
-    - src/__tests__/cli.test.ts
-    - src/__tests__/mcp-e2e.test.ts
-    - src/__tests__/auth-e2e.test.ts
-    - src/sdk/__tests__/auth.test.ts
-    - src/sdk/__tests__/credentials.test.ts
+archived: true
 ---
 
 # Fix: Wire status and token commands into CLI

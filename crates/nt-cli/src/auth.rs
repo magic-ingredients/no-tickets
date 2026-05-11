@@ -49,6 +49,9 @@ impl TokenType {
 }
 
 pub struct ResolvedAuth {
+    /// The actual bearer token. Required by transport callers (publish);
+    /// status doesn't read it (only displays source + tokenType).
+    pub token: String,
     pub source: AuthSource,
     pub token_type: TokenType,
 }
@@ -56,15 +59,19 @@ pub struct ResolvedAuth {
 pub fn resolve_auth() -> Option<ResolvedAuth> {
     if let Ok(token) = std::env::var("NO_TICKETS_TOKEN") {
         if !token.is_empty() {
+            let token_type = TokenType::detect(&token);
             return Some(ResolvedAuth {
+                token,
                 source: AuthSource::Env,
-                token_type: TokenType::detect(&token),
+                token_type,
             });
         }
     }
     let stored = credentials::load()?;
+    let token_type = TokenType::detect(&stored.token);
     Some(ResolvedAuth {
+        token: stored.token,
         source: AuthSource::Credentials,
-        token_type: TokenType::detect(&stored.token),
+        token_type,
     })
 }

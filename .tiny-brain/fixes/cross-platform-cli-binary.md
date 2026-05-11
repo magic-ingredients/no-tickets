@@ -413,7 +413,8 @@ files; rmcp; reqwest+TLS+auth) are all proven. Task 4 becomes a
 mechanical port.
 
 ### 3. JSON Schema bundle integration
-status: in_progress
+status: completed
+commitSha: ffa7402
 
 Validate the local Rust-side toolchain (jsonschema crate + bundle loading + TS-parity validator API) against a **locally-vendored JSON Schema bundle** generated from the existing `@magic-ingredients/no-tickets-schemas` Zod source via `scripts/generate-schema-bundle.mjs`. The vendored bundle is the interim source; the canonical source becomes the release-artifact bundle produced by the sister fix.
 

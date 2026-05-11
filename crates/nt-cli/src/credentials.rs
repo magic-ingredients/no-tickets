@@ -153,6 +153,23 @@ mod tests {
     }
 
     #[test]
+    fn load_returns_none_when_host_field_is_empty_string() {
+        // Empty `host` is treated as malformed — flowing through to
+        // HostMismatch { stored_host: "" } would produce a warning that
+        // names no env ("issued for "). Reject upstream so the user gets
+        // the regular "Not authenticated" prompt instead.
+        let tmp = tempfile::tempdir().unwrap();
+        write_creds(
+            tmp.path(),
+            &format!(
+                r#"{{"token":"nt_session_x","email":"a@b.com","expiresAt":"{VALID_FUTURE_EXPIRES}","host":""}}"#,
+            ),
+        );
+        let outcome = load(&env_with_home(tmp.path()), API_URL_PROD);
+        assert!(matches!(outcome, LoadOutcome::None));
+    }
+
+    #[test]
     fn load_returns_none_when_credentials_file_lacks_host_field() {
         // Legacy file (TS CLI shape) without `host` — load must return None
         // so the caller forces a re-init. No silent acceptance.

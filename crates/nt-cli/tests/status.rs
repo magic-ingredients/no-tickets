@@ -280,8 +280,19 @@ fn status_session_host_mismatch_emits_warning_and_declines_session() {
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("api-staging.no-tickets.com"))
-        .stderr(predicate::str::contains("nt init"));
+        // Tight assertions: `Warning:` prefix, the stored host, the
+        // *current* host the session is being rejected against, the
+        // re-authenticate verb, and the `nt init` suggestion. Stripping
+        // any of these from the warning text now breaks this test.
+        .stderr(predicate::str::contains("Warning:"))
+        .stderr(predicate::str::contains(
+            "https://api-staging.no-tickets.com",
+        ))
+        .stderr(predicate::str::contains("https://api.no-tickets.com"))
+        .stderr(predicate::str::contains("re-authenticate"))
+        .stderr(predicate::str::contains("nt init"))
+        // Token MUST NOT leak into stderr — the warning is identity-free.
+        .stderr(predicate::str::contains("nt_session_staging").not());
 }
 
 // ─── Home resolution: NO_TICKETS_HOME beats real HOME ───────────────────────

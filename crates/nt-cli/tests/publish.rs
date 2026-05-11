@@ -14,6 +14,7 @@ use tokio::process::Command;
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[derive(Debug)]
 struct Output {
     code: i32,
     stdout: String,
@@ -499,6 +500,68 @@ async fn publish_connection_refused_maps_to_transport_error() {
 }
 
 // ─── --data must be valid JSON; reject early without a request ────────────
+
+/// ADR-0002 Task 3: when the credentials file's `host` doesn't match the
+/// publish target's api_url, the session is stale and must be declined
+/// with a stderr warning — same contract as `nt status`. Pinned at the
+/// integration layer so a regression in `publish.rs` (where the warning
+/// emission lives next to the same eprintln in `status.rs`) can't pass
+/// the publish suite while breaking the contract.
+#[tokio::test]
+async fn publish_session_host_mismatch_emits_warning_and_declines_session() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0) // must NOT be hit — stale session declined before transport
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    // Write a credentials file whose host == staging, but the publish
+    // command will resolve to `server.uri()` (the wiremock URL).
+    let dir = home.path().join(".notickets");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("credentials"),
+        r#"{"token":"nt_session_staging","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api-staging.no-tickets.com"}"#,
+    )
+    .unwrap();
+
+    // No env token → publish must fall back to credentials → mismatch fires.
+    let out = run_nt_publish(
+        &server.uri(),
+        None,
+        home.path(),
+        &[
+            "--type",
+            "ai.task.completed.v1",
+            "--data",
+            r#"{"taskId":"t-1"}"#,
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+
+    assert_ne!(out.code, 0, "publish must fail; got {:?}", out);
+    assert!(out.stderr.contains("Warning:"), "got: {:?}", out.stderr);
+    assert!(
+        out.stderr.contains("https://api-staging.no-tickets.com"),
+        "stored host must be named; got: {:?}",
+        out.stderr,
+    );
+    assert!(
+        out.stderr.contains("re-authenticate"),
+        "warning must tell the user to re-init; got: {:?}",
+        out.stderr,
+    );
+    assert!(
+        !out.stderr.contains("nt_session_staging"),
+        "token MUST NOT leak into the warning; got: {:?}",
+        out.stderr,
+    );
+}
 
 #[tokio::test]
 async fn publish_with_malformed_data_fails_before_request() {

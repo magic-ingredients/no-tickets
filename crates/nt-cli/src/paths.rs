@@ -16,7 +16,10 @@ use directories::ProjectDirs;
 
 use crate::env::Env;
 
-/// Returns the directory in which `credentials` and `config.json` live.
+/// Returns the platform-native config directory used by the CLI.
+///
+/// The `credentials` file lives directly inside this directory. Task 4
+/// of ADR-0002 adds `config.json` as the project/token registry alongside it.
 ///
 /// Resolution order:
 /// 1. `NO_TICKETS_HOME=<dir>` (non-empty) → `<dir>/.notickets`
@@ -24,9 +27,6 @@ use crate::env::Env;
 /// 3. `None` if neither resolves
 /// Filename of the session credentials file inside [`config_dir`].
 pub const CREDENTIALS_FILE: &str = "credentials";
-
-/// Filename of the project/token registry inside [`config_dir`].
-pub const CONFIG_FILE: &str = "config.json";
 
 pub fn config_dir(env: &dyn Env) -> Option<PathBuf> {
     if let Some(override_home) = env.var("NO_TICKETS_HOME").filter(|s| !s.is_empty()) {
@@ -81,10 +81,5 @@ mod tests {
     #[test]
     fn credentials_file_constant_pins_filename() {
         assert_eq!(CREDENTIALS_FILE, "credentials");
-    }
-
-    #[test]
-    fn config_file_constant_pins_filename() {
-        assert_eq!(CONFIG_FILE, "config.json");
     }
 }

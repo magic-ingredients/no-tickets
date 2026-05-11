@@ -30,6 +30,10 @@ async fn run_nt_publish(
 ) -> Output {
     let mut cmd = Command::new(cargo_bin("nt"));
     cmd.env("NO_TICKETS_HOME", home)
+        // ADR-0002 layer 2/3 mutual exclusion: NO_TICKETS_ENV set in the
+        // host shell collides with the explicit pair we set below and
+        // surfaces EnvAndPairBothSet. Clear it for hermeticity.
+        .env_remove("NO_TICKETS_ENV")
         .env("NO_TICKETS_API_URL", server_uri)
         // The url-resolver enforces both env vars must be set together;
         // give it a placeholder for AUTH (publish never reads it).

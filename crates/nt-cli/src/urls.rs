@@ -104,6 +104,10 @@ pub fn resolve_urls(env: &dyn Env) -> Result<ResolvedUrls, UrlError> {
             api_url: LOCAL_API.to_string(),
             auth_url: LOCAL_AUTH.to_string(),
         }),
+        // `prod` and `None` deliberately collapse: layer 1 (defaults) and
+        // layer 2 (`NO_TICKETS_ENV=prod`) resolve to the same URLs. The
+        // explicit `prod` value exists so users can document intent in
+        // shell config; it MUST stay equivalent to "unset".
         Some("prod") | None => Ok(ResolvedUrls {
             api_url: DEFAULT_API.to_string(),
             auth_url: DEFAULT_AUTH.to_string(),

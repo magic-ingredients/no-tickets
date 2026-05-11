@@ -78,35 +78,52 @@ different prompt templates targeting the same reviewer agent type:
 New pipeline phase ordering:
 
 ```
-RED → adversarial-tests → (refine RED if dirty, loop) →
+RED → [differential?] → adversarial-tests → (refine RED if dirty, loop) →
 GREEN → adversarial-impl → (refactor if dirty, loop) →
        mutation          → (refactor / add tests if dirty, loop) →
 done
 ```
 
+The `differential` slot is optional and runs only when the fix /
+PRD-feature declares a `reference: <path>` (see Task 4). When present
+it runs *between* RED and adversarial-tests so a failing differential
+short-circuits before any adversarial-tests cost is paid. When absent
+the pipeline jumps straight from RED to adversarial-tests.
+
 Mutation stays post-GREEN. The user's earlier proposal to put mutation
 before GREEN was reconsidered: mutation testing mutates the
 implementation, so it cannot run before there is an implementation.
 The framing of "mutation is a test-quality check" is correct; the
-ordering remains post-GREEN because of the tool's mechanics.
+ordering remains post-GREEN because of the tool's mechanics. Mutation
+is re-runnable: any subsequent non-`test:` non-`chore:` commit (i.e.
+`feat:`/`fix:`/`refactor:`) re-triggers mutation review against the
+task-scoped diff (section 3).
 
 **Optional pre-GREEN step for ports:** `differential` — wrap the
 new test suite in a shim, run it against the reference implementation,
 verify pass-or-documented-divergence. Strictly stronger than
 adversarial-tests alone because it grounds the spec in observed
-behaviour, not agent inference. Skipped automatically when no
-reference impl is configured for the task.
+behaviour, not agent inference.
 
 #### Prompt templates
 
 `adversarial-tests` template instructs the reviewer to:
+- Read the **task description from the fix doc or PRD feature file**
+  (path passed in via the review payload) as the canonical spec.
 - Read the test files in the task's diff.
 - If a reference implementation path is configured, read that too.
+- Treat the task description as ground truth; the question is "do these
+  tests verify what the task description requires?".
 - Report: gaps in scenario coverage, brittle assertions, redundant
   tests that *don't* distinguish regressions, error-path coverage,
   cross-product coverage, position-agnostic flag handling, and any
   test whose passing admits trivial / wrong implementations.
 - Verdict: clean or dirty. Dirty → user refines RED tests.
+
+The prompt's size budget needs to accommodate (a) the framing
+instructions, (b) the task description text loaded inline, and (c) the
+review schema. Allow up to 4 KB of static text; the reviewer agent then
+loads test files and the task description into its own context.
 
 `adversarial-impl` template instructs the reviewer to:
 - Read the implementation files in the task's diff.
@@ -202,7 +219,9 @@ Per-repo `.tiny-brain/mutators.toml`:
 [mutators.rust]
 tool = "cargo-mutants"
 scope = "changed-files"
-min_kill_rate = 0.85
+min_kill_rate = 0.75   # conservative v1 default — Rust generates more
+                       # equivalent-mutants noise than other languages;
+                       # raise once the allowlist matures
 
 [mutators.typescript]
 tool = "stryker"
@@ -240,7 +259,10 @@ Driver algorithm:
 
 #### Known-equivalent-mutant allowlist
 
-`.tiny-brain/mutation-allowlist.toml`:
+`.tiny-brain-mutation-allowlist.toml` at the repo root (NOT under
+`.tiny-brain/` — that directory is commonly gitignored per the project
+CLAUDE.md options 2 and 3, and a vanishing allowlist would produce
+machine-divergent mutation results):
 
 ```toml
 [[allowed_survivors]]
@@ -255,10 +277,27 @@ verified_at = "2026-05-11"
 ```
 
 Driver subtracts these from the active-survivor count before threshold
-check. The `verified_sha` field acts as a freshness check: if the file
-at the listed line has changed since `verified_sha`, the entry is
-invalidated and the survivor counts again — refactoring forces
-re-verification.
+check. The `verified_sha` field acts as a freshness check.
+
+**v1 freshness check trade-off.** Line-binding (the v1 design) means
+*any* edit to the file above the listed line shifts line numbers and
+invalidates the entry. That produces false invalidations on cosmetic
+edits (rename, comment add) and forces unnecessary re-verification —
+but never silently accepts a survivor that should be re-evaluated.
+Function-binding via Tree-sitter (the v2 design — see Lessons) reduces
+the false-invalidation noise but adds parsing complexity. **v1 prefers
+false-positive invalidations over false-negative acceptances** and
+ships with line-binding accordingly.
+
+Implementation: on each mutation run, the driver also reads the file
+at the listed `verified_sha` and computes the diff for the file
+between `verified_sha` and HEAD. If the diff touches lines at or above
+the allowlist entry's `line`, invalidate; otherwise keep.
+
+Convenience subcommand: `tiny-brain mutation allow --file <p>
+--line <n> --reason "..."` adds the current HEAD as `verified_sha`,
+the current user as `verified_by`, and today as `verified_at`. Avoids
+hand-edited TOML drift.
 
 #### Full vs delta modes
 
@@ -318,13 +357,32 @@ single commit:
 4. When the task closes (`commit progress` or task `status: completed`),
    archive the `task_start_sha` for later reference.
 
+**Diff semantics under multi-iteration RED.** `git diff A..B` produces
+the *net* state difference between the two tree states — not a replay
+of intermediate commits. So a task that goes RED-1 → RED-2 → RED-3 →
+GREEN with three test-iteration commits results in
+`git diff <task_start_sha>..HEAD` showing **only the final state** of
+each test file, not its rewrite history. The reviewer sees the test
+suite as it is now, which is what you want. The cumulative-vs-replay
+worry is misplaced: `git diff` is a state comparison, not a history.
+
 Edge cases:
 - **`commit --amend`** rewrites HEAD; the `task_start_sha` still points
   at the pre-amend ancestor and the diff calculation remains correct.
-- **`git rebase`** moves the task_start_sha out from under us. Mitigate:
-  on every `pipeline` call, verify `task_start_sha` is reachable from
-  HEAD. If not, prompt the user to re-enter the pipeline at the
-  appropriate phase (cheap, manual recovery).
+- **`git rebase` that moves `task_start_sha` out of reachability.**
+  v1 recovery UX:
+  1. Detect: on every `pipeline` call, run `git merge-base --is-ancestor
+     <task_start_sha> HEAD`; if it returns non-zero the task_start_sha
+     is unreachable.
+  2. Attempt `git reflog show task_start_sha` to find a candidate new
+     base — usually the rebased equivalent commit.
+  3. If exactly one candidate found, prompt: "Detected rebase. New
+     task_start_sha candidate: <sha> ('<commit msg>'). Accept? (y/n)".
+  4. If zero or multiple candidates, prompt the user to specify
+     manually: `pipeline --task-id <id> --rebase-recover <sha>`.
+  5. Refuse to advance the pipeline until recovery is acknowledged —
+     better to block once than to silently emit a diff that's missing
+     half the task's history.
 - **Multiple tasks open simultaneously** (interleaved work): each task
   has its own `task_start_sha`; concurrent tasks don't collide.
 
@@ -389,13 +447,29 @@ reminder from firing on `test:` commits when refactor was not actually
 required — the current behaviour fires that reminder ahead of the
 review.
 
+**No-test-commits handling.** Some tasks legitimately have no tests
+(docs, config, templates, shell scripts — see CLAUDE.md's
+`--agent green` skip-RED escape hatch). The `adversarial-tests` phase
+must handle this:
+- If the task diff contains zero files matching any registered test
+  pattern (e.g. `*.test.ts`, `tests/*.rs`, `test_*.py`,
+  `*_test.go`), the phase **skips** with a "no test files in this
+  task" status — does NOT fail.
+- The skip is recorded in the review JSON so future audits can see
+  it was deliberate.
+- A `--require-tests` flag forces failure on skip, for fix types
+  that should never legitimately skip RED.
+
 **Files to modify/create:**
 - post-commit hook
 - system-reminder text templates
+- test-file pattern registry per language
 
 **Acceptance:**
 - A `test:` commit on a tracked task emits exactly one reminder
   instructing the user to invoke the adversarial-tests agent.
+- A `chore:` commit on a docs-only task triggers `adversarial-tests`
+  which skips cleanly with "no test files in task diff" status.
 - Mistake protection: if the user commits `feat:` while still in RED
   phase, the commit-msg hook rejects (already does this; verify it
   still works with the new phase).
@@ -441,16 +515,30 @@ defaults.
 ### 6. Stryker adapter (TypeScript / JavaScript)
 status: not_started
 
-Wrap the existing Stryker config; parse `reports/mutation/mutation.json`
-into the common `MutationReport` schema.
+Wrap Stryker; parse `reports/mutation/mutation.json` into the common
+`MutationReport` schema. Unlike `cargo-mutants` (which is fully
+self-configuring), Stryker requires a config file — repos without one
+need handling beyond "tool not installed".
+
+Three-state detection:
+- **Available**: `stryker.config.mjs` (or `.js`/`.json`) present AND
+  `@stryker-mutator/core` installed → run normally.
+- **Needs config**: tool installed, no config file → emit a config-
+  generation hint with a minimal default `stryker.config.mjs` for
+  vitest projects; do NOT auto-write the file.
+- **Needs install**: neither installed → emit install hint.
 
 **Files to modify/create:**
 - `adapters/stryker.ts` (or Rust binary that invokes Stryker)
 - output parser for Stryker's JSON reporter
+- minimal default stryker.config.mjs template (for the hint)
 
 **Acceptance:**
-- Running on the no-tickets repo TS code produces a valid
-  MutationReport JSON.
+- Running on the no-tickets repo TS code (which has stryker.config.mjs)
+  produces a valid MutationReport JSON.
+- A repo with stryker installed but no config produces a `NeedsConfig`
+  status with a copy-pasteable minimal config in the message, not a
+  silent skip.
 - Tool absence emits `AdapterAvailability::NeedsInstall` with
   `npm install --save-dev @stryker-mutator/core @stryker-mutator/vitest-runner`
   (or equivalent) as the install hint.
@@ -502,18 +590,25 @@ Wrap `gremlins`; parse `--output json` stdout.
 status: not_started
 
 Driver consumes the task diff (Task 13), classifies each path by
-language, groups, and dispatches per-language adapter calls in
-parallel (adapters are independent).
+language, groups, and dispatches per-language adapter calls.
+
+**Adapters run serially by default.** Two reasons: (a) cargo-mutants
+and Stryker individually saturate CPU and disk I/O — concurrent runs
+slow both and produce noisy timing that interacts poorly with
+mutation-test timeout heuristics; (b) reproducibility across machines
+with different core counts. Opt-in `--parallel` flag for users who
+know their machine has the headroom.
 
 **Files to modify/create:**
 - driver: language classifier
-- driver: per-language parallel dispatch
+- driver: serial per-language dispatch (parallel via `--parallel` flag)
 - driver: result aggregator
 
 **Acceptance:**
 - Commit touching both `src/cli.ts` and `crates/nt-cli/src/auth.rs`
   triggers both Stryker (on the TS file) and cargo-mutants (on the
   Rust file), aggregated into one combined report.
+- Default execution is serial; `--parallel` runs them concurrently.
 
 ### 11. Known-equivalent-mutant allowlist
 status: not_started
@@ -648,29 +743,75 @@ assertions that the parser produces the expected MutationReport.
   <p> --line <n> --reason "..."` subcommand) — burying it in TOML
   hand-edits will produce stale entries.
 
+### Backward-compatibility migration
+
+Renaming `adversarial` → `adversarial-impl` and inserting a new
+`adversarial-tests` step is a breaking change for existing tiny-brain
+consumers (custom hooks, persisted review JSON, agent dispatch maps).
+Migration plan:
+
+1. **Major version bump** on the tiny-brain CLI (e.g. 0.22.x → 0.23.0).
+2. **Alias `adversarial` → `adversarial-impl`** for one minor version
+   so existing CLI invocations and hooks continue to work, with a
+   deprecation warning emitted on each use.
+3. **Opt-in flag for the new phase sequence**:
+   `tiny-brain pipeline ... --tdd-version 2` selects the new
+   five-phase sequence; absent flag = legacy three-phase sequence.
+   Defaults flip on the *next* major bump after 0.23.0.
+4. **Existing `.tiny-brain/reviews/adversarial/<sha>.json` files** are
+   readable by the new tooling unchanged (the review JSON schema
+   doesn't change — only the *prompt template* and which phase fires
+   the review change). No migration of historical data required.
+5. **CLAUDE.md template diff**: shipping a migration script that
+   regenerates the tiny-brain section of consumer-repo CLAUDE.md
+   files. Manual section content is preserved.
+
 ## Lessons / Open Questions
 
 - **Differential testing for non-port tasks?** Probably not. A
   greenfield feature has no oracle. Differential should remain a
   port-only opt-in.
-- **Should mutation review run on `refactor:` commits?** Probably yes —
-  refactors can subtly weaken test coverage by deleting a branch that
-  used to be exercised. But it's slower; gate on adapter scope mode.
+- **`reference:` lives at fix-frontmatter OR PRD-feature-frontmatter.**
+  Port work is often PRD-tracked (cross-platform-cli-binary itself is
+  a fix, but its tasks reference PRDs). Accept the field at both
+  levels; resolution precedence: task > feature > fix.
 - **Cross-cutting reviews vs per-language reviews?** A commit touching
   TS and Rust gets two adapter runs but one adversarial-impl review.
   The reviewer reads files from both languages. That works for the
   adversarial step (a single reasoning agent can hold both contexts);
   it does NOT work for mutation (each tool is language-specific). The
   asymmetry is documented and intentional.
-- **Survivor allowlist drift.** A survivor's `verified_sha` should
-  arguably bind to the *function* containing the line, not the line
-  number — line numbers move with edits. Function-name binding needs
-  Tree-sitter or similar. Defer to a follow-up; line-binding is
-  good enough for v1.
+- **Survivor allowlist drift to v2.** Line-binding (v1) produces
+  false-invalidations on cosmetic edits but never false-acceptances.
+  v2 should bind to the enclosing function via Tree-sitter (or
+  language-specific AST parsers) so trivial edits don't trigger
+  re-verification noise. Defer; line-binding works.
 - **Pipeline observability.** With more phases, users will want a
   status command: "what phase is task X in?". Already partially
   supported via `progress.json`; formalise as `tiny-brain pipeline
   status --task-id <id>`.
+- **Per-phase cost / token budget.** Adding `adversarial-tests` as a
+  required phase doubles the reviewer-agent invocations per task
+  (one pre-GREEN, one post-GREEN). For a five-task fix at ~3
+  iterations per phase that's an extra 15 reviewer invocations vs.
+  today's flow. At current pricing this is non-trivial. Mitigations
+  to evaluate: (a) cache reviewer reads of the task spec across
+  iterations within a task, (b) make `adversarial-tests` skip when
+  no test files changed since the last review (idempotent), (c) make
+  the test-reviewer cheaper than the impl-reviewer via a smaller
+  model. Defer concrete choice to implementation.
+- **Pipeline configurability surface.** Two levels: (a) global
+  `~/.tiny-brain/pipeline.toml` for org defaults, (b) per-repo
+  `.tiny-brain/pipeline.toml` for repo overrides. Per-fix frontmatter
+  can opt out of specific phases (e.g., a "no tests" fix sets
+  `skip_phases: ["adversarial-tests"]`). Per-PRD configuration
+  unnecessary in v1.
+- **Review history migration path.** Existing per-fix
+  `.tiny-brain/reviews/adversarial/<sha>.json` files contain a
+  `verdict` field but no `phase` or `prompt_template` field. v1 of the
+  new tooling assumes any pre-existing review JSON without `phase`
+  was the legacy `adversarial-impl` equivalent — preserves searchability,
+  doesn't require rewriting historical files.
 
 ## Acceptance Criteria
 
@@ -683,4 +824,4 @@ assertions that the parser produces the expected MutationReport.
 - [ ] Task-scoped diff: review steps and adapters see the full task delta, not just last-commit
 - [ ] Documentation updated; CLAUDE.md template reflects new phase ordering
 - [ ] End-to-end test: synthetic multi-language repo passes mutation review with all three adapters invoked
-- [ ] Backward compatibility: existing single-language Stryker users see no behavioural regression
+- [ ] Migration path: legacy `adversarial` phase aliases to `adversarial-impl` for one minor version with deprecation warning; `--tdd-version 2` opt-in flag selects the new five-phase sequence (see Backward-compatibility migration above). The major-bump strategy means there IS a behavioural change — but it's gated behind opt-in until the next major.

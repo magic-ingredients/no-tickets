@@ -366,8 +366,19 @@ async fn list_event_types_filters_by_domain() {
 
 // ─── deprecated filter inverts active vs deprecated ────────────────────────
 
+/// Pins the *direction* of the deprecated filter against known fixture
+/// rows — not just "both sets non-empty + disjoint" (a backwards filter
+/// passes that). Mutation testing on `t.deprecated == want` flipped to
+/// `!=` survives the disjoint-non-empty contract but is caught here by
+/// asserting that a known-ACTIVE id appears in `deprecated:false` and a
+/// known-DEPRECATED id appears in `deprecated:true`.
+///
+/// Fixtures pinned here MUST stay in sync with `src/fixtures.rs`.
 #[tokio::test]
 async fn list_event_types_filters_by_deprecated_flag() {
+    const KNOWN_ACTIVE: &str = "billing.invoice.issued.v2";
+    const KNOWN_DEPRECATED: &str = "billing.invoice.issued.v1";
+
     let mut c = McpClient::spawn().await;
     c.handshake().await;
 
@@ -394,30 +405,43 @@ async fn list_event_types_filters_by_deprecated_flag() {
     let deprecated_text = deprecated["result"]["content"][0]["text"].as_str().unwrap();
     let active_payload: Value = serde_json::from_str(active_text).unwrap();
     let deprecated_payload: Value = serde_json::from_str(deprecated_text).unwrap();
-    // Spike fixture: at least one of each so the contract is exercised.
+
+    let collect_ids = |payload: &Value| {
+        payload["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["id"].as_str().unwrap().to_string())
+            .collect::<std::collections::HashSet<_>>()
+    };
+    let active_ids = collect_ids(&active_payload);
+    let deprecated_ids = collect_ids(&deprecated_payload);
+
+    // Direction check (the mutation-survivor kill). A backwards filter
+    // fails BOTH of these asserts simultaneously — KNOWN_ACTIVE would
+    // show up in the deprecated set and vice versa.
     assert!(
-        !active_payload["types"].as_array().unwrap().is_empty(),
-        "active filter must return at least one row in the spike fixture",
+        active_ids.contains(KNOWN_ACTIVE),
+        "deprecated:false must include known-active id {KNOWN_ACTIVE}; got {active_ids:?}",
     );
     assert!(
-        !deprecated_payload["types"].as_array().unwrap().is_empty(),
-        "deprecated filter must return at least one row in the spike fixture",
+        deprecated_ids.contains(KNOWN_DEPRECATED),
+        "deprecated:true must include known-deprecated id {KNOWN_DEPRECATED}; got {deprecated_ids:?}",
+    );
+    assert!(
+        !active_ids.contains(KNOWN_DEPRECATED),
+        "deprecated:false must NOT include deprecated row {KNOWN_DEPRECATED}",
+    );
+    assert!(
+        !deprecated_ids.contains(KNOWN_ACTIVE),
+        "deprecated:true must NOT include active row {KNOWN_ACTIVE}",
     );
 
-    // Cross-check: active and deprecated rows do not overlap by id.
-    let active_ids: std::collections::HashSet<&str> = active_payload["types"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["id"].as_str().unwrap())
-        .collect();
-    for t in deprecated_payload["types"].as_array().unwrap() {
-        let id = t["id"].as_str().unwrap();
-        assert!(
-            !active_ids.contains(id),
-            "id {id} appeared in both active and deprecated sets",
-        );
-    }
+    // Cross-check: active and deprecated sets are disjoint by id.
+    assert!(
+        active_ids.is_disjoint(&deprecated_ids),
+        "active and deprecated id sets must be disjoint; active={active_ids:?} deprecated={deprecated_ids:?}",
+    );
 
     c.shutdown().await;
 }

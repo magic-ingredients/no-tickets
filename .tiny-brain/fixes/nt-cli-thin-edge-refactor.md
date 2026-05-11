@@ -1,7 +1,7 @@
 ---
 id: nt-cli-thin-edge-refactor
 title: "Align nt-cli with thin-edge / stateless-core / DI-friendly principles"
-status: not_started
+status: in_progress
 severity: medium
 reported: 2026-05-11T00:00:00.000Z
 resolved: null

@@ -53,6 +53,16 @@ struct SourceAttributes<'a> {
     project: &'a str,
 }
 
+/// Pure builder for the wire-body single-event array. Stub for RED phase;
+/// GREEN extracts the literal from `run()` and replaces this body.
+fn build_envelope<'a>(
+    _type_id: &'a str,
+    _data: &'a Value,
+    _project: &'a str,
+) -> Vec<EventEnvelope<'a>> {
+    unimplemented!("build_envelope: extracted in GREEN phase")
+}
+
 pub async fn run(args: PublishArgs<'_>) -> i32 {
     // URL resolution first (matches handleStatus pattern). A profile
     // error or partial-pair env-var setup wins over auth missing.
@@ -117,5 +127,77 @@ pub async fn run(args: PublishArgs<'_>) -> i32 {
             eprintln!("{e}");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn build_envelope_emits_single_element_array() {
+        let data = json!({ "taskId": "t-1" });
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        assert_eq!(envelope.len(), 1, "wire body is a single-element JSON array");
+    }
+
+    #[test]
+    fn build_envelope_field_order_is_type_data_source() {
+        let data = json!({ "taskId": "t-1", "sessionId": "s-1" });
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("envelope serialises");
+        let t = body.find(r#""type":"ai.task.completed.v1""#).expect("type present");
+        let d = body.find(r#""data":{"#).expect("data present");
+        let s = body.find(r#""source":{"name":"nt-cli""#).expect("source present");
+        assert!(
+            t < d && d < s,
+            "wire field order must be type, data, source — got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_source_name_is_nt_cli() {
+        let data = json!({});
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        assert!(
+            body.contains(r#""name":"nt-cli""#),
+            "source.name must be \"nt-cli\"; got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_source_sdk_version_is_crate_version() {
+        let data = json!({});
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        let expected = format!(r#""sdkVersion":"{}""#, env!("CARGO_PKG_VERSION"));
+        assert!(
+            body.contains(&expected),
+            "source.sdkVersion must match CARGO_PKG_VERSION; got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_writes_project_into_source_attributes() {
+        let data = json!({});
+        let envelope = build_envelope("ai.task.completed.v1", &data, "my-project");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        assert!(
+            body.contains(r#""attributes":{"project":"my-project"}"#),
+            "source.attributes.project must reflect the input; got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_preserves_data_payload_verbatim() {
+        let data = json!({ "taskId": "t-1", "sessionId": "s-1", "nested": { "x": 42 } });
+        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let body = serde_json::to_string(&envelope).expect("serialises");
+        // taskId/sessionId/nested all present — payload not transformed
+        assert!(body.contains(r#""taskId":"t-1""#));
+        assert!(body.contains(r#""sessionId":"s-1""#));
+        assert!(body.contains(r#""nested":{"x":42}"#));
     }
 }

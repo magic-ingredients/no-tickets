@@ -2,6 +2,7 @@ mod auth;
 mod commands;
 mod credentials;
 mod home;
+mod transport;
 mod urls;
 
 use clap::{Parser, Subcommand};

@@ -88,8 +88,8 @@ The 31 cases in `crates/nt-cli/tests/status.rs` mostly delete or change shape (~
 ## Tasks
 
 ### 1. Switch on-disk paths to platform-native via `directories` crate
-status: not_started
-commitSha: null
+status: completed
+commitSha: faa7ebf
 
 End-to-end task: introduce `crates/nt-cli/src/paths.rs` (or fold into `home.rs` and rename) wrapping `ProjectDirs::from("com", "magic-ingredients", "no-tickets")`. Replace `home::credentials_path` / `home::config_path` call sites. Preserve `NO_TICKETS_HOME` override semantics (env var subsumes platform-native). Add inline unit tests for both branches via the existing `HashMapEnv`. Existing `tests/publish.rs` and `tests/status.rs` continue to pass — they already use `NO_TICKETS_HOME` for isolation, so they're unaffected by the platform-native default.
 
@@ -101,8 +101,8 @@ End-to-end task: introduce `crates/nt-cli/src/paths.rs` (or fold into `home.rs` 
 - `crates/nt-cli/src/urls.rs` — call new `paths::config_path` (for now; deleted in Task 2)
 
 ### 2. Replace `--profile` plumbing with three-layer URL resolution
-status: not_started
-commitSha: null
+status: completed
+commitSha: 3892e86
 
 End-to-end task: rewrite `crates/nt-cli/src/urls.rs` per the ADR. Three layers: default URLs, `NO_TICKETS_ENV` preset (closed set: `staging` / `local` / `prod`), explicit `NO_TICKETS_API_URL` + `NO_TICKETS_AUTH_URL` pair (both required if either set). Delete `load_profile`, `ConfigFile`, `ProfileConfig`, `IndexMap` import, and the 4 profile-related error variants (`ProfileFileMissing`, `ProfileFileUnreadable`, `ProfileFileInvalidJson`, `ProfileNotFound`, `ProfileInvalidUrls`). Keep `PartialPair` and `HomeUnresolvable` (rename latter if no longer applicable). Add `UnknownEnv { value }`. Delete `--profile` flag from clap in `main.rs`. Delete the ~15 `status_profile_*` integration tests; replace with three `status_env_*` unit tests inline.
 

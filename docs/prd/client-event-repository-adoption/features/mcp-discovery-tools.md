@@ -127,6 +127,9 @@ MCP tools share the same `Client` instance as the CLI (Features 2 + 3). Auth res
 
 ### 4. Remove old push MCP tool
 
+status: completed
+commitSha: fb8cc8a
+
 **Files to modify/create:**
 - `src/mcp/tools/push.ts` (delete if exists)
 - `src/mcp/server.ts` — drop registration

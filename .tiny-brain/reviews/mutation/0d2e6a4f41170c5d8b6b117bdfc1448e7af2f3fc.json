@@ -1,9 +1,0 @@
-{
-  "verdict": "clean",
-  "summary": "Mutation testing results: 25 killed, 0 survived, 0 no coverage",
-  "testQuality": "Perfect mutation score of 100%. All 25 mutants across src/sdk/auth.ts were killed. Tests cover every conditional branch, string literal, method expression, block statement, and object literal mutation in the auth resolution chain.",
-  "suggestions": [],
-  "sha": "0d2e6a4f41170c5d8b6b117bdfc1448e7af2f3fc",
-  "type": "mutation",
-  "timestamp": "2026-04-16T10:35:42.819Z"
-}

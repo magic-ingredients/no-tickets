@@ -1,9 +1,0 @@
-{
-  "summary": "Mutation testing infrastructure failed to execute: Stryker could not find test files related to src/commands/validate.ts due to Vitest's related-file detection not working with the .js extension imports. Manual code review performed instead.",
-  "verdict": "clean",
-  "testQuality": "The validate.ts file is a thin 3-line wrapper delegating to parseFiles() and validate() from the core modules. The 7 tests in validate.test.ts thoroughly exercise all integration paths: valid files, missing required fields (asserting specific field names: id, title, created, updated), orphan epic references, empty file list, silent-skip for unknown types, silent-skip for files without frontmatter, and file path inclusion in errors. The underlying core modules have dedicated mutant-killer test files (validator-mutants.test.ts, parser-mutants.test.ts) that kill boundary-condition mutants. The only possible mutation in validate.ts itself is removing the validate() call or the parseFiles() call, both of which would be immediately caught by the existing tests.",
-  "suggestions": [],
-  "sha": "d6ba0f7e07e511e47db7805c1fff088fad5a28f6",
-  "type": "mutation",
-  "timestamp": "2026-04-22T10:41:43.975Z"
-}

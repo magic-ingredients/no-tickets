@@ -125,6 +125,9 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 - Tests cover happy path, permission denial, validation error from server.
 
 ### 5. Remove push command + push HTTP client
+
+status: completed
+commitSha: fb8cc8a
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
 
 **Files to modify/create:**

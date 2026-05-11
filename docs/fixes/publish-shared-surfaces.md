@@ -33,6 +33,7 @@ resolution:
     - src/mcp/tools/publish-event.ts
     - src/agent-detect.ts
     - scripts/smoke-publish.ts
+archived: true
 ---
 
 # Fix: Wire CLI publish, share local validation between CLI/MCP via SDK, unify project-keyed shape

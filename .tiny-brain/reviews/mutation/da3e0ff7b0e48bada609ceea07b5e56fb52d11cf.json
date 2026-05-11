@@ -1,9 +1,0 @@
-{
-  "summary": "Mutation testing results: 18 killed, 0 survived, 0 no coverage",
-  "verdict": "clean",
-  "testQuality": "Excellent — 100% mutation score across all 18 mutants in init-auth.ts. Every logical branch, boundary condition, and control flow path is exercised by the test suite. Static mutants (SESSION_DURATION_MS, PLACEHOLDER_EMAIL constants) were also fully covered.",
-  "suggestions": [],
-  "sha": "da3e0ff7b0e48bada609ceea07b5e56fb52d11cf",
-  "type": "mutation",
-  "timestamp": "2026-04-16T23:10:27.811Z"
-}

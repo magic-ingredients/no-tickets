@@ -2,7 +2,7 @@
 
 ## tiny-brain - start
 ---
-version: 0.22.2
+version: 0.23.3
 ---
 
 ## Repository Context
@@ -17,7 +17,7 @@ Also read `.tiny-brain/analysis.json` for detailed detection data and test patte
 **BEFORE EVERY COMMIT**, check if you're working on tracked work:
 
 1. **Active PRDs?** Check `.tiny-brain/progress/` for `in_progress` status
-2. **Open Fixes?** Check `.tiny-brain/fixes/progress.json` for `not_started` or `in_progress` status
+2. **Open Fixes?** Check `docs/fixes/*.md` frontmatter for `not_started` or `in_progress` status
 
 **If YES, you MUST include tracking headers or the commit will be REJECTED.**
 
@@ -72,9 +72,9 @@ Description of changes...
 Fix documents have four statuses: `not_started` → `in_progress` → `completed` | `superseded`
 
 **When starting work on a fix:**
-1. Open the fix file: `.tiny-brain/fixes/{fix-id}.md`
+1. Open the fix file: `docs/fixes/{fix-id}.md`
 2. Update frontmatter: `status: in_progress`
-3. Run: `npx tiny-brain task sync .tiny-brain/fixes/{fix-id}.md`
+3. Run: `npx tiny-brain task sync docs/fixes/{fix-id}.md`
 
 **After each commit:**
 1. Update the completed task(s) in the markdown:
@@ -90,7 +90,7 @@ Fix documents have four statuses: `not_started` → `in_progress` → `completed
    status: superseded
    commitSha: null
    ```
-4. Run: `npx tiny-brain task sync .tiny-brain/fixes/{fix-id}.md`
+4. Run: `npx tiny-brain task sync docs/fixes/{fix-id}.md`
 
 **When all tasks are complete:**
 1. **ONLY set `status: completed`** when ALL tasks are accounted for:
@@ -111,7 +111,7 @@ Fix documents have four statuses: `not_started` → `in_progress` → `completed
          - path/to/file1.ts
          - path/to/file2.ts
      ```
-3. Run: `npx tiny-brain task sync .tiny-brain/fixes/{fix-id}.md`
+3. Run: `npx tiny-brain task sync docs/fixes/{fix-id}.md`
 
 **Note:** The markdown file is the source of truth. The `task sync` command updates `progress.json` from the markdown.
 
@@ -188,75 +188,6 @@ IMPORTANT: This repository follows strict Test-Driven Development (TDD) with a 3
 
 **You NEVER call** `commit track`, `persist`, or `pipeline --decision` directly. The hooks and agents handle them.
 
-## Progress Tracking Auto-Commit Configuration
-
-By default, tiny-brain uses **manual mode** for progress.json commits. This means after tracking a task commit, you must manually stage and commit the progress.json updates. This keeps your working tree clean and gives you full control over what gets committed.
-
-### Default Behavior (Manual Mode)
-
-When you complete a task with a `feat:` or `test:` commit:
-1. The post-commit hook updates progress.json automatically
-2. You'll see a friendly message with instructions:
-   ```
-   📝 Progress tracking updated!
-
-      To commit progress.json changes, run:
-      git add .tiny-brain/progress/*.json
-      git commit -m "chore: update progress tracking"
-
-      💡 Tip: Enable auto-commit to skip this step:
-      npx tiny-brain config preferences set autoCommitProgress true
-   ```
-3. Commit the progress.json changes when you're ready
-
-### Enabling Auto-Commit
-
-Auto-commit automatically creates a second commit containing progress.json updates after each tracked task commit.
-
-**Enable globally (all repos):**
-```bash
-npx tiny-brain config preferences set autoCommitProgress true
-```
-
-**Enable for current repo only:**
-```bash
-npx tiny-brain config preferences set autoCommitProgress true --repo
-```
-
-**Disable auto-commit:**
-```bash
-npx tiny-brain config preferences set autoCommitProgress false
-```
-
-**Check current setting:**
-```bash
-npx tiny-brain config preferences get autoCommitProgress
-```
-
-### When to Use Each Mode
-
-**Use Manual Mode (default) when:**
-- Working in a team - keeps progress updates separate from feature commits
-- You want full control over what gets committed
-- You prefer to batch progress updates
-- You're concerned about commit history noise
-
-**Use Auto-Commit Mode when:**
-- Working solo or in small teams where commit noise is acceptable
-- You want progress always synced with remote
-- You frequently switch machines and need up-to-date progress
-- You forget to commit progress.json regularly
-
-### Configuration Hierarchy
-
-Settings follow this precedence (highest to lowest):
-1. Per-repository config (`.git/tiny-brain/preferences.json`)
-2. Global config (`~/.tiny-brain/config/preferences.json`)
-3. Default values (manual mode)
-
-This allows you to set a global preference but override it per repository as needed.
-
-
 ## Operational Tracking Directory (.tiny-brain/)
 
 The `.tiny-brain/` directory stores operational tracking data separate from documentation:
@@ -264,40 +195,15 @@ The `.tiny-brain/` directory stores operational tracking data separate from docu
 ```
 .tiny-brain/
 ├── analysis.json       # Detected tech stack and repo analysis
-├── tech/               # Technology-specific context files
-│   ├── config.json     # Tech context mode configuration
-│   └── {name}.md       # One file per detected technology
-├── progress/           # PRD progress tracking
-│   └── {prd-id}.json   # One file per PRD
-└── fixes/              # Fix progress tracking
-    └── progress.json   # Aggregated fix tracking
+└── tech/               # Technology-specific context files
+    ├── config.json     # Tech context mode configuration
+    └── {name}.md       # One file per detected technology
 ```
 
 **Key distinction:**
 - **Documentation** (in `docs/`) - PRD markdown, feature specs, fix analysis - permanent, reviewed
-- **Operational tracking** (in `.tiny-brain/`) - progress.json files - transient, auto-generated
-
-### Gitignore Options
-
-Teams can choose whether to track progress files in git:
-
-**Option 1: Track progress (default)** - Keep `.tiny-brain/` in git for visibility across team members.
-
-**Option 2: Ignore progress** - Add to `.gitignore` to reduce PR noise:
-```gitignore
-# Ignore operational tracking (optional)
-.tiny-brain/progress/
-.tiny-brain/fixes/progress.json
-```
-
-**Option 3: Ignore all** - Ignore entire directory:
-```gitignore
-.tiny-brain/
-```
+- **Operational tracking** - progress files live under `.git/tiny-brain/` (per-clone, never committed)
 
 
 ## tiny-brain - end
-
-
-
 

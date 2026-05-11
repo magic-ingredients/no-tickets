@@ -3,7 +3,6 @@
   "preferences": {
     "repo": {
       "autoArchive": true,
-      "autoCommitProgress": false,
       "enableAgenticCoding": false,
       "enableSDD": true,
       "enableTDD": true,
@@ -14,7 +13,8 @@
       "directories": {
         "docs": "docs",
         "adr": "docs/adr",
-        "prd": "docs/prd"
+        "prd": "docs/prd",
+        "fixes": "docs/fixes"
       },
       "testPatterns": [
         "**/*.test.ts",
@@ -28,99 +28,135 @@
           "agent": "tiny-brain:analyzer-agent",
           "label": "TypeScript",
           "emoji": "📝",
+          "color": "#3178c6",
           "analyzer": "typescript",
-          "hook": "pre-commit",
-          "color": "#cc3385"
+          "hook": "pre-commit"
         },
         {
           "type": "eslint",
           "agent": "tiny-brain:analyzer-agent",
           "label": "ESLint",
           "emoji": "🧹",
+          "color": "#4b32c3",
           "analyzer": "eslint",
-          "hook": "pre-commit",
-          "color": "#a133cc"
+          "hook": "pre-commit"
         },
         {
           "type": "coverage",
           "agent": "tiny-brain:analyzer-agent",
           "label": "Code Coverage",
           "emoji": "📈",
+          "color": "#4caf50",
           "analyzer": "coverage",
           "analyzerThreshold": {
             "min": 80
           },
-          "hook": "pre-commit",
+          "mode": "tollgate",
           "runsTests": true,
-          "color": "#cc33ba"
+          "hook": "pre-commit",
+          "maxAttempts": 3
         },
         {
           "type": "adversarial",
           "agent": "tiny-brain:adversarial-reviewer",
           "label": "Adversarial Review",
           "emoji": "😈",
-          "color": "#7833cc"
+          "color": "#e45858"
         },
         {
           "type": "mutation",
-          "agent": "mutation-reviewer",
-          "label": "Mutation Testing",
-          "emoji": "🧟"
+          "agent": "tiny-brain:mutation-reviewer",
+          "label": "mutation",
+          "emoji": "🔍"
         }
       ],
-      "pushPipeline": [],
-      "qualityPipeline": [
-        {
-          "type": "code-quality",
-          "agent": "tiny-brain:code-quality-reviewer",
-          "label": "Code Quality",
-          "emoji": "🔍",
-          "color": "#cc5c33"
-        },
-        {
-          "type": "coverage",
-          "agent": "tiny-brain:analyzer-agent",
-          "label": "Code Coverage",
-          "emoji": "📈",
-          "analyzer": "coverage",
-          "analyzerThreshold": {
-            "min": 80
-          },
-          "color": "#cc33ba"
-        },
+      "pushPipeline": [
         {
           "type": "dependency-audit",
           "agent": "tiny-brain:analyzer-agent",
           "label": "Dependency Audit",
           "emoji": "📦",
+          "color": "#795548",
           "analyzer": "dependency-audit",
           "analyzerThreshold": {
             "maxSeverity": "high"
-          },
-          "color": "#cc336e"
-        },
-        {
-          "type": "performance",
-          "agent": "tiny-brain:performance-reviewer",
-          "label": "Performance Review",
-          "emoji": "⚡",
-          "color": "#33ccb0"
+          }
         },
         {
           "type": "security",
           "agent": "tiny-brain:security-reviewer",
           "label": "Security Review",
           "emoji": "🔐",
-          "color": "#cc6333"
+          "color": "#2196f3"
+        },
+        {
+          "type": "performance",
+          "agent": "tiny-brain:performance-reviewer",
+          "label": "Performance Review",
+          "emoji": "⚡",
+          "color": "#ff9800"
+        }
+      ],
+      "qualityPipeline": [
+        {
+          "type": "code-quality",
+          "agent": "tiny-brain:code-quality-reviewer",
+          "label": "Code Quality",
+          "emoji": "🔍",
+          "color": "#7c4dff"
+        },
+        {
+          "type": "coverage",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "Code Coverage",
+          "emoji": "📈",
+          "color": "#4caf50",
+          "analyzer": "coverage",
+          "analyzerThreshold": {
+            "min": 80
+          },
+          "mode": "tollgate",
+          "runsTests": true,
+          "maxAttempts": 3
+        },
+        {
+          "type": "dependency-audit",
+          "agent": "tiny-brain:analyzer-agent",
+          "label": "Dependency Audit",
+          "emoji": "📦",
+          "color": "#795548",
+          "analyzer": "dependency-audit",
+          "analyzerThreshold": {
+            "maxSeverity": "high"
+          }
+        },
+        {
+          "type": "performance",
+          "agent": "tiny-brain:performance-reviewer",
+          "label": "Performance Review",
+          "emoji": "⚡",
+          "color": "#ff9800"
+        },
+        {
+          "type": "security",
+          "agent": "tiny-brain:security-reviewer",
+          "label": "Security Review",
+          "emoji": "🔐",
+          "color": "#2196f3"
         },
         {
           "type": "testing",
           "agent": "tiny-brain:testing-reviewer",
           "label": "Testing Review",
           "emoji": "🧪",
-          "color": "#7a33cc"
+          "color": "#e91e63"
         }
       ],
+      "prune": {
+        "onPush": false,
+        "onPr": false,
+        "afterDaysSinceArchive": null
+      },
       "combineRedGreenCommits": false,
       "enableAdversarial": true
     }

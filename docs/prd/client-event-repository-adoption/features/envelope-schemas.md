@@ -99,19 +99,25 @@ commitSha: 2057f08
 
 ### 2. Define Event envelope (zod + types)
 
+status: completed
+commitSha: 97d695e
+
 **Files to modify/create:**
-- `src/core/event.ts` (new — envelope schema + type)
-- `src/core/event.test.ts` (new)
-- `src/core/types.ts`
-- `src/core/schemas.ts`
+- `src/core/event.ts` (new — envelope schema + Event<T> type)
+- `src/core/subject.ts` (new — subjectRefSchema; Task 3 adds subjectSchema)
+- `src/core/__tests__/event.test.ts` (new)
 
 **Expected changes:**
-- `eventSchema` zod accepts `{ type, data, source, subject?, occurredAt?, parentEventId?, traceId?, dedupeKey? }`. `source` is required (uses `sourceSchema` from Task 1).
-- `data` is `z.unknown()` — pass-through.
-- `Event<T>` generic type for typed-payload narrowing in callers that opt into typed domain types later.
-- Tests cover: shape validation, missing required fields (including `source`), unknown top-level fields tolerated and stripped (forward-compat — server may add fields without breaking old SDKs), no refinements present.
+- `eventSchema` zod accepts `{ type, data, source, subject?, occurredAt?, parentEventId?, traceId?, dedupeKey? }`. `source` is required (uses `sourceSchema` from Task 1). String fields validated with `.min(1)`.
+- `data` is `z.unknown()` — opaque pass-through; per-type schema validates server-side.
+- `Event<T>` generic type with `Readonly<...>` wrap for immutability discipline. Defaults to `unknown`.
+- `subjectRefSchema` defined in `src/core/subject.ts` (Task 3 adds the promotion `subjectSchema` to the same file).
+- Tests cover: shape validation, missing required fields, unknown top-level fields tolerated and stripped (forward-compat), no refinements present (asserted via `_def.typeName === 'ZodObject'`), reference-equality delegation to sourceSchema/subjectRefSchema.
 
 ### 3. Define Subject and SubjectRef
+
+status: completed
+commitSha: 04d4128
 
 **Files to modify/create:**
 - `src/core/subject.ts` (new)
@@ -126,6 +132,9 @@ commitSha: 2057f08
 
 ### 4. Define Interaction envelope
 
+status: completed
+commitSha: 38dd600
+
 **Files to modify/create:**
 - `src/core/interaction.ts` (new)
 - `src/core/interaction.test.ts` (new)
@@ -139,6 +148,9 @@ commitSha: 2057f08
 
 ### 5. Type-ID grammar (parse + format)
 
+status: completed
+commitSha: 28a23ee
+
 **Files to modify/create:**
 - `src/core/type-id.ts` (new)
 - `src/core/type-id.test.ts` (new)
@@ -150,6 +162,9 @@ commitSha: 2057f08
 - Tests: valid IDs (simple, with underscores like `engineering.health.status_changed.v1`, multi-digit versions like `v12`), invalid IDs (uppercase, leading-zero version `v01`, version `v0`, missing version, extra segments, special chars, empty segments).
 
 ### 6. Source construction helpers (Session / Actor / PushEnvironment / detectAgent)
+
+status: completed
+commitSha: 34498ed
 
 **Files to modify/create:**
 - `src/agent-detect.ts`
@@ -165,6 +180,9 @@ commitSha: 2057f08
 
 ### 7. Remove push payload schemas
 
+status: completed
+commitSha: fb8cc8a
+
 **Files to modify/create:**
 - `src/core/types.ts`
 - `src/core/schemas.ts`
@@ -177,6 +195,9 @@ commitSha: 2057f08
 - Type-check passes after the delete; failing imports are addressed by Feature 2 removing the push command surface.
 
 ### 8. Sub-path export verification
+
+status: completed
+commitSha: 6b859b5
 
 **Files to modify/create:**
 - `package.json`

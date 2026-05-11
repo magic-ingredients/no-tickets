@@ -1,8 +1,0 @@
-{
-  "summary": "Clean deletion of legacy NoTicketsClient (src/client.ts) and its 280-line test file. No dangling imports remain. Two collateral cleanups in adjacent test files (unused variable removal and type annotation) are minor and justified.",
-  "verdict": "clean",
-  "suggestions": [],
-  "sha": "148dd8d0e0487f3ea11b2cd24aa285622e4e9309",
-  "type": "adversarial",
-  "timestamp": "2026-04-22T13:58:59.508Z"
-}

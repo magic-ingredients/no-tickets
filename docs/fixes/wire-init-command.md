@@ -5,6 +5,7 @@ status: completed
 severity: high
 reported: 2026-04-23T17:20:00.000Z
 resolved: 2026-04-24T08:10:00.000Z
+archived: true
 ---
 
 # Fix: Wire init command to browser OAuth flow

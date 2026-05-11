@@ -3,6 +3,7 @@ mod commands;
 mod credentials;
 mod env;
 mod home;
+mod paths;
 mod transport;
 mod urls;
 

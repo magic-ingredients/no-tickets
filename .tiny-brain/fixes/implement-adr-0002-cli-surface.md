@@ -1,7 +1,7 @@
 ---
 id: implement-adr-0002-cli-surface
 title: "Implement ADR-0002 — reshape CLI surface, two-tier auth, platform-native paths"
-status: not_started
+status: in_progress
 severity: medium
 reported: 2026-05-11T00:00:00.000Z
 resolved: null
@@ -88,6 +88,9 @@ The 31 cases in `crates/nt-cli/tests/status.rs` mostly delete or change shape (~
 ## Tasks
 
 ### 1. Switch on-disk paths to platform-native via `directories` crate
+status: not_started
+commitSha: null
+
 End-to-end task: introduce `crates/nt-cli/src/paths.rs` (or fold into `home.rs` and rename) wrapping `ProjectDirs::from("com", "magic-ingredients", "no-tickets")`. Replace `home::credentials_path` / `home::config_path` call sites. Preserve `NO_TICKETS_HOME` override semantics (env var subsumes platform-native). Add inline unit tests for both branches via the existing `HashMapEnv`. Existing `tests/publish.rs` and `tests/status.rs` continue to pass — they already use `NO_TICKETS_HOME` for isolation, so they're unaffected by the platform-native default.
 
 **Files to modify:**
@@ -98,6 +101,9 @@ End-to-end task: introduce `crates/nt-cli/src/paths.rs` (or fold into `home.rs` 
 - `crates/nt-cli/src/urls.rs` — call new `paths::config_path` (for now; deleted in Task 2)
 
 ### 2. Replace `--profile` plumbing with three-layer URL resolution
+status: not_started
+commitSha: null
+
 End-to-end task: rewrite `crates/nt-cli/src/urls.rs` per the ADR. Three layers: default URLs, `NO_TICKETS_ENV` preset (closed set: `staging` / `local` / `prod`), explicit `NO_TICKETS_API_URL` + `NO_TICKETS_AUTH_URL` pair (both required if either set). Delete `load_profile`, `ConfigFile`, `ProfileConfig`, `IndexMap` import, and the 4 profile-related error variants (`ProfileFileMissing`, `ProfileFileUnreadable`, `ProfileFileInvalidJson`, `ProfileNotFound`, `ProfileInvalidUrls`). Keep `PartialPair` and `HomeUnresolvable` (rename latter if no longer applicable). Add `UnknownEnv { value }`. Delete `--profile` flag from clap in `main.rs`. Delete the ~15 `status_profile_*` integration tests; replace with three `status_env_*` unit tests inline.
 
 **Files to modify:**
@@ -108,6 +114,9 @@ End-to-end task: rewrite `crates/nt-cli/src/urls.rs` per the ADR. Three layers: 
 - `crates/nt-cli/tests/status.rs` — delete `status_profile_*`, `status_emits_default_urls_when_no_env_no_profile` (rename), `status_uses_env_urls_when_both_set`, etc.
 
 ### 3. Add `host` tag to session credentials with mismatch detection
+status: not_started
+commitSha: null
+
 End-to-end task: extend `StoredCredentials` (in `crates/nt-cli/src/credentials.rs`) with a `host` field. Set it at `nt init` save-time to the api_url that was used for the auth flow. On `load(env)`, compare against current env's resolved api_url; if mismatched, return None and surface a stderr warning at the caller (`nt status` and any future identity-aware command). Existing credential files without the `host` field load as None (forces re-init) — clean degradation, no schema-migration code.
 
 **Files to modify:**
@@ -116,6 +125,9 @@ End-to-end task: extend `StoredCredentials` (in `crates/nt-cli/src/credentials.r
 - `crates/nt-cli/src/commands/status.rs` — surface the mismatch warning to stderr
 
 ### 4. Flatten config.json to flat `projects` registry
+status: not_started
+commitSha: null
+
 End-to-end task: introduce `crates/nt-cli/src/config.rs` owning the new config shape. Per-project entry: `{ pushToken, addedAt: ISO-string, label?: string }`. Delete the `profiles` top-level concept entirely. Add a `mask_token` helper that returns `nt_push_…<last4>`. Atomic-write semantics (sibling tmp + rename, mode 0600) per the existing TS `writeConfigSync`. Unknown top-level keys preserved unchanged on rewrite — so any user with old `profiles` data isn't silently corrupted.
 
 **Files to modify:**
@@ -123,6 +135,9 @@ End-to-end task: introduce `crates/nt-cli/src/config.rs` owning the new config s
 - `crates/nt-cli/Cargo.toml` — add `time` features for ISO parsing if not already present
 
 ### 5. Implement `nt token add / list / remove` and reshape `nt status`
+status: not_started
+commitSha: null
+
 End-to-end task: three new command modules under `crates/nt-cli/src/commands/`. `token_add` validates the `nt_push_*` prefix, refuses overwrite without `--force`, accepts optional `--label`. `token_list` prints the flat JSON shape (`{ tokens: [{ project, masked, addedAt, label? }, ...] }`). `token_remove` errors cleanly on missing project. `status` combines session + tokens per the four ADR scenarios.
 
 **Files to modify:**
@@ -134,6 +149,9 @@ End-to-end task: three new command modules under `crates/nt-cli/src/commands/`. 
 - `crates/nt-cli/src/main.rs` — clap definitions for `token add/list/remove`, drop `project` subcommand surface
 
 ### 6. Implement `nt init` (port) + `nt logout`
+status: not_started
+commitSha: null
+
 End-to-end task: port `src/sdk/auth-server.ts` to Rust (local HTTP callback server with CSRF state, timeout, signal-handler dance). New `commands/init.rs` orchestrates the flow, saves credentials with `host` tag. New `commands/logout.rs` deletes the credentials file.
 
 This is the largest sub-task (~250 LOC + tests for the auth server alone). Reasonable to land last since the publish path doesn't depend on it.

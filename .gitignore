@@ -8,3 +8,7 @@ reports/
 .env.*
 package-lock.json
 /.stryker-tmp/
+
+# Rust
+/target/
+Cargo.lock.bak

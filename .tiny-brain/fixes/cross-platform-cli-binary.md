@@ -3,7 +3,7 @@ id: cross-platform-cli-binary
 type: fix
 title: Rust rewrite of CLI + MCP server, distributed as a single binary across all major platforms
 phase: development
-status: not_started
+status: in_progress
 severity: medium
 created: 2026-05-09
 updated: 2026-05-09
@@ -132,10 +132,10 @@ The npm wrapper is **the migration path**: existing `npx no-tickets ...` users t
 
 Specific items to confirm a Rust rewrite is feasible against current TS surface:
 
-- [ ] **MCP Rust crate** — `rmcp` (or alternative) maturity vs Anthropic spec; coverage of stdio transport; tool-handler ergonomics. Spike a `list_event_types` tool round-trip before committing.
-- [ ] **JSON Schema validation** — `jsonschema` crate handles the schema features the Zod source uses (refinements, custom `.refine()` predicates may not survive Zod → JSON Schema conversion cleanly). Validate against a sampling of the existing event types.
-- [ ] **OAuth callback flow** — `tokio` + `axum` (or `hyper` directly) for the local HTTP listener; cross-platform browser opener (`opener` crate). Confirm 0.0.0.0 binding and timeout semantics match the TS implementation.
-- [ ] **Cross-compile toolchain** — `cross` or `cargo-zigbuild` for arm64, Windows, musl Linux. Confirm CI matrix builds cleanly without per-platform runners (cost driver).
+- [x] **MCP Rust crate** — **Resolved (2026-05).** `rmcp` is the official SDK at `modelcontextprotocol/rust-sdk`, 4.7M+ downloads on crates.io as of early 2026. Provides `#[tool]` macro, stdio transport, full tool/resource/prompt coverage. Task 2 spike still runs for round-trip confirmation, but the strategic risk is settled.
+- [ ] **JSON Schema validation** — `jsonschema` crate (v0.46+) handles Draft 2020-12. Schema features the Zod source uses (refinements, custom `.refine()` predicates may not survive Zod → JSON Schema conversion cleanly) still need validation against a sampling of the existing event types.
+- [ ] **OAuth callback flow** — `axum` for the localhost listener + callback route, **`oauth2` crate for the PKCE state machine / CSRF token / code-verifier exchange** (replaces hand-rolled protocol logic), `opener` crate for browser. Confirm 0.0.0.0 binding and timeout semantics match the TS implementation.
+- [ ] **Cross-compile toolchain** — `cargo-zigbuild` (preferred for CI — no Docker-per-target) or `cross`. Both mature. Confirm CI matrix builds cleanly without per-platform runners (cost driver).
 - [ ] **Auth file format** — keep `~/.notickets/credentials` and `~/.notickets/config.json` byte-compatible with the TS implementation so users can switch back if needed during rollout.
 
 ## Public binary contract (consumed by per-language wrappers)
@@ -224,6 +224,51 @@ The binary should have effectively no runtime deps. Specific build choices to en
 
 Compare to today: the TS CLI's runtime deps are Node + `node_modules`. The Rust binary collapses that to ~10 MB self-contained.
 
+## Off-the-shelf crate ecosystem (audited 2026-05)
+
+A pass through crates.io confirms most of the bespoke surface has well-adopted Rust equivalents. The porting effort is smaller than a naive read of "rewrite in Rust" suggests — the custom code is the protocol body and command semantics, not the plumbing.
+
+### Drop-in crates per concern
+
+| Concern | Crate | Notes |
+|---|---|---|
+| **MCP server/client** | `rmcp` (official SDK) | `modelcontextprotocol/rust-sdk`. 4.7M+ downloads early 2026. `#[tool]` macro + stdio transport built in. Resolves this doc's previously-largest open question. |
+| **CLI argument parsing** | `clap` (derive API) | Standard for production Rust CLIs (ripgrep, bat, gh). Subcommand derive removes parser boilerplate for `init`/`status`/`publish`/`project link/list/unlink`/`validate`/`connect`/`disconnect`/`token`. |
+| **HTTP client + TLS** | `reqwest` + `rustls-tls` + `webpki-roots` | Already specified above. Pure-Rust TLS, no OpenSSL. |
+| **Async runtime** | `tokio` | Required by `reqwest`, `axum`, `rmcp`. Statically linked. |
+| **JSON Schema validation** | `jsonschema` (v0.46+) | Draft 2020-12. Build-once-validate-many pattern matches the per-batch publish flow. |
+| **Local OAuth callback server** | `axum` + `oauth2` crate | `axum` for the localhost listener; `oauth2` crate handles the PKCE state machine, CSRF token, code-verifier exchange. Replaces hand-rolled protocol logic. |
+| **Browser opener** | `opener` | Already in fix doc. |
+| **JSON ser/de** | `serde` + `serde_json` | Wire protocol, config files, stream-mode JSONL. |
+| **Error variants → typed exit codes** | `thiserror` (lib) + `anyhow` (app) | Maps directly to the structured-error contract: each variant derives an exit code + serializable stderr JSON shape. Task 4a becomes near-mechanical. |
+| **Cross-platform config paths** | `directories` or `etcetera` | `~/.notickets/` resolution per OS conventions. |
+| **OS keychain (optional upgrade)** | `keyring` | One-API access to macOS Keychain / Linux Secret Service / Windows Credential Manager. Optional improvement over the current plaintext `~/.notickets/credentials`. Out of scope for v1 of the rewrite; flagged for post-Phase-3 follow-up. |
+| **Terminal output (colors, spinners)** | `owo-colors` + `indicatif` | Status output, auth callback polish. |
+| **Logging (must go to stderr)** | `tracing` + `tracing-subscriber` | **Critical for MCP** — see gotcha below. |
+| **Cross-compile toolchain** | `cargo-zigbuild` (preferred) or `cross` | `cargo-zigbuild` runs in CI without Docker-per-target overhead. |
+| **Stream JSONL parsing** | `tokio::io::BufReader::lines()` + `serde_json` | Stdlib + serde, no extra crate. ~30 LOC for the request/response loop. |
+| **CLI behavioral tests** | `assert_cmd` + `predicates` | Runs the binary, asserts stdout/stderr/exit code. Powers the feature-equivalence smoke matrix in Task 4. |
+| **Release pipeline generator** | `cargo-dist` | **Chosen.** One config block in `Cargo.toml` generates: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula auto-update, Scoop manifest auto-update. Collapses what would be four hand-rolled workflow tasks into one config block. See Task 6. Out of scope for `cargo-dist`: deb/rpm (Task 9), npm wrapper postinstall (Task 7) — those stay hand-rolled. |
+| **CLI self-update (`nt self-update`)** | `self_update` | Purpose-built for CLI tools — reads latest GH Release, downloads target binary, sha256-verifies, replaces self. ~20 LOC integration. Targets install.sh / direct-download users only (package-manager installs update via their package manager). **Not** Velopack — Velopack is GUI-app-shaped (Squirrel successor) and the wrong fit for a CLI/MCP binary. See Task 13. |
+
+### Critical implementation gotchas
+
+1. **MCP stdio purity (`rmcp`).** Any crate that logs to stdout — default `tracing-subscriber` config, a stray `println!`, a careless dependency — corrupts the JSON-RPC stream and causes Claude Code to silently disconnect. Standard fix: route all logging to stderr via `tracing_subscriber::fmt().with_writer(std::io::stderr)`. Add a CI assertion in `crates/nt-mcp/tests/` that the MCP binary writes only valid JSON-RPC frames to stdout under load (Task 2 acceptance criterion).
+
+2. **`thiserror` for the structured-error contract.** Define a single enum `NtError` with `#[derive(thiserror::Error)]` variants per error class in the table above. One match arm maps each variant to its exit code + serialized stderr shape. Adding a new error class is one variant + one match arm — keeps the "additive-only" contract guarantee mechanical.
+
+3. **`cargo-dist` opinionated defaults are acceptable.** Auto-generates Homebrew formula and install.sh assuming GitHub Releases hosting — matches plan. Auto-generates a single-binary release — matches. Divergent items (deb/rpm, npm wrapper postinstall) are out of `cargo-dist` scope and stay hand-rolled as separate tasks below.
+
+### What's still genuinely custom
+
+These have no off-the-shelf crate; they're code we write:
+
+- The `--stream` JSONL protocol body (Task 4b) — ~100 LOC of tokio stdio + serde.
+- Each CLI subcommand's behavior matching the TS implementation (Task 4) — clap removes the parser boilerplate; the semantics still need porting one command at a time.
+- The `build.rs` step that fetches the JSON Schema bundle from a `no-tickets-service` release artifact and pins by version (Task 3).
+- Token resolution + project registry persistence (small layer over `serde_json` + `directories`).
+- npm wrapper postinstall logic for backward compatibility (Task 8) — Node-side, not Rust.
+
 ## Test Plan
 
 ### Acceptance: feature-equivalence smoke matrix
@@ -263,17 +308,21 @@ Build a Rust prototype of `nt status` against staging. Goal: validate the core t
 ### 2. MCP server spike — `list_event_types` tool
 status: not_started
 
-Implement one MCP tool (`list_event_types`) using `rmcp` (or chosen alternative). Spawn it as an MCP server, drive it from a Claude Code MCP client. Confirm wire compatibility.
+Implement one MCP tool (`list_event_types`) using the official `rmcp` SDK with stdio transport and the `#[tool]` macro. Spawn it as an MCP server, drive it from a Claude Code MCP client. Confirm wire compatibility.
+
+**Critical:** route all logging to stderr (`tracing_subscriber::fmt().with_writer(std::io::stderr)`). Anything to stdout corrupts the JSON-RPC stream and Claude Code silently disconnects.
 
 **Files to modify/create:**
 - `crates/nt-mcp/` (new)
 - `crates/nt-mcp/src/main.rs`
 - `crates/nt-mcp/src/tools/list_event_types.rs`
 - `crates/nt-mcp/Cargo.toml`
+- `crates/nt-mcp/tests/stdout-purity.rs` — asserts the binary writes only valid JSON-RPC frames to stdout under load (no log lines, no stray prints)
 
 **Acceptance:**
 - An IDE-loaded MCP client can list event types via the Rust MCP server
 - Round-trip JSON-RPC traces match the TS server
+- Stdout-purity test passes: under repeated tool invocation, every stdout byte is part of a valid JSON-RPC frame
 
 ### 3. JSON Schema bundle integration
 status: not_started
@@ -288,10 +337,11 @@ Pull JSON Schema build artifact from `no-tickets-service` (per release) and embe
 ### 4. Full CLI surface port
 status: not_started
 
-Port all commands to Rust: `init`, `status`, `publish`, `project link/list/unlink`, `validate`, `connect`, `disconnect`, `token`, `version`, `help`. Match flag parsing, error messages, exit codes, JSON output schemas.
+Port all commands to Rust: `init`, `status`, `publish`, `project link/list/unlink`, `validate`, `connect`, `disconnect`, `token`, `version`, `help`. Use `clap` with the derive API for subcommand parsing — one struct per subcommand keeps the surface close to the TS shape. Match flag parsing, error messages, exit codes, JSON output schemas.
 
 **Files to modify/create:**
 - `crates/nt-cli/src/commands/`
+- `crates/nt-cli/tests/cli-equivalence.rs` — uses `assert_cmd` + `predicates` to run the binary against staging and assert stdout/stderr/exit code per command
 
 **Acceptance:**
 - Feature-equivalence smoke matrix (above) passes for every command
@@ -301,9 +351,11 @@ status: not_started
 
 Implement the structured-error contract documented in "Public binary contract" above. Every failure case maps to a typed exit code with a single-line JSON object on stderr. This is the contract per-language wrappers parse; backward compatibility is mandatory.
 
+Use `thiserror` for the error enum and a single match arm to map variant → exit code + serialized stderr JSON. Adding a new error class is one variant + one match arm — keeps the additive-only guarantee mechanical.
+
 **Files to modify/create:**
-- `crates/nt-cli/src/error.rs` — typed error variants + serialization
-- `crates/nt-cli/tests/structured-errors.rs` — exit-code + stderr-shape assertions for each error class
+- `crates/nt-cli/src/error.rs` — typed error variants (`thiserror`-derived) + serialization
+- `crates/nt-cli/tests/structured-errors.rs` — exit-code + stderr-shape assertions for each error class (via `assert_cmd`)
 - `docs/binary-error-contract.md` — public contract doc consumers can rely on
 
 **Acceptance:**
@@ -344,83 +396,109 @@ Port all tools and discovery flow to the Rust MCP server. Match the TS server's 
 **Acceptance:**
 - Real agent driving the Rust MCP server produces the same tool outputs as the TS server for the same inputs
 
-### 6. Cross-compile build pipeline
+### 6. Distribution pipeline via `cargo-dist`
 status: not_started
 
-Cargo workspace + `cross` (or `cargo-zigbuild`) producing static binaries for all five targets. CI matrix builds on every PR; tagged builds publish artifacts.
+Single config block in `Cargo.toml` drives the full distribution surface: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula publish-and-update, Scoop manifest publish-and-update. Replaces what would otherwise be four separate hand-rolled workflows.
+
+`cargo-zigbuild` is the underlying cross-compile toolchain (configurable through cargo-dist). Five required targets: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. Secondary glibc target available as opt-in artifact.
+
+Outputs per release:
+- Tarballs / zips per target with sha256 checksums (consumed by Task 7's npm wrapper)
+- Updated Homebrew formula in `magic-ingredients/homebrew-tap`
+- Updated Scoop manifest in `magic-ingredients/scoop-bucket`
+- `install.sh` published with the release (mirrored by Task 11 hosting)
+- Tagged GH Release with all artifacts
+
+Out of `cargo-dist`'s scope (handled in separate tasks): npm wrapper (Task 7), deb/rpm packaging (Task 9), `cargo install` channel (Task 8).
 
 **Files to modify/create:**
-- `.github/workflows/build-rust.yml`
-- `Cross.toml` (cross-compile config)
+- `Cargo.toml` — `[workspace.metadata.dist]` config block, target list, installer set
+- `.github/workflows/release.yml` — generated by `cargo dist init`, committed
+- `magic-ingredients/homebrew-tap` repo bootstrap (or sub-tree) — receives generated formula on each release
+- `magic-ingredients/scoop-bucket` repo bootstrap (or sub-tree) — receives generated manifest on each release
 
-### 7. GitHub Releases pipeline
+**Acceptance:**
+- Tag push produces GH Release with five-target artifacts + checksums
+- `brew install magic-ingredients/tap/nt` works on macOS + Linux
+- `scoop install nt` works on Windows
+- `curl -fsSL <generated-install.sh-url> | sh` produces a working `nt` on Linux/macOS
+- Artifact layout matches what the Task 7 npm wrapper expects (binary file names + checksum file)
+
+### 7. npm wrapper package (migration path for current users)
 status: not_started
 
-On tag push: build matrix → tarball/zip per target → checksums → GH Release with all artifacts.
-
-**Files to modify/create:**
-- `.github/workflows/release-rust.yml`
-
-### 8. npm wrapper package (migration path for current users)
-status: not_started
-
-Replace `@magic-ingredients/no-tickets`'s `bin/no-tickets.js` Node entry with a postinstall script that downloads the Rust binary from GH Releases. The CLI surface stays the same; users notice nothing except that `npx no-tickets ...` is faster.
+Replace `@magic-ingredients/no-tickets`'s `bin/no-tickets.js` Node entry with a postinstall script that downloads the Rust binary from the GH Releases produced by Task 6. The CLI surface stays the same; users notice nothing except that `npx no-tickets ...` is faster.
 
 **Files to modify/create:**
 - `wrappers/npm-binary/postinstall.js`
 - `wrappers/npm-binary/package.json`
 - `bin/no-tickets.js` — thin shim invoking the downloaded binary
 
-### 9. Homebrew tap + Scoop bucket
+### 8. cargo publish
 status: not_started
 
-Set up `magic-ingredients/homebrew-tap` and `magic-ingredients/scoop-bucket` repos (or sub-repos) with formulas/manifests that point at GH Releases. Auto-update on each release.
-
-**Files to modify/create:**
-- `.github/workflows/update-homebrew.yml`
-- `.github/workflows/update-scoop.yml`
-
-### 10. cargo publish
-status: not_started
-
-Publish `nt-cli` and `nt-mcp` to crates.io.
+Publish `nt-cli` and `nt-mcp` to crates.io for the Rust-ecosystem `cargo install` channel.
 
 **Files to modify/create:**
 - crate metadata in `Cargo.toml`
 - `.github/workflows/publish-crates.yml`
 
-### 11. Install script + nt.sh redirect
+### 9. deb / rpm packaging
 status: not_started
 
-Bash install script: detects platform, downloads from GH Releases, verifies sha256, drops binary into `~/.local/bin` (or `/usr/local/bin` if root). Hosted at `https://nt.sh/install` (or whatever final URL).
-
-**Files to modify/create:**
-- `scripts/install.sh`
-- DNS / hosting setup for `nt.sh`
-
-### 12. deb / rpm packaging
-status: not_started
-
-Apt and yum repositories for Linux server installs. Hosted on GitHub Pages or a CDN.
+Apt and yum repositories for Linux server installs. Hosted on GitHub Pages or a CDN. Out of `cargo-dist` scope — hand-rolled.
 
 **Files to modify/create:**
 - `.github/workflows/build-debs.yml`
 - `.github/workflows/build-rpms.yml`
 - repo manifest files
 
-### 13. Retire TS CLI + MCP code
+### 10. nt.sh hosting + install.sh redirect
 status: not_started
 
-Once the Rust binary covers the full surface and migrates current npm users transparently, delete `src/cli/`, `src/cli.ts`, `src/mcp/`, related tests. The TS package shrinks to the thin SDK surface (Phase 4 will reshape it further).
+`cargo-dist` generates the `install.sh` content; this task handles the `nt.sh` DNS + hosting setup so `curl -fsSL https://nt.sh/install | sh` resolves to the cargo-dist-generated install script for the latest release.
+
+**Files to modify/create:**
+- DNS / hosting setup for `nt.sh`
+- Redirect rule / static page configuration (depending on hosting choice)
+
+### 11. `nt self-update` subcommand
+status: not_started
+
+Add a `nt self-update` command using the `self_update` crate. Scoped specifically to install.sh / direct-download users — package-manager installs (Homebrew, Scoop, cargo, npm, apt/yum) update via their package manager and don't go through this path.
+
+Behavior:
+- Reads the latest release from GitHub Releases (same repo as Task 6's artifacts)
+- Downloads the target-matched binary
+- Verifies sha256 against the published checksum
+- Replaces the running binary atomically (`self_update` handles the platform-specific swap dance)
+- Prints version-before / version-after for confirmation
+
+Detection: on launch, if the binary detects it was installed via a package manager (e.g., resolved path is under a known manager prefix like `/opt/homebrew`, `/usr/local/Cellar`, `~/.cargo/bin`, `node_modules/.bin`), `nt self-update` prints a message directing the user to their package manager instead of running the swap. Otherwise it proceeds.
+
+**Files to modify/create:**
+- `crates/nt-cli/src/commands/self_update.rs`
+- `crates/nt-cli/tests/self-update.rs` — smoke test against a staging release (mocked GH Releases endpoint)
+
+**Acceptance:**
+- `nt self-update` on an install.sh-installed binary upgrades it to the latest release and verifies sha256
+- `nt self-update` on a Homebrew-installed binary prints the package-manager redirect message and exits 0 without modifying anything
+- Failure modes (network down, sha256 mismatch, downgrade attempt) map to documented exit codes from Task 4a's structured-error contract
+
+### 12. Retire TS CLI + MCP code
+status: not_started
+
+Once the Rust binary covers the full surface and migrates current npm users transparently (Task 7) and self-update is in place (Task 11), delete `src/cli/`, `src/cli.ts`, `src/mcp/`, related tests. The TS package shrinks to the thin SDK surface (Phase 4 will reshape it further).
 
 **Files to modify/delete:**
 - `src/cli/` (delete)
 - `src/cli.ts` (delete)
 - `src/mcp/` (delete)
-- `bin/no-tickets.js` (becomes binary shim — see Task 8)
+- `bin/no-tickets.js` (becomes binary shim — see Task 7)
 - `package.json` — adjust `bin` and `files`
 
-### 14. Documentation: install paths + migration note
+### 13. Documentation: install paths + migration note
 status: not_started
 
 README + docs covering:
@@ -428,6 +506,7 @@ README + docs covering:
 - "Why a binary now?" — performance, no-Node CI, multi-channel distribution
 - Migration note for npm users — no action required, transparent
 - TS SDK is unaffected — programmatic publishing from JS code works the same
+- `nt self-update` — when to use it (install.sh / direct-download), when not to (every package-manager channel)
 
 **Files to modify/create:**
 - `README.md`
@@ -447,15 +526,46 @@ README + docs covering:
 - [ ] `cargo install nt-cli` works from crates.io
 - [ ] TS CLI + MCP source removed; TS package contains SDK only
 
+## Repo layout
+
+**Decision (2026-05-11): Cargo workspace lives alongside the existing pnpm package in this repo.** No new repo, no Turborepo / pnpm-workspaces / Nx adoption.
+
+```
+no-tickets/                       (existing repo)
+├── Cargo.toml                    (NEW — workspace root)
+├── crates/                       (NEW)
+│   ├── nt-cli/
+│   └── nt-mcp/
+├── package.json                  (existing TS package — unchanged)
+├── src/                          (existing TS source — retired in Task 12)
+├── wrappers/                     (existing — npm wrapper goes here in Task 7)
+└── ...
+```
+
+`cargo` and `pnpm` ignore each other's files; the two toolchains coexist without a workspace orchestrator. Release tags namespace by language (`nt-v0.1.0` for the Rust binary via `cargo-dist`, `v2.x.y` for the npm package — already in use).
+
+**Why not a separate `no-tickets-rust` repo?**
+- Tasks 1–5 are spikes — same-repo iteration is materially faster than cross-repo PRs
+- Feature-equivalence smoke matrix (Task 4) needs TS + Rust running side-by-side in one CI job
+- npm wrapper (Task 7) downloads from this repo's GH Releases — same-repo keeps the postinstall logic trivial
+- After Task 12 retires the TS source, this repo naturally becomes the Rust repo with thin TS SDK + wrappers — no migration required
+
+**Why not introduce Turborepo / pnpm-workspaces now?**
+- Adds tooling for zero current benefit — the TS package is one unit, Rust is a separate `cargo` workspace, no shared build graph
+- Revisit at Phase 4 when per-language TS/Python/Go wrappers may justify a workspace tool
+
+**Future split is cheap.** Self-contained `crates/` means `git filter-repo --subdirectory-filter crates` produces a clean `no-tickets-rust` repo with full history if/when desired. The decision is reversible.
+
 ## Dependencies & Coordination
 
 - **Phase 1 must ship first.** This fix ports Phase 1's surface to Rust; if Phase 1 changes the publish/MCP shape after the Rust port begins, the port has to keep up.
 - **Server-side coordination.** The JSON Schema build artifact must be published as a release asset of `no-tickets-service`. Coordinate with the server team to set up that pipeline (it's a thin transformation step over the existing Zod schemas).
 - **Code-signing / notarization** for macOS and Windows binaries — important for end-user trust but deferred to a post-Phase-3 follow-up. Initial release ships unsigned with a documented "right-click to open" workaround on macOS.
-- **Auto-update mechanism** (`nt self-update`) — also deferred. Most users update via their package manager.
+- **Auto-update mechanism** (`nt self-update`) — **in scope**, see Task 11. Targets install.sh / direct-download users only (every package-manager channel updates via its own manager). Built on the `self_update` crate. Velopack was evaluated and rejected as GUI-app-shaped and the wrong fit for a CLI/MCP binary.
 
 ## Lessons / Open Questions
 
-- **Is `rmcp` ready?** If the Rust MCP crate is not yet feature-complete, Task 5 may need to drop down to JSON-RPC over stdio and implement the protocol directly. Spike (Task 2) settles this.
+- ~~**Is `rmcp` ready?**~~ **Resolved 2026-05.** Official SDK, 4.7M+ downloads on crates.io. `#[tool]` macro + stdio transport. Task 2 still runs to confirm the round-trip but no longer carries strategic risk.
+- **Perry (TypeScript → native) evaluated and rejected (2026-05-11).** Perry compiles TS to native binaries (~2–5 MB, ~1 ms startup) and would let us reuse much of the existing TS code. Rejected because: (a) generational GC vs Rust's zero-GC matters for long-running MCP latency, (b) no MCP-protocol library equivalent to `rmcp` — would need V8-runtime fallback (15–20 MB binary, partial Node runtime — i.e., back to the Bun-compile rejection criteria), (c) v0.5.x single-vendor project — bus-factor risk for infra at this layer. Re-evaluate if Perry hits 1.0 with an MCP crate before Phase 4.
 - **Cargo as a distribution channel** — `cargo install` is heavy (compiles from source for ~minutes). Useful for Rust-ecosystem users but not the primary path. Don't optimize the binary for this.
-- **Long-term TS code base** — after Phase 4, what's left in this repo? The thin TS SDK only. Worth considering a repo split: `no-tickets-rust` (CLI/MCP source) vs `no-tickets-ts` (SDK source). Decide closer to Phase 4.
+- **Long-term TS code base** — after Phase 4, what's left in this repo? The thin TS SDK + per-language wrappers. **Repo layout decided for Phases 2/3 (see "Repo layout" above): single repo, Cargo workspace alongside pnpm package.** Revisit whether to split into `no-tickets-rust` vs `no-tickets-ts` once Phase 4 lands and the wrapper count justifies workspace tooling.

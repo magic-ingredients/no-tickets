@@ -654,8 +654,8 @@
           "reviews": {
             "adversarial": {
               "startedAt": "2026-05-10T13:54:12.651Z",
-              "completedAt": "2026-05-10T13:56:44.956Z",
-              "reviewSha": "690634b",
+              "completedAt": "2026-05-10T15:10:39.770Z",
+              "reviewSha": "9052a41",
               "verdict": "needs-refactoring",
               "refactorStartedAt": "2026-05-10T13:56:44.956Z",
               "refactorCommitSha": "3df63c67ee37346f9ed4de96a857c3ef3702e579",
@@ -1141,5 +1141,5 @@
       "archived": false
     }
   ],
-  "lastSynced": "2026-05-10T15:04:17.335Z"
+  "lastSynced": "2026-05-10T15:14:28.849Z"
 }

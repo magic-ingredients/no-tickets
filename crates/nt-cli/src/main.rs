@@ -1,4 +1,5 @@
 mod auth;
+mod auth_server;
 mod commands;
 mod config;
 mod credentials;
@@ -24,6 +25,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Authenticate via the browser and save session credentials.
+    Init,
+    /// Delete local session credentials. Symmetric with `init`.
+    Logout,
     /// Print authentication and locally-registered push tokens as JSON.
     Status,
     /// Publish a single event to the configured no-tickets API.
@@ -77,6 +82,8 @@ async fn main() {
     let cli = Cli::parse();
     let env = SystemEnv;
     let exit = match cli.command {
+        Commands::Init => commands::init::run(&env),
+        Commands::Logout => commands::logout::run(&env),
         Commands::Status => commands::status::run(&env),
         Commands::Publish {
             r#type,

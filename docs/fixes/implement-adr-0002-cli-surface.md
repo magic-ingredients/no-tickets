@@ -6,16 +6,15 @@ severity: medium
 reported: 2026-05-11T00:00:00.000Z
 resolved: 2026-05-12T00:00:00.000Z
 resolution:
-  rootCause: |
-    TS CLI surface accumulated four real frictions per ADR-0002: misnamed `nt project link`, 401-on-stale-session `nt token list`, leaky `--profile` flag, and `POST /v1/tokens` callable by any bearer session credential. The Rust port was the right point to reshape — backcompat already dropped per the rewrite memo.
+  rootCause: "TS CLI surface accumulated four ADR-0002 frictions: misnamed nt-project-link, 401-on-stale-session nt-token-list, leaky --profile flag, and POST /v1/tokens callable by any bearer session credential. The Rust port was the reshape point — backcompat already dropped per the rewrite memo."
   fix:
-    - Platform-native config dir via `directories` crate (was `~/.notickets/`)
-    - Three-layer URL resolution (defaults → `NO_TICKETS_ENV` preset → explicit pair), `--profile` plumbing deleted
-    - Session credentials gain `host` field; mismatch surfaces stderr warning + declines session
-    - `config.json` flattened to `{ projects: { name: { pushToken, addedAt, label } } }` with `#[serde(flatten)] extras` preserving unknown keys, atomic 0600 writes
-    - `nt token add/list/remove` commands replace `nt project link/list/unlink` and `nt token create/revoke`
-    - `nt status` reshaped to `{authenticated, email?, tokens: [...]}` per the four ADR scenarios
-    - `nt init` ported (browser + local HTTP callback server, CSRF nonce); `nt logout` added (delete credentials file)
+    - "Platform-native config dir via directories crate (was ~/.notickets/)"
+    - "Three-layer URL resolution (defaults / NO_TICKETS_ENV preset / explicit pair); --profile plumbing deleted"
+    - "Session credentials gain host field; mismatch surfaces stderr warning and declines session"
+    - "config.json flattened to projects/<name> with #[serde(flatten)] extras preserving unknown keys; atomic 0600 writes"
+    - "nt token add/list/remove commands replace nt project link/list/unlink and nt token create/revoke"
+    - "nt status reshaped to {authenticated, email?, tokens} per the four ADR scenarios"
+    - "nt init ported (browser + local HTTP callback server, CSRF nonce); nt logout added (delete credentials file)"
   filesModified:
     - crates/nt-cli/src/paths.rs
     - crates/nt-cli/src/urls.rs

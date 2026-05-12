@@ -1,5 +1,6 @@
 mod auth;
 mod commands;
+mod config;
 mod credentials;
 mod env;
 mod paths;

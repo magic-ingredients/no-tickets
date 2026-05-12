@@ -20,6 +20,9 @@ pub const LOCAL_AUTH: &str = "http://localhost:5001/api/auth/cli";
 #[derive(Debug)]
 pub struct ResolvedUrls {
     pub api_url: String,
+    /// Consumed by `nt init` (Task 6) — the browser is opened at this URL
+    /// to bootstrap the session credentials. Status no longer prints it.
+    #[allow(dead_code)]
     pub auth_url: String,
 }
 

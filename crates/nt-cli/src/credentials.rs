@@ -31,10 +31,9 @@ use crate::paths;
 #[derive(Deserialize)]
 pub struct StoredCredentials {
     pub token: String,
-    /// Part of the shape contract (serde requires it as a String, which gives
-    /// shape validation for free against the TS `isStoredCredentials`). Unused
-    /// at runtime.
-    #[allow(dead_code)]
+    /// Surfaced by `nt status` as the authenticated identity when the
+    /// session is valid. Part of the shape contract — serde requires it
+    /// as a String, giving shape validation for free.
     pub email: String,
     #[serde(rename = "expiresAt")]
     pub expires_at: String,

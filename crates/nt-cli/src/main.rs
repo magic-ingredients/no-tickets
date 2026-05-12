@@ -24,11 +24,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Print authentication and URL resolution status as JSON.
+    /// Print authentication and locally-registered push tokens as JSON.
     Status,
     /// Publish a single event to the configured no-tickets API.
-    /// Spike scope — single event only; no --stream, no local schema
-    /// validation, no batching. (See fix doc Task 14.)
     Publish {
         /// Event type id (e.g., `ai.task.completed.v1`).
         #[arg(long)]
@@ -39,6 +37,37 @@ enum Commands {
         /// Project name; sent as `--project` for routing alongside the
         /// Bearer token.
         #[arg(long)]
+        project: String,
+    },
+    /// Manage locally-registered push tokens (paste from the web UI).
+    Token {
+        #[command(subcommand)]
+        action: TokenAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum TokenAction {
+    /// Register a push token for a project. The token is stored locally;
+    /// no server call is made.
+    Add {
+        /// Project name (key in the local registry).
+        project: String,
+        /// Push token (must begin with `nt_push_`).
+        push_token: String,
+        /// Free-text label, surfaced by `nt status` / `nt token list`.
+        #[arg(long)]
+        label: Option<String>,
+        /// Overwrite an existing entry for the project.
+        #[arg(long)]
+        force: bool,
+    },
+    /// List locally-registered tokens (project, masked token, addedAt, label).
+    List,
+    /// Drop a project entry from the local registry. Does NOT revoke
+    /// server-side — use the web UI for that.
+    Remove {
+        /// Project name to remove.
         project: String,
     },
 }
@@ -64,6 +93,16 @@ async fn main() {
             )
             .await
         }
+        Commands::Token { action } => match action {
+            TokenAction::Add {
+                project,
+                push_token,
+                label,
+                force,
+            } => commands::token_add::run(&env, &project, &push_token, label.as_deref(), force),
+            TokenAction::List => commands::token_list::run(&env),
+            TokenAction::Remove { project } => commands::token_remove::run(&env, &project),
+        },
     };
     std::process::exit(exit);
 }

@@ -21,54 +21,25 @@ pub fn emit_host_mismatch_warning(stored_host: &str, current_host: &str) {
     );
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AuthSource {
+    /// Token came from `NO_TICKETS_TOKEN` env var. Transport-level escape
+    /// hatch; doesn't count as authenticated identity in `nt status`.
     Env,
+    /// Token came from the session credentials file. The
+    /// "authenticated" identity in `nt status`.
     Credentials,
 }
 
-impl AuthSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            AuthSource::Env => "env",
-            AuthSource::Credentials => "credentials",
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum TokenType {
-    Push,
-    Session,
-    Unknown,
-}
-
-impl TokenType {
-    pub fn detect(token: &str) -> Self {
-        if token.starts_with("nt_push_") {
-            TokenType::Push
-        } else if token.starts_with("nt_session_") {
-            TokenType::Session
-        } else {
-            TokenType::Unknown
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TokenType::Push => "push",
-            TokenType::Session => "session",
-            TokenType::Unknown => "unknown",
-        }
-    }
-}
-
 pub struct ResolvedAuth {
-    /// The actual bearer token. Required by transport callers (publish);
-    /// status doesn't read it (only displays source + tokenType).
+    /// The actual bearer token. Required by transport callers (publish).
     pub token: String,
     pub source: AuthSource,
-    pub token_type: TokenType,
+    /// Set when `source == Credentials`. Surfaced by `nt status` as the
+    /// identity attached to an authenticated session. None for env-supplied
+    /// `NO_TICKETS_TOKEN` — those are transport-level overrides, not
+    /// identity claims.
+    pub email: Option<String>,
 }
 
 /// What `resolve_auth` reports back to the caller.
@@ -89,23 +60,19 @@ pub enum AuthOutcome {
 pub fn resolve_auth(env: &dyn Env, current_api_url: &str) -> AuthOutcome {
     if let Some(token) = env.var("NO_TICKETS_TOKEN") {
         if !token.is_empty() {
-            let token_type = TokenType::detect(&token);
             return AuthOutcome::Resolved(ResolvedAuth {
                 token,
                 source: AuthSource::Env,
-                token_type,
+                email: None,
             });
         }
     }
     match credentials::load(env, current_api_url) {
-        LoadOutcome::Valid(stored) => {
-            let token_type = TokenType::detect(&stored.token);
-            AuthOutcome::Resolved(ResolvedAuth {
-                token: stored.token,
-                source: AuthSource::Credentials,
-                token_type,
-            })
-        }
+        LoadOutcome::Valid(stored) => AuthOutcome::Resolved(ResolvedAuth {
+            token: stored.token,
+            source: AuthSource::Credentials,
+            email: Some(stored.email),
+        }),
         LoadOutcome::HostMismatch { stored_host } => AuthOutcome::SessionHostMismatch {
             stored_host,
             current_host: current_api_url.to_string(),
@@ -140,26 +107,6 @@ mod tests {
                 assert!(matches!(r.source, AuthSource::Env));
             }
             _ => panic!("expected Resolved; got something else"),
-        }
-    }
-
-    #[test]
-    fn resolve_auth_detects_push_token_type_from_injected_env() {
-        let env = HashMapEnv::with(&[("NO_TICKETS_TOKEN", "nt_push_xyz")]);
-        let outcome = resolve_auth(&env, API_URL_PROD);
-        match outcome {
-            AuthOutcome::Resolved(r) => assert!(matches!(r.token_type, TokenType::Push)),
-            _ => panic!("expected Resolved"),
-        }
-    }
-
-    #[test]
-    fn resolve_auth_detects_session_token_type_from_injected_env() {
-        let env = HashMapEnv::with(&[("NO_TICKETS_TOKEN", "nt_session_abc")]);
-        let outcome = resolve_auth(&env, API_URL_PROD);
-        match outcome {
-            AuthOutcome::Resolved(r) => assert!(matches!(r.token_type, TokenType::Session)),
-            _ => panic!("expected Resolved"),
         }
     }
 

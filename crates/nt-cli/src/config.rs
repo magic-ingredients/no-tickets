@@ -93,34 +93,81 @@ pub fn write(env: &dyn Env, config: &Config) -> Result<(), ConfigError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    // Atomic write: sibling tmp + rename. Rename is atomic on POSIX
-    // within the same filesystem; readers either see the old file or the
-    // new file, never a half-written file.
-    let tmp = path.with_extension("json.tmp");
+    // Atomic write: per-process unique tmp + rename. Rename is atomic on
+    // POSIX within the same filesystem; readers either see the old file
+    // or the new file, never a half-written file. The PID + ns suffix
+    // avoids two concurrent writers clobbering each other's tmp.
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = path.with_extension(format!("json.tmp.{pid}.{nanos}"));
     let body = serde_json::to_string_pretty(config)?;
-    fs::write(&tmp, &body)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+    // Create the tmp with the target permissions FROM THE START so the
+    // secret never lands on disk under default umask. On non-Unix
+    // platforms `OpenOptions::mode` is unavailable; fall back to plain
+    // write (ACL discipline is the OS-level responsibility there).
+    let write_result = write_secret_atomic(&tmp, body.as_bytes());
+    // On any failure, scrub the tmp leftover so a half-written file
+    // containing the plaintext token isn't left on disk indefinitely.
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
     }
-    fs::rename(&tmp, &path)?;
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(ConfigError::Io(e));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn write_secret_atomic(path: &std::path::Path, body: &[u8]) -> Result<(), ConfigError> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    f.write_all(body)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_secret_atomic(path: &std::path::Path, body: &[u8]) -> Result<(), ConfigError> {
+    fs::write(path, body)?;
     Ok(())
 }
 
 /// Returns a display-safe form of a push token: `nt_push_…<last4>` for
-/// well-formed tokens, `nt_push_…****` placeholder otherwise. Never returns
-/// any prefix or substring of the secret beyond the last four characters.
+/// well-formed tokens whose secret body is at least 8 characters long,
+/// `nt_push_…****` placeholder otherwise.
+///
+/// The 8-character minimum stops "mask" from returning a value that is
+/// itself the entire secret body when the input is very short. Iterates
+/// via `chars()` so non-ASCII input never panics (push tokens are ASCII
+/// in practice, but defensive utilities should not panic on bad input).
 #[allow(dead_code)] // consumed by Task 5 token list output
 pub fn mask_token(token: &str) -> String {
     const PLACEHOLDER: &str = "nt_push_…****";
+    const MIN_BODY_LEN: usize = 8;
+    const SUFFIX_LEN: usize = 4;
     let Some(rest) = token.strip_prefix("nt_push_") else {
         return PLACEHOLDER.to_string();
     };
-    if rest.len() < 4 {
+    if rest.chars().count() < MIN_BODY_LEN {
         return PLACEHOLDER.to_string();
     }
-    let suffix = &rest[rest.len() - 4..];
+    let suffix: String = rest
+        .chars()
+        .rev()
+        .take(SUFFIX_LEN)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     format!("nt_push_…{suffix}")
 }
 
@@ -149,26 +196,36 @@ mod tests {
     }
 
     #[test]
-    fn mask_token_returns_last_four_with_short_secret_body() {
-        // 4-char body — still emits last-4 (whole body) since len >= 4.
-        let masked = mask_token("nt_push_abcd");
-        assert_eq!(masked, "nt_push_…abcd");
+    fn mask_token_redacts_short_secret_body_below_eight_chars() {
+        // Body < 8 chars: emit placeholder, never the whole body even
+        // when "last 4" would be ambiguous against the full secret. Pins
+        // the 8-char threshold defended in the doc-comment.
+        for body in ["abcd", "abcdefg", "x", ""] {
+            let token = format!("nt_push_{body}");
+            let masked = mask_token(&token);
+            assert!(
+                !masked.contains(body) || body.is_empty(),
+                "must not leak body of short token {token:?}; got {masked:?}",
+            );
+        }
     }
 
     #[test]
-    fn mask_token_redacts_short_or_malformed_token_completely() {
-        // < 4-char body or wrong prefix: emit a safe placeholder that
-        // exposes nothing. We don't want partial leaks.
-        let masked = mask_token("nt_push_xy");
-        assert!(
-            !masked.contains("xy"),
-            "must not leak secret body even partially; got {masked:?}",
-        );
+    fn mask_token_redacts_non_push_prefixed_token_completely() {
         let masked = mask_token("session_or_whatever");
         assert!(
             !masked.contains("session"),
             "must redact non-push-prefixed tokens entirely; got {masked:?}",
         );
+    }
+
+    #[test]
+    fn mask_token_does_not_panic_on_non_ascii_input() {
+        // Non-ASCII chars in the body must NOT trigger byte-slice panics.
+        // Push tokens are ASCII in practice; this defends against garbage.
+        let _ = mask_token("nt_push_é🦀é🦀é🦀é🦀é🦀");
+        let _ = mask_token("nt_push_é");
+        let _ = mask_token("ℹ️");
     }
 
     // ─── read / write round-trip ─────────────────────────────────────────

@@ -18,13 +18,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
 
 use crate::env::Env;
-#[allow(unused_imports)] // GREEN-phase impl uses these
 use crate::paths;
-#[allow(unused_imports)] // GREEN-phase impl uses these
-use std::fs;
 
 pub const CONFIG_FILE: &str = "config.json";
 
@@ -48,7 +46,7 @@ pub struct Config {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // variants constructed by GREEN impl
+#[allow(dead_code)] // consumed by Task 5 token commands
 pub enum ConfigError {
     HomeUnresolvable,
     Io(std::io::Error),
@@ -79,25 +77,53 @@ impl From<serde_json::Error> for ConfigError {
     }
 }
 
-#[allow(dead_code)] // GREEN-phase wiring; consumed by Task 5 token commands
-pub fn read(_env: &dyn Env) -> Result<Config, ConfigError> {
-    // RED stub.
-    Err(ConfigError::HomeUnresolvable)
+#[allow(dead_code)] // consumed by Task 5 token commands
+pub fn read(env: &dyn Env) -> Result<Config, ConfigError> {
+    let path = config_path(env).ok_or(ConfigError::HomeUnresolvable)?;
+    if !path.exists() {
+        return Ok(Config::default());
+    }
+    let raw = fs::read_to_string(&path)?;
+    Ok(serde_json::from_str(&raw)?)
 }
 
-#[allow(dead_code)] // GREEN-phase wiring; consumed by Task 5 token commands
-pub fn write(_env: &dyn Env, _config: &Config) -> Result<(), ConfigError> {
-    // RED stub.
-    Err(ConfigError::HomeUnresolvable)
+#[allow(dead_code)] // consumed by Task 5 token commands
+pub fn write(env: &dyn Env, config: &Config) -> Result<(), ConfigError> {
+    let path = config_path(env).ok_or(ConfigError::HomeUnresolvable)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // Atomic write: sibling tmp + rename. Rename is atomic on POSIX
+    // within the same filesystem; readers either see the old file or the
+    // new file, never a half-written file.
+    let tmp = path.with_extension("json.tmp");
+    let body = serde_json::to_string_pretty(config)?;
+    fs::write(&tmp, &body)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+    }
+    fs::rename(&tmp, &path)?;
+    Ok(())
 }
 
-#[allow(dead_code)] // GREEN-phase wiring; consumed by Task 5 token list output
-pub fn mask_token(_token: &str) -> String {
-    // RED stub.
-    String::new()
+/// Returns a display-safe form of a push token: `nt_push_…<last4>` for
+/// well-formed tokens, `nt_push_…****` placeholder otherwise. Never returns
+/// any prefix or substring of the secret beyond the last four characters.
+#[allow(dead_code)] // consumed by Task 5 token list output
+pub fn mask_token(token: &str) -> String {
+    const PLACEHOLDER: &str = "nt_push_…****";
+    let Some(rest) = token.strip_prefix("nt_push_") else {
+        return PLACEHOLDER.to_string();
+    };
+    if rest.len() < 4 {
+        return PLACEHOLDER.to_string();
+    }
+    let suffix = &rest[rest.len() - 4..];
+    format!("nt_push_…{suffix}")
 }
 
-#[allow(dead_code)] // GREEN-phase impl uses this
 fn config_path(env: &dyn Env) -> Option<PathBuf> {
     paths::config_dir(env).map(|d| d.join(CONFIG_FILE))
 }

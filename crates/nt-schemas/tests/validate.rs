@@ -52,11 +52,12 @@ fn bundle_contains_every_expected_type_id() {
 /// or the upstream release was retagged in place.
 #[test]
 fn bundle_version_matches_pinned_metadata() {
-    let pinned = option_env!("NT_SCHEMAS_VERSION")
-        .expect("build.rs must set NT_SCHEMAS_VERSION env var");
+    // `env!` fails the compile if build.rs didn't set the var — that's
+    // a stronger guarantee than runtime `option_env!().expect()` and
+    // satisfies clippy::option_env_unwrap.
     assert_eq!(
         bundle_version(),
-        pinned,
+        env!("NT_SCHEMAS_VERSION"),
         "bundle_version() (read from the GH release asset) must match SCHEMAS_VERSION pinned in build.rs — bump build.rs's pin or investigate release-tag drift",
     );
 }

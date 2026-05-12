@@ -301,3 +301,60 @@ Task 14's stated goal ("single event to staging end-to-end") is now actually met
 1. **No urgent code fix needed.** The Rust binary worked end-to-end.
 2. **Follow-up: switch wiremock fixtures to use a transport-only synthetic event type id** (or wait for `nt-schemas` build.rs work in Task 3a to regenerate real payloads). Tracked separately if the test fidelity matters enough — for now the wiremock contract validates *transport*, which is its job.
 3. **Document the working payload** (above) — done in this section.
+
+---
+
+# Task 3a — build.rs fetch + sha256-verify of release bundle
+
+Notes from swapping `crates/nt-schemas`'s `include_str!` of a vendored
+bundle for a `build.rs` that pulls the canonical artefact from the
+no-tickets-service GitHub Release.
+
+## Decisions
+
+### Download via `gh release download`, not a Rust HTTP crate
+
+The fix doc preferred `ureq` or `reqwest::blocking` as `[build-dependencies]`. The wrinkle: the source repo (`magic-ingredients/no-tickets-service`) is **private**. `releases/download/<tag>/<asset>` returns 404 without auth; the GitHub API requires `Authorization: Bearer <token>` plus `Accept: application/octet-stream`. Two contributor-experience paths:
+
+- **HTTP crate + `GITHUB_TOKEN`** — every contributor must export a token before they can build (and CI must set it; `gh-actions` sets `GITHUB_TOKEN` by default but a local build doesn't).
+- **`gh release download`** — gh CLI's local credentials cover the auth dance. Zero env-var fiddling.
+
+Chose `gh release download`. Adds a build-time requirement on `gh` being on `$PATH`, but that's already true for every contributor here (the rest of the tooling expects it). When the repo goes public, the build script can swap to plain HTTPS with no auth — same URL pattern.
+
+### Pinned version lives in `build.rs`, not Cargo.toml metadata
+
+The fix doc offered both `[package.metadata.no-tickets-schemas].version` and a `SCHEMAS_VERSION` const. Picked the const. Reading `[package.metadata.*]` from a build script requires either parsing Cargo.toml by hand or a TOML build-dep — extra surface for no benefit. The const is one line, lives next to the code that uses it, and a wrong-format diff is visible in review.
+
+## Offline-build policy
+
+Per the fix doc: builds run in CI (network available) or on developer machines (where missing network already blocks dev work). `build.rs` therefore makes no attempt to cache the download outside Cargo's `$OUT_DIR`. Cargo's normal incremental rules apply — `cargo:rerun-if-changed=build.rs` means the asset is fetched once per version bump, not per `cargo build`.
+
+Failure modes are loud:
+
+- `gh` not installed → panic explains where to install it
+- `gh auth status` not authenticated → `gh release download` exits non-zero; panic includes that hint
+- Asset missing for the pinned tag → panic includes the tag and repo URL
+- sha256 mismatch (retag-in-place, corrupt download) → panic with both hashes
+- Gunzip failure → panic from `flate2`
+
+## Bundle shape divergence (caught while wiring)
+
+The vendored bundle's top-level shape was `{ bundleVersion, generatedFrom, jsonSchemaDraft, schemas }` — written by `scripts/generate-schema-bundle.mjs` to match the Rust deserializer of the day. The canonical release-artefact shape (from `no-tickets-service`'s `build-json-schema-bundle.ts`) is `{ version, generated_at, schemas }`. The two collided on the version-field key.
+
+Reconciled by changing `BundleFile` in `lib.rs` to read `version` directly (matching the canonical release shape). `generated_at` and any other extras are ignored — serde tolerates unknown fields by default. Now there's only one shape and it's the upstream one.
+
+## Build-dependencies added
+
+| Crate | Why | Size impact |
+|---|---|---|
+| `flate2` (rust_backend feature) | gunzip the `.json.gz` asset | pure-Rust, no libz link |
+| `sha2` | verify against the `.sha256` sidecar | tiny |
+
+No HTTP client crate — `gh` does the download.
+
+## Retired
+
+- `scripts/generate-schema-bundle.mjs` — deleted
+- `crates/nt-schemas/schemas/event-types.bundle.json` — deleted (was vendored; now fetched per build)
+- `bundle_version_matches_installed_schemas_package` test — replaced by `bundle_version_matches_pinned_metadata` (asserts the downloaded bundle's `version` matches `NT_SCHEMAS_VERSION` env var set by `build.rs`)
+

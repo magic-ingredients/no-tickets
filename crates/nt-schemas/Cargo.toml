@@ -13,3 +13,11 @@ serde_json = "1"
 
 # serde_json is already in [dependencies]; tests inherit it.
 [dev-dependencies]
+
+# Build script fetches the JSON Schema bundle from the no-tickets-service
+# GH release at compile time (see build.rs). Verification uses sha2; gzip
+# decompression uses flate2 with its pure-Rust backend so we don't pick
+# up a libz dynamic link.
+[build-dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+sha2 = "0.10"

@@ -357,7 +357,8 @@ Once those land, this fix gets a follow-up to swap `include_str!` for a `build.r
 - Swap `include_str!` for a `build.rs` that downloads the GH Release asset, verifies sha256, embeds via `include_bytes!`. API surface unchanged. ↳ now tracked as Task 3a below.
 
 ### 3a. Swap `include_str!` for `build.rs` fetch + sha256-verify of GH release bundle
-status: not_started
+status: completed
+commitSha: pending
 
 Sister Tasks 6+7 shipped — the no-tickets-service repo now publishes versioned JSON Schema bundles to GitHub Releases with sha256 sidecars (first cut: [schemas-v0.2.1](https://github.com/magic-ingredients/no-tickets-service/releases/tag/schemas-v0.2.1)). Swap `crates/nt-schemas/src/lib.rs:31` from `include_str!` of a locally-generated, in-tree bundle to a `build.rs` that downloads the release asset, verifies its sha256, writes the bundle to `$OUT_DIR`, and re-exposes it via `include_str!(concat!(env!("OUT_DIR"), "/event-types.bundle.json"))`. Validator API surface stays identical.
 

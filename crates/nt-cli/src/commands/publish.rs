@@ -8,7 +8,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::auth::{resolve_auth, AuthOutcome, NOT_AUTH_MSG};
+use crate::auth::{emit_host_mismatch_warning, resolve_auth, AuthOutcome, NOT_AUTH_MSG};
 use crate::env::Env;
 use crate::transport::{Client, HttpClient};
 use crate::urls::resolve_urls;
@@ -138,9 +138,7 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
             stored_host,
             current_host,
         } => {
-            eprintln!(
-                "Warning: stored session was issued for {stored_host} but the current environment resolves to {current_host}. Run `nt init` to re-authenticate against the current environment.",
-            );
+            emit_host_mismatch_warning(&stored_host, &current_host);
             eprintln!("{NOT_AUTH_MSG}");
             return 1;
         }

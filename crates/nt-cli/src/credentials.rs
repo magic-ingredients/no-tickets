@@ -66,6 +66,9 @@ pub fn load(env: &dyn Env, current_api_url: &str) -> LoadOutcome {
     if !is_expires_in_future(&parsed.expires_at) {
         return LoadOutcome::None;
     }
+    if parsed.host.is_empty() {
+        return LoadOutcome::None;
+    }
     if parsed.host != current_api_url {
         return LoadOutcome::HostMismatch {
             stored_host: parsed.host,

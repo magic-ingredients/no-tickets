@@ -12,6 +12,15 @@ use crate::env::Env;
 pub const NOT_AUTH_MSG: &str =
     "Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.";
 
+/// Emits the ADR-0002 stored-session host-mismatch warning to stderr.
+/// Centralised so identity-aware callers (status, publish, future commands)
+/// share one phrasing. Token is never included — the warning is identity-free.
+pub fn emit_host_mismatch_warning(stored_host: &str, current_host: &str) {
+    eprintln!(
+        "Warning: stored session was issued for {stored_host} but the current environment resolves to {current_host}. Run `nt init` to re-authenticate against the current environment.",
+    );
+}
+
 #[derive(Clone, Copy)]
 pub enum AuthSource {
     Env,

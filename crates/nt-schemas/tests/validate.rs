@@ -42,30 +42,22 @@ fn bundle_contains_every_expected_type_id() {
     );
 }
 
-/// The bundle's version is captured at generator-script time from the
-/// installed `@magic-ingredients/no-tickets-schemas` package. Read the
-/// same package's package.json at test time and compare. This catches
-/// "pnpm bumped the schemas package but no one re-ran the generator"
-/// drift without hardcoding a version literal that goes stale on the
-/// next bump.
+/// The schemas version is pinned in `crates/nt-schemas/build.rs` and
+/// flows into both the GH release-asset download URL (`schemas-v{VERSION}`)
+/// and the `NT_SCHEMAS_VERSION` env var available at compile time.
+/// The bundle's own `version` field is set server-side at release time
+/// from `packages/schemas/package.json` in `no-tickets-service`. If the
+/// pinned version drifts from the bundle's self-reported version we
+/// fail loudly — that gap means the download URL grabbed the wrong tag
+/// or the upstream release was retagged in place.
 #[test]
-fn bundle_version_matches_installed_schemas_package() {
-    let pkg_json_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("node_modules/@magic-ingredients/no-tickets-schemas/package.json");
-    let pkg_json = std::fs::read_to_string(&pkg_json_path)
-        .unwrap_or_else(|e| panic!("read {pkg_json_path:?}: {e}"));
-    let parsed: Value = serde_json::from_str(&pkg_json).expect("package.json parses");
-    let installed = parsed["version"]
-        .as_str()
-        .expect("package.json has version string");
+fn bundle_version_matches_pinned_metadata() {
+    let pinned = option_env!("NT_SCHEMAS_VERSION")
+        .expect("build.rs must set NT_SCHEMAS_VERSION env var");
     assert_eq!(
         bundle_version(),
-        installed,
-        "bundle_version() out of sync with installed schemas package — re-run scripts/generate-schema-bundle.mjs",
+        pinned,
+        "bundle_version() (read from the GH release asset) must match SCHEMAS_VERSION pinned in build.rs — bump build.rs's pin or investigate release-tag drift",
     );
 }
 

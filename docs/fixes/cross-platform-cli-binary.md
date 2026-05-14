@@ -729,18 +729,33 @@ Wrap the HTTP call in a bounded retry loop for transient-class failures (connect
 ### 18. `nt publish` — source auto-detection / merging
 status: not_started
 
-Port the TS `detectSource()` surface-defaults (CI runner, agent name, etc.) and spread-merge order: `{ name: 'cli', ...flagsSource }`. Flag-provided attributes win; auto-detected attributes fill in.
+**Scope revision (2026-05-14):** the original task description called for CI-runner auto-detection (`GITHUB_ACTIONS`, `GITLAB_CI`, etc.) and a flag-vs-detected merge order. The TS reference (`src/agent-detect.ts` and its test file `src/__tests__/source-detect.test.ts`) **explicitly rejected** CI auto-detection — provenance is caller-driven via `--source-attribute`. The flag-vs-default merge order is already implemented (Task 15: `name: "nt-cli"` default, override-able by `--source-name`; `attributes` BTreeMap seeded with `project`, augmented by `--source-attribute KEY=VALUE`).
+
+What remains from the TS reference: the **opt-in machine-hash attribute** when `NO_TICKETS_INCLUDE_MACHINE=1` is set. The TS SDK includes it in `detectSource()`; the TS CLI does not (a known omission). Including it on the Rust CLI gives every event an audit-trail attribute identifying the producing machine without leaking the raw hostname.
+
+**Machine-hash mechanics (mirrors `src/agent-detect.ts`):**
+- Read `NO_TICKETS_INCLUDE_MACHINE`. Only `"1"` enables the attribute; anything else (unset, empty, "0", "true") leaves the attribute absent.
+- Hash = `SHA-256("{salt}:{hostname}")`, lowercase hex, truncated to first 16 chars.
+- Salt persisted at `~/.notickets/.machine-salt`, 16 random bytes hex-encoded (32 chars), file mode `0o600` on POSIX.
+- On first call: atomic create-or-reuse — if the file exists with non-empty contents, read it; otherwise generate, write with `O_EXCL`-equivalent semantics, and on lost-race re-read the winner's salt.
+- Empty / whitespace-only existing salt file → regenerate and overwrite.
+- Best-effort: any filesystem failure (read-only `$HOME`, missing perms, etc.) silently drops the attribute. Publish must never fail because the machine hash couldn't be computed.
+- `HOME` env var read first (testable via env stubbing), `USERPROFILE` as Windows fallback.
 
 **Files to modify:**
-- `crates/nt-cli/src/source_detect.rs` (new) — environment-derived defaults
-- `crates/nt-cli/src/commands/publish.rs` — fold detected + flag-provided source
-- inline tests for the merge precedence
-- `crates/nt-cli/tests/publish.rs` — env-driven wire-shape tests
+- `crates/nt-cli/src/source_detect.rs` (new) — `machine_hash()` helper + salt persistence
+- `crates/nt-cli/Cargo.toml` — add `sha2` dep (already a transitive via `nt-schemas`'s build pipeline; promote to direct)
+- `crates/nt-cli/src/commands/publish.rs` — call `machine_hash()` inside `build_metadata`; inject into `attributes` when present
+- inline tests for the env-var gate, hash format, salt persistence, race handling, FS-failure tolerance
+- `crates/nt-cli/tests/publish.rs` — wire-shape test asserting `attributes.machine` presence/absence under the env var
 
 **Acceptance:**
-- With no flags, source.name is `nt-cli` (current spike behaviour preserved)
-- Env-derived attributes appear in `source.attributes` when relevant CI env vars are set
-- Flag-provided attributes override detected ones key-by-key
+- With `NO_TICKETS_INCLUDE_MACHINE` unset, `source.attributes.machine` is absent from the wire body (regression-pin: current default behaviour preserved).
+- With `NO_TICKETS_INCLUDE_MACHINE=1`, `source.attributes.machine` is a 16-char lowercase hex string.
+- The hash is stable across invocations with the same salt + hostname; different salt produces a different hash.
+- Salt file lives at `~/.notickets/.machine-salt` with mode `0o600` on POSIX.
+- Empty / corrupted salt file is regenerated; FS errors during hash computation result in the attribute being silently omitted (exit code unchanged).
+- A `--source-attribute machine=manual-override` flag wins over the auto-computed value (last-wins on BTreeMap insert; pinned by test).
 
 ## Acceptance Criteria
 

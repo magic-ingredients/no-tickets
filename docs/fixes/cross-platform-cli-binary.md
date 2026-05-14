@@ -119,7 +119,7 @@ Single source artifact (per-target binary) shipped through every relevant channe
 | Channel | Audience | Mechanism |
 |---|---|---|
 | **GitHub Releases** | Direct download, `curl` install | Tagged release with per-target tarballs and checksums |
-| **Install script** at `https://nt.sh/install` | Quickest curl-pipe install on Linux/macOS | Bash script: detects platform, downloads from GH Releases, verifies sha256 |
+| **Install script** at `https://get.no-tickets.com` | Quickest curl-pipe install on Linux/macOS | Bash script: detects platform, downloads from GH Releases, verifies sha256 |
 | **Homebrew tap** | Mac + Linux developers | `brew install magic-ingredients/tap/nt` |
 | **Scoop bucket** | Windows developers | `scoop install nt` |
 | **cargo install** | Rust ecosystem users | `cargo install nt-cli` (publishes to crates.io) |
@@ -505,14 +505,21 @@ Apt and yum repositories for Linux server installs. Hosted on GitHub Pages or a 
 - `.github/workflows/build-rpms.yml`
 - repo manifest files
 
-### 10. nt.sh hosting + install.sh redirect
+### 10. get.no-tickets.com hosting + install.sh redirect
 status: not_started
 
-`cargo-dist` generates the `install.sh` content; this task handles the `nt.sh` DNS + hosting setup so `curl -fsSL https://nt.sh/install | sh` resolves to the cargo-dist-generated install script for the latest release.
+`cargo-dist` generates the `install.sh` content; this task handles the `get.no-tickets.com` DNS + hosting setup so `curl -fsSL https://get.no-tickets.com | sh` resolves to the cargo-dist-generated install script for the latest release.
+
+Subdomain pick follows the existing `*.no-tickets.com` convention (`api.`, `app.`, `api-staging.`) and the industry pattern (`get.k8s.io`, `get.pnpm.io`, `get.k3s.io`). Avoids the cost + management of a separate vanity domain (`nt.sh` was an earlier proposal).
 
 **Files to modify/create:**
-- DNS / hosting setup for `nt.sh`
-- Redirect rule / static page configuration (depending on hosting choice)
+- DNS: add `get` CNAME / A record to the `no-tickets.com` zone pointing at the chosen hosting target
+- Hosting target options (pick one):
+  - **Cloudflare Worker** that serves the installer.sh content inline (cheapest, edge-cached, sub-50 ms)
+  - **GitHub Pages** on a docs/landing repo with a `/install` page and a 200-response root that serves installer.sh
+  - **S3 + CloudFront** static-hosting the installer.sh
+- Redirect / response rule so a bare `curl -fsSL https://get.no-tickets.com` (no path) returns the installer script with `Content-Type: text/x-shellscript`
+- Caching headers: short TTL (≤5 min) so a new release's installer ships quickly
 
 ### 11. `nt self-update` subcommand
 status: not_started
@@ -656,7 +663,7 @@ mechanical port.
 - [ ] MCP server passes Anthropic spec compliance suite
 - [ ] All distribution channels deliver the same binary checksums
 - [ ] `npm install -g @magic-ingredients/no-tickets` transparently switches users to the Rust binary
-- [ ] `curl -fsSL https://nt.sh/install | sh` produces a working `nt` on Linux/macOS
+- [ ] `curl -fsSL https://get.no-tickets.com | sh` produces a working `nt` on Linux/macOS
 - [ ] `brew install magic-ingredients/tap/nt` works on macOS + Linux
 - [ ] `scoop install nt` works on Windows
 - [ ] `cargo install nt-cli` works from crates.io

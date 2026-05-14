@@ -49,6 +49,16 @@ enum Commands {
         #[command(subcommand)]
         action: TokenAction,
     },
+    /// Validate a payload locally against the bundled JSON Schema for
+    /// the given event type. No auth, no network.
+    Validate {
+        /// Event type id (e.g., `ai.task.completed.v1`).
+        #[arg(long)]
+        r#type: String,
+        /// Event payload as a JSON string.
+        #[arg(long)]
+        data: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -110,6 +120,12 @@ async fn main() {
             TokenAction::List => commands::token_list::run(&env),
             TokenAction::Remove { project } => commands::token_remove::run(&env, &project),
         },
+        Commands::Validate { r#type, data } => {
+            commands::validate::run(commands::validate::ValidateArgs {
+                type_id: &r#type,
+                data: &data,
+            })
+        }
     };
     std::process::exit(exit);
 }

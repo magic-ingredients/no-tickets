@@ -456,7 +456,7 @@ Port all tools and discovery flow to the Rust MCP server. Match the TS server's 
 
 **Scope clarification (2026-05-14):** the TS `create-server.ts` wires only `validate` (legacy `.notickets/` directory checker) and `status` into the actually-exposed MCP surface. The richer toolset (`list_event_types`, `describe_event_type`, `publish_event`, `run_interaction`, `create_subject`) lives in `src/mcp/tools/handlers.ts` but was never registered. The fix doc explicitly names list/describe/publish as in-scope, so the Rust port targets the planned-but-unwired TS surface, not the vestigial validate/status pair.
 
-This task is split into sub-tasks below; the Task 5 top-level closes once 5a–5f all complete. `list_event_types` against local fixtures already exists from the Task 2 spike (commit 676ea22).
+This task is split into sub-tasks 19–24 below (integer suffixes match the Task 4 → 14-18 split convention recognised by the task-sync tool); the Task 5 top-level closes once 19–24 all complete. `list_event_types` against local fixtures already exists from the Task 2 spike (commit 676ea22).
 
 **Files to modify/create (across sub-tasks):**
 - `crates/nt-mcp/src/tools/<name>.rs` per tool
@@ -466,7 +466,7 @@ This task is split into sub-tasks below; the Task 5 top-level closes once 5a–5
 **Acceptance (top-level):**
 - Real agent driving the Rust MCP server produces the same tool outputs as the TS server for the same inputs (per sub-task acceptance below).
 
-### 5a. `publish_event` MCP tool — local schema validate + HTTPS POST
+### 19. `publish_event` MCP tool — local schema validate + HTTPS POST
 status: not_started
 
 Implement the MCP `publish_event` tool against the canonical TS reference at `src/mcp/tools/handlers.ts::handlePublishEvent`. Single-event publish from the MCP server: local schema validation (bundled JSON Schema via `nt-schemas::validate`) gates the call before any HTTP, then POST to `/v1/events` with the resolved auth.
@@ -478,7 +478,7 @@ Implement the MCP `publish_event` tool against the canonical TS reference at `sr
 
 This is single-token / single-project per server invocation. Multi-project routing (via the registry) is deferred to a future MCP-side enhancement.
 
-**HTTP/auth code provenance:** for this first sub-task, duplicate the minimum HTTP + auth bits from `nt-cli` into `nt-mcp` rather than extracting `nt-core`. The duplication is small (~100 LOC: a simplified `Client` over `reqwest`, env-var token read, url resolution copy). When sub-task 5b/5c lands and a second consumer of the duplicated code appears, extract to a shared `nt-core` crate then.
+**HTTP/auth code provenance:** for this first sub-task, duplicate the minimum HTTP + auth bits from `nt-cli` into `nt-mcp` rather than extracting `nt-core`. The duplication is small (~100 LOC: a simplified `Client` over `reqwest`, env-var token read, url resolution copy). When Task 20 / 21 lands and a second consumer of the duplicated code appears, extract to a shared `nt-core` crate via Task 24.
 
 **Tool args (matches TS):**
 - `project: string` — used for `source.attributes.project` on the wire; does NOT route to a different token
@@ -513,34 +513,34 @@ This is single-token / single-project per server invocation. Multi-project routi
 - 4xx response surfaces a domain-specific error (permission denied for 403, validation for 422, etc.)
 - Wiremock test covers the happy path, schema-fail short-circuit, 401, 403, 422, 5xx-retry-exhausted
 
-### 5b. `describe_event_type` MCP tool — server GET + schema synthesis
+### 20. `describe_event_type` MCP tool — server GET + schema synthesis
 status: not_started
 
-GET `/v1/registry/event-types/{id}` and return the JSON Schema plus a synthesised example payload (`example-synth.ts` equivalent in Rust). Smaller than 5a — single GET, response transformation. Naturally pairs with 5e (cache).
+GET `/v1/registry/event-types/{id}` and return the JSON Schema plus a synthesised example payload (`example-synth.ts` equivalent in Rust). Smaller than Task 19 — single GET, response transformation. Naturally pairs with Task 23 (cache).
 
 **Files to modify/create:**
 - `crates/nt-mcp/src/tools/describe_event_type.rs` (new)
 - Example synthesis port (port `src/lib/example-synth.ts` to Rust)
 
-### 5c. `run_interaction` MCP tool
+### 21. `run_interaction` MCP tool
 status: not_started
 
 Server-call passthrough. POST `/v1/interactions/{id}` with `{ input, subject? }`, return the event list from the response.
 
-### 5d. `create_subject` MCP tool
+### 22. `create_subject` MCP tool
 status: not_started
 
 Server-call passthrough. POST `/v1/subjects` with the subject body, return `{ type, id }`.
 
-### 5e. Real-server `list_event_types` (replace fixtures)
+### 23. Real-server `list_event_types` (replace fixtures)
 status: not_started
 
 Switch `list_event_types` from local fixtures (Task 2 spike) to a real `GET /v1/registry/event-types` call with an in-memory cache + async refresh. Matches TS `RegistryClient` behaviour. Closes out the spike.
 
-### 5f. Extract `nt-core` shared crate
+### 24. Extract `nt-core` shared crate
 status: not_started
 
-Once 5a's duplication has a second consumer (5b or 5c), extract the shared HTTP/auth/urls code into a `crates/nt-core/` workspace member. Both `nt-cli` and `nt-mcp` depend on it. Eliminates the drift risk introduced by 5a's deliberate duplication.
+Once Task 19's duplication has a second consumer (Task 20 or Task 21), extract the shared HTTP/auth/urls code into a `crates/nt-core/` workspace member. Both `nt-cli` and `nt-mcp` depend on it. Eliminates the drift risk introduced by Task 19's deliberate duplication.
 
 This sub-task is bookkeeping — no new functionality, just code motion + import updates. Pinned by the existing test suites of both consumers continuing to pass.
 

@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 nt-schemas = { path = "../nt-schemas" }
+percent-encoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
 rmcp = { version = "1.6", features = ["server", "macros", "transport-io"] }
 schemars = "1"

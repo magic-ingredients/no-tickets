@@ -29,6 +29,7 @@ resolution:
     - crates/nt-cli/src/commands/token_list.rs
     - crates/nt-cli/src/commands/token_remove.rs
     - crates/nt-cli/src/main.rs
+archived: true
 ---
 
 # Fix: Implement ADR-0002 — CLI surface and token lifecycle

@@ -389,9 +389,19 @@ Sister Tasks 6+7 shipped — the no-tickets-service repo now publishes versioned
 - `nt-schemas`'s public API (`validate`, `known_type_ids`, `bundle_version`) is byte-for-byte unchanged; all existing `tests/validate.rs` cases pass.
 
 ### 4. Full CLI surface port
-status: not_started
+status: completed
+commitSha: fc8175b
 
-Port all commands to Rust: `init`, `status`, `publish`, `project link/list/unlink`, `validate`, `connect`, `disconnect`, `token`, `version`, `help`. Use `clap` with the derive API for subcommand parsing — one struct per subcommand keeps the surface close to the TS shape. Match flag parsing, error messages, exit codes, JSON output schemas.
+Port all commands to Rust per the ADR-0002 surface (the task description here predates ADR-0002 — the canonical surface is `init`, `logout`, `publish`, `validate`, `status`, `token add/list/remove`; `project link/list/unlink`, `connect`, `disconnect` are deleted/folded). Use `clap` with the derive API for subcommand parsing. Match flag parsing, error messages, exit codes, JSON output schemas.
+
+**Slice progress (multi-cycle; this task aggregates several TDD cycles):**
+- `init`, `logout`, `status`, `token add/list/remove` — landed via the side-fix `implement-adr-0002-cli-surface` (the ADR reshape was the natural port point for those commands)
+- `publish` (single-event, spike-scope) — landed via Task 14
+- `validate` — landed at fc8175b (this fix, TDD cycle 1 of Task 4)
+- _Pending:_ `publish` optional metadata (`--subject-type/--subject-id`, `--source-name`, `--source-attributes`, `--parent`, `--trace`, `--dedupe-key`)
+- _Pending:_ `publish` batch mode (`--file` / stdin)
+- _Pending:_ `publish` retry/backoff on transient errors
+- _Pending:_ `publish` source auto-detection / merging
 
 **Files to modify/create:**
 - `crates/nt-cli/src/commands/`
@@ -655,6 +665,80 @@ Matches the TS reference at `src/transport/events.ts::publish`:
 After this spike: the three highest-risk toolchain pieces (clap+config
 files; rmcp; reqwest+TLS+auth) are all proven. Task 4 becomes a
 mechanical port.
+
+### 15. `nt publish` — optional metadata fields
+status: not_started
+
+Add the optional metadata flags from `runPublishSingle` (TS reference: `src/cli/commands/publish/single.ts`) to the Rust `nt publish`. These were OOS of the Task 14 spike; closing them here:
+
+- `--subject-type` + `--subject-id` → `subject: { type, id }` on the wire (both required if either present)
+- `--source-name` → overrides default `source.name = "nt-cli"`
+- `--source-attributes KEY=VALUE …` → merged into `source.attributes` (alongside the existing `project`)
+- `--parent <eventId>` → `parentEventId`
+- `--trace <id>` → `traceId`
+- `--dedupe-key <key>` → `dedupeKey` (unlocks client-side idempotency; this is the substantive one)
+
+Wire-shape parity: each field is OMITTED when absent (no JSON `null` / no empty string), matching TS conditional-spread emission. Field order on the wire follows the TS shape: `type, data, subject?, source, parentEventId?, traceId?, dedupeKey?`.
+
+**Files to modify:**
+- `crates/nt-cli/src/main.rs` — clap subcommand args for the new flags
+- `crates/nt-cli/src/commands/publish.rs` — extend `EventEnvelope` + `Source`; thread flags through `PublishArgs` and `build_envelope`
+- `crates/nt-cli/tests/publish.rs` — wire-body assertions per flag combination
+- `crates/nt-cli/src/commands/publish.rs` (inline tests) — `build_envelope` field-order pins
+
+**Acceptance:**
+- Each flag emits its documented field on the wire; absent flags emit nothing
+- `--subject-type` without `--subject-id` (or vice versa) exits 1 with a usage error
+- `--source-attributes` accepts `KEY=VALUE` repeated; rejects malformed pairs with a usage error
+- Existing publish tests stay green; new wire-shape tests pin every optional field independently
+
+### 16. `nt publish` — batch mode (`--file` / stdin JSONL or JSON array)
+status: not_started
+
+Port the multi-event batch path from `runPublishBatch`. Reads either a JSON array (`[{event}, {event}, …]`) or JSONL (one event object per line) from `--file <path>` or `-` (stdin). Single POST to `/v1/events` with the array of envelopes.
+
+Distinct from Task 4b (`--stream` mode) — batch is "one finite read → one HTTP call → exit"; stream is "long-lived subprocess, JSONL in/out, persistent".
+
+**Files to modify:**
+- `crates/nt-cli/src/main.rs` — `--file`, `-` (stdin) flag handling
+- `crates/nt-cli/src/commands/publish.rs` — multi-envelope path
+- `crates/nt-cli/src/cli/lib/jsonl.rs`-equivalent (Rust) for line-by-line parsing
+- `crates/nt-cli/tests/publish.rs` — batch wire-body tests
+
+**Acceptance:**
+- JSON-array input produces a single POST with N envelopes in declaration order
+- JSONL input (newline-delimited) parsed identically
+- Mixed validation: any one bad envelope rolls up to exit 1 with a per-line error count
+
+### 17. `nt publish` — retry/backoff on transient errors
+status: not_started
+
+Wrap the HTTP call in a bounded retry loop for transient-class failures (connection refused, 5xx, request timeouts). Exponential backoff with jitter; cap at N attempts. Non-transient (4xx, JSON parse errors, etc.) fails immediately.
+
+**Files to modify:**
+- `crates/nt-cli/src/transport.rs` — retry policy on top of `HttpClient`
+- `crates/nt-cli/tests/publish.rs` — wiremock scenarios for retry + give-up behaviour
+
+**Acceptance:**
+- 5xx then 200 → exit 0 with one retry observed in wiremock
+- All-5xx (N attempts) → exit 1 with the last-status surfaced
+- 4xx never retries; exit 1 immediately
+
+### 18. `nt publish` — source auto-detection / merging
+status: not_started
+
+Port the TS `detectSource()` surface-defaults (CI runner, agent name, etc.) and spread-merge order: `{ name: 'cli', ...flagsSource }`. Flag-provided attributes win; auto-detected attributes fill in.
+
+**Files to modify:**
+- `crates/nt-cli/src/source_detect.rs` (new) — environment-derived defaults
+- `crates/nt-cli/src/commands/publish.rs` — fold detected + flag-provided source
+- inline tests for the merge precedence
+- `crates/nt-cli/tests/publish.rs` — env-driven wire-shape tests
+
+**Acceptance:**
+- With no flags, source.name is `nt-cli` (current spike behaviour preserved)
+- Env-derived attributes appear in `source.attributes` when relevant CI env vars are set
+- Flag-provided attributes override detected ones key-by-key
 
 ## Acceptance Criteria
 

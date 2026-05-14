@@ -57,10 +57,10 @@ struct EventEnvelope<'a> {
 }
 
 #[derive(Serialize, Debug)]
-pub(crate) struct Subject<'a> {
+struct Subject<'a> {
     #[serde(rename = "type")]
-    pub subject_type: &'a str,
-    pub id: &'a str,
+    subject_type: &'a str,
+    id: &'a str,
 }
 
 #[derive(Serialize)]
@@ -119,36 +119,23 @@ async fn publish_event<C: HttpClient>(
     }
 }
 
-/// Already-validated metadata for a single event. Caller (`run()` or a
-/// test) is responsible for ensuring the subject pair invariant and for
-/// having pre-merged the `--source-attribute` flags into `attributes`
-/// (project entry + per-flag overrides, last-wins on duplicate keys).
+/// Already-validated metadata for a single event. Construct via
+/// `build_metadata`, which enforces the subject pair invariant and
+/// pre-merges `--source-attribute` flags into `attributes` (project
+/// entry + per-flag overrides, last-wins on duplicate keys).
+///
+/// Private fields — every construction site lives in this module, so
+/// the validity invariants are enforced at the boundary (no external
+/// caller can hand a half-built `EventMetadata` to `build_envelope`).
+/// `Debug` is required by `Result::expect_err` in the inline tests.
 #[derive(Debug)]
-pub(crate) struct EventMetadata<'a> {
-    pub subject: Option<Subject<'a>>,
-    pub source_name: &'a str,
-    pub attributes: BTreeMap<&'a str, &'a str>,
-    pub parent: Option<&'a str>,
-    pub trace: Option<&'a str>,
-    pub dedupe_key: Option<&'a str>,
-}
-
-impl<'a> EventMetadata<'a> {
-    /// Bare metadata for a project: no subject, no flag overrides,
-    /// default source.name. Used by tests and as the starting point in
-    /// run() before merging `--source-attribute` and the optional flags.
-    pub(crate) fn for_project(project: &'a str) -> Self {
-        let mut attributes = BTreeMap::new();
-        attributes.insert("project", project);
-        EventMetadata {
-            subject: None,
-            source_name: "nt-cli",
-            attributes,
-            parent: None,
-            trace: None,
-            dedupe_key: None,
-        }
-    }
+struct EventMetadata<'a> {
+    subject: Option<Subject<'a>>,
+    source_name: &'a str,
+    attributes: BTreeMap<&'a str, &'a str>,
+    parent: Option<&'a str>,
+    trace: Option<&'a str>,
+    dedupe_key: Option<&'a str>,
 }
 
 /// Pure builder for a single event envelope.
@@ -167,11 +154,12 @@ fn build_envelope<'a>(
     data: &'a Value,
     meta: EventMetadata<'a>,
 ) -> EventEnvelope<'a> {
-    let attributes = if meta.attributes.is_empty() {
-        None
-    } else {
-        Some(meta.attributes)
-    };
+    // `attributes` is always non-empty here — `build_metadata` seeds it
+    // with the `project` entry on construction and every test path
+    // wires through that same constructor. The Option wrapper on
+    // `Source::attributes` stays so the type stays open to a future
+    // "no attributes at all" branch (e.g. a `--no-source-attributes`
+    // flag) without a wire-shape break.
     EventEnvelope {
         type_id,
         data,
@@ -179,7 +167,7 @@ fn build_envelope<'a>(
         source: Source {
             name: meta.source_name,
             sdk_version: env!("CARGO_PKG_VERSION"),
-            attributes,
+            attributes: Some(meta.attributes),
         },
         parent_event_id: meta.parent,
         trace_id: meta.trace,
@@ -257,27 +245,25 @@ fn build_metadata<'a>(args: &'a PublishArgs<'a>) -> Result<EventMetadata<'a>, St
             id: i,
         }),
         (None, None) => None,
-        (Some(_), None) => {
-            return Err("--subject-type requires --subject-id".to_string());
-        }
-        (None, Some(_)) => {
-            return Err("--subject-id requires --subject-type".to_string());
-        }
+        (Some(_), None) => return Err("--subject-type requires --subject-id".to_string()),
+        (None, Some(_)) => return Err("--subject-id requires --subject-type".to_string()),
     };
 
-    let mut meta = EventMetadata::for_project(args.project);
-    meta.subject = subject;
-    if let Some(name) = args.source_name {
-        meta.source_name = name;
-    }
+    let mut attributes: BTreeMap<&'a str, &'a str> = BTreeMap::new();
+    attributes.insert("project", args.project);
     for raw in args.source_attributes {
         let (key, value) = parse_source_attribute(raw)?;
-        meta.attributes.insert(key, value);
+        attributes.insert(key, value);
     }
-    meta.parent = args.parent;
-    meta.trace = args.trace;
-    meta.dedupe_key = args.dedupe_key;
-    Ok(meta)
+
+    Ok(EventMetadata {
+        subject,
+        source_name: args.source_name.unwrap_or("nt-cli"),
+        attributes,
+        parent: args.parent,
+        trace: args.trace,
+        dedupe_key: args.dedupe_key,
+    })
 }
 
 fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> {
@@ -363,8 +349,22 @@ mod tests {
     // call shape); the integration tests own the stdout/stderr
     // contract.
 
+    /// Construct a minimal metadata block for the publish-orchestration
+    /// tests below: no subject, no flag overrides, default source.name,
+    /// `project` as the only source attribute. Mirrors what
+    /// `build_metadata` would produce for a `PublishArgs` with only the
+    /// three required flags set.
     fn bare_meta<'a>(project: &'a str) -> EventMetadata<'a> {
-        EventMetadata::for_project(project)
+        let mut attributes = BTreeMap::new();
+        attributes.insert("project", project);
+        EventMetadata {
+            subject: None,
+            source_name: "nt-cli",
+            attributes,
+            parent: None,
+            trace: None,
+            dedupe_key: None,
+        }
     }
 
     #[tokio::test]
@@ -657,5 +657,17 @@ mod tests {
         let args = args_with_attrs("demo", &attrs);
         let err = build_metadata(&args).expect_err("expected usage error");
         assert!(err.contains("empty key"), "got {err:?}");
+    }
+
+    #[test]
+    fn build_metadata_attribute_with_empty_value_is_accepted() {
+        // TS parity (src/cli/lib/source-flags.ts): empty value is fine,
+        // empty key is the only thing rejected. Pin behaviour so a
+        // future "strict mode" doesn't silently drift away from the
+        // wrapper-shared contract.
+        let attrs = ["foo=".to_string()];
+        let args = args_with_attrs("demo", &attrs);
+        let meta = build_metadata(&args).expect("empty value must be accepted");
+        assert_eq!(meta.attributes.get("foo"), Some(&""));
     }
 }

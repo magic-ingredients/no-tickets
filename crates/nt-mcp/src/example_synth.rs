@@ -49,11 +49,17 @@ pub fn synthesise_example(raw_schema: &Value) -> Value {
         // Empty enum: fall through to the type placeholder.
     }
 
+    // `type: "null"` falls through to the wildcard arm rather than
+    // getting its own `Some("null") => Value::Null` row — both
+    // produce `Value::Null`, so an explicit arm would be a
+    // semantically-equivalent mutant surface (cargo-mutants flagged
+    // exactly this: "delete match arm Some(\"null\")"). The
+    // `primitive_null_yields_null` test pins the behaviour via the
+    // wildcard path.
     match schema.get("type").and_then(Value::as_str) {
         Some("string") => Value::String(String::new()),
         Some("number") | Some("integer") => Value::Number(0.into()),
         Some("boolean") => Value::Bool(false),
-        Some("null") => Value::Null,
         Some("object") => synthesise_object(schema),
         Some("array") => synthesise_array(schema),
         _ => Value::Null,

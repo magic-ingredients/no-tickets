@@ -120,12 +120,7 @@ async fn main() {
             TokenAction::List => commands::token_list::run(&env),
             TokenAction::Remove { project } => commands::token_remove::run(&env, &project),
         },
-        Commands::Validate { r#type, data } => {
-            commands::validate::run(commands::validate::ValidateArgs {
-                type_id: &r#type,
-                data: &data,
-            })
-        }
+        Commands::Validate { r#type, data } => commands::validate::run(&r#type, &data),
     };
     std::process::exit(exit);
 }

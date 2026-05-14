@@ -43,6 +43,8 @@ const VALID_TASK_DATA: &str = r#"{
 
 #[test]
 fn validate_valid_payload_exits_zero_and_prints_valid_true() {
+    // Equality on stdout — `contains` would let `{"valid":true,"x":1}`
+    // slip through, but the contract is the exact one-key object.
     let temp = tempfile::tempdir().unwrap();
     isolate(&mut nt(), temp.path())
         .args([
@@ -54,7 +56,7 @@ fn validate_valid_payload_exits_zero_and_prints_valid_true() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#""valid":true"#))
+        .stdout(predicate::eq("{\"valid\":true}\n"))
         .stderr(predicate::str::is_empty());
 }
 
@@ -80,13 +82,46 @@ fn validate_unknown_event_type_exits_two_and_names_type_on_stderr() {
 fn validate_invalid_payload_exits_one_and_lists_issues_on_stderr() {
     // Empty object is missing every required field for ai.task.completed.v1.
     let temp = tempfile::tempdir().unwrap();
-    isolate(&mut nt(), temp.path())
+    let output = isolate(&mut nt(), temp.path())
         .args(["validate", "--type", "ai.task.completed.v1", "--data", "{}"])
-        .assert()
-        .code(1)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("ai.task.completed.v1"))
-        .stderr(predicate::str::contains("local validation error"));
+        .output()
+        .expect("spawned");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        output.stdout.is_empty(),
+        "stdout must stay empty on failure"
+    );
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+
+    // Header pins the type id AND a non-zero error count — a regression
+    // emitting `0 local validation error(s):` would slip past a plain
+    // substring check. Pin format: `<type>: <N> local validation error(s):`.
+    let header = stderr
+        .lines()
+        .find(|line| {
+            line.starts_with("ai.task.completed.v1: ")
+                && line.ends_with(" local validation error(s):")
+        })
+        .unwrap_or_else(|| panic!("missing header line; stderr=\n{stderr}"));
+    let count: usize = header
+        .trim_start_matches("ai.task.completed.v1: ")
+        .trim_end_matches(" local validation error(s):")
+        .parse()
+        .unwrap_or_else(|e| panic!("header count must be numeric; {e}; header={header:?}"));
+    assert!(
+        count > 0,
+        "header must claim at least one issue; got {header:?}"
+    );
+
+    // …and at least that many indented issue lines (`  <path>: <message>`).
+    let issue_lines = stderr
+        .lines()
+        .filter(|line| line.starts_with("  ") && line.contains(": "))
+        .count();
+    assert!(
+        issue_lines >= count,
+        "expected ≥{count} indented issue lines; got {issue_lines}; stderr=\n{stderr}",
+    );
 }
 
 #[test]
@@ -131,14 +166,21 @@ fn validate_bad_json_in_data_exits_one_and_names_parse_failure() {
 }
 
 #[test]
-fn validate_does_not_require_auth_or_network() {
-    // Belt-and-braces regression: even with the credentials file shape
-    // that would otherwise let `nt publish` proceed, no creds-file read
-    // path is reachable from `nt validate`. We assert success on a
-    // valid payload while NO_TICKETS_HOME points at an empty tempdir —
-    // no credentials, no config.json, no NO_TICKETS_TOKEN set.
+fn validate_is_observably_offline() {
+    // Stronger than just "no creds": point NO_TICKETS_API_URL at a
+    // refused port so any accidental HTTP call would fail loudly.
+    // Since `nt validate` is local-only per ADR-0002, the command must
+    // still succeed. (Bind+immediate-drop yields a port that's free
+    // but unconnectable for the lifetime of the test.)
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
     let temp = tempfile::tempdir().unwrap();
     isolate(&mut nt(), temp.path())
+        .env("NO_TICKETS_API_URL", format!("http://127.0.0.1:{port}"))
+        .env("NO_TICKETS_AUTH_URL", format!("http://127.0.0.1:{port}"))
         .args([
             "validate",
             "--type",
@@ -147,7 +189,8 @@ fn validate_does_not_require_auth_or_network() {
             VALID_TASK_DATA,
         ])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::eq("{\"valid\":true}\n"));
 }
 
 #[test]

@@ -6,17 +6,12 @@
 use nt_schemas::{validate, ValidationIssue};
 use serde_json::Value;
 
-pub struct ValidateArgs<'a> {
-    pub type_id: &'a str,
-    pub data: &'a str,
-}
-
 const EXIT_OK: i32 = 0;
 const EXIT_VALIDATION: i32 = 1;
 const EXIT_UNKNOWN_TYPE: i32 = 2;
 
-pub fn run(args: ValidateArgs<'_>) -> i32 {
-    let parsed: Value = match serde_json::from_str(args.data) {
+pub fn run(type_id: &str, data: &str) -> i32 {
+    let parsed: Value = match serde_json::from_str(data) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("--data must be valid JSON: {e}");
@@ -24,9 +19,9 @@ pub fn run(args: ValidateArgs<'_>) -> i32 {
         }
     };
 
-    match validate(args.type_id, &parsed) {
+    match validate(type_id, &parsed) {
         None => {
-            eprintln!("Unknown event type: {}", args.type_id);
+            eprintln!("Unknown event type: {type_id}");
             EXIT_UNKNOWN_TYPE
         }
         Some(issues) if issues.is_empty() => {
@@ -34,7 +29,7 @@ pub fn run(args: ValidateArgs<'_>) -> i32 {
             EXIT_OK
         }
         Some(issues) => {
-            print_issues(args.type_id, &issues);
+            print_issues(type_id, &issues);
             EXIT_VALIDATION
         }
     }

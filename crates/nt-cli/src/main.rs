@@ -5,6 +5,7 @@ mod config;
 mod credentials;
 mod env;
 mod paths;
+mod source_detect;
 mod transport;
 mod urls;
 

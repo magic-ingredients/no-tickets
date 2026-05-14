@@ -58,12 +58,31 @@ async fn run_nt_publish(
     home: &Path,
     args: &[&str],
 ) -> Output {
+    run_nt_publish_with_env(server_uri, token, home, &[], args).await
+}
+
+/// Variant that lets a test set additional env vars on top of the
+/// hermetic defaults (e.g. `NO_TICKETS_INCLUDE_MACHINE=1`). The
+/// extras are applied AFTER the helper's defaults, so they override
+/// — useful for testing env-gated features without forking the helper.
+async fn run_nt_publish_with_env(
+    server_uri: &str,
+    token: Option<&str>,
+    home: &Path,
+    extra_env: &[(&str, &str)],
+    args: &[&str],
+) -> Output {
     let mut cmd = Command::new(cargo_bin("nt"));
     cmd.env("NO_TICKETS_HOME", home)
         // ADR-0002 layer 2/3 mutual exclusion: NO_TICKETS_ENV set in the
         // host shell collides with the explicit pair we set below and
         // surfaces EnvAndPairBothSet. Clear it for hermeticity.
         .env_remove("NO_TICKETS_ENV")
+        // Default-off for the machine-hash attribute (Task 18). Each
+        // test that needs it must opt in explicitly via cmd.env(...)
+        // after this helper returns; default tests must NOT pick up
+        // a host shell where this is set.
+        .env_remove("NO_TICKETS_INCLUDE_MACHINE")
         .env("NO_TICKETS_API_URL", server_uri)
         // The url-resolver enforces both env vars must be set together;
         // give it a placeholder for AUTH (publish never reads it).
@@ -82,6 +101,9 @@ async fn run_nt_publish(
         cmd.env("NO_TICKETS_TOKEN", t);
     } else {
         cmd.env_remove("NO_TICKETS_TOKEN");
+    }
+    for (k, v) in extra_env {
+        cmd.env(k, v);
     }
     cmd.arg("publish");
     for a in args {
@@ -498,6 +520,101 @@ async fn publish_repeated_source_attribute_last_wins_on_duplicate_key() {
 
     let body = captured.lock().unwrap().clone().expect("captured body");
     assert_eq!(envelope(&body)["source"]["attributes"]["foo"], "second");
+}
+
+// ─── Machine-hash attribute (Task 18) ─────────────────────────────────────
+
+/// Regression pin: without `NO_TICKETS_INCLUDE_MACHINE=1` the wire
+/// body's `attributes` MUST NOT contain a `machine` key. Default-off
+/// is the current behaviour; opt-in only.
+#[tokio::test]
+async fn publish_omits_machine_attribute_by_default() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &base_args(),
+    )
+    .await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    let attrs = &envelope(&body)["source"]["attributes"];
+    assert!(
+        attrs.get("machine").is_none(),
+        "machine attribute must be absent by default; got {attrs}",
+    );
+}
+
+/// With `NO_TICKETS_INCLUDE_MACHINE=1`, the wire body carries
+/// `source.attributes.machine` as a 16-char lowercase-hex string.
+#[tokio::test]
+async fn publish_emits_machine_attribute_when_include_machine_env_set() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let out = run_nt_publish_with_env(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &[("NO_TICKETS_INCLUDE_MACHINE", "1")],
+        &base_args(),
+    )
+    .await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    let machine = envelope(&body)["source"]["attributes"]["machine"]
+        .as_str()
+        .map(str::to_string)
+        .expect("machine attribute present");
+    assert_eq!(
+        machine.len(),
+        16,
+        "machine hash must be 16 chars; got {machine:?}"
+    );
+    assert!(
+        machine
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "machine hash must be lowercase hex; got {machine:?}",
+    );
+}
+
+/// `--source-attribute machine=manual-override` MUST win over the
+/// auto-computed hash. Pinned because both paths write into the same
+/// BTreeMap key; the publish builder needs the auto-hash to land
+/// FIRST so the flag-provided value overwrites it (BTreeMap last-wins
+/// on insert).
+#[tokio::test]
+async fn publish_source_attribute_machine_flag_overrides_auto_hash() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--source-attribute", "machine=manual-override"]);
+    let out = run_nt_publish_with_env(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &[("NO_TICKETS_INCLUDE_MACHINE", "1")],
+        &args,
+    )
+    .await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert_eq!(
+        envelope(&body)["source"]["attributes"]["machine"],
+        "manual-override",
+        "explicit --source-attribute must override the auto-computed machine hash",
+    );
 }
 
 #[tokio::test]

@@ -1,9 +1,10 @@
 //! `nt publish` — single-event publish over HTTPS with Bearer auth.
 //! Mirrors `src/cli/commands/publish` + `src/transport/events.ts::publish`.
 //!
-//! Scope: single event. `--stream` mode (Task 4b), batch mode (Task 16),
-//! retry/backoff (Task 17), and source auto-detection (Task 18) live in
-//! their own tasks.
+//! Scope: single event with bounded retry/backoff on transient failures
+//! (Task 17 — retry policy + classifier live in `transport`). `--stream`
+//! mode (Task 4b), batch mode (Task 16), and source auto-detection
+//! (Task 18) live in their own tasks.
 
 use std::collections::BTreeMap;
 
@@ -12,7 +13,9 @@ use serde_json::Value;
 
 use crate::auth::{emit_host_mismatch_warning, resolve_auth, AuthOutcome, NOT_AUTH_MSG};
 use crate::env::Env;
-use crate::transport::{Client, HttpClient};
+use crate::transport::{
+    post_json_with_retry, Client, HttpClient, RetryPolicy, Sleeper, TokioSleeper,
+};
 use crate::urls::resolve_urls;
 
 pub struct PublishArgs<'a> {
@@ -89,8 +92,10 @@ struct Source<'a> {
 /// Body serialisation happens here rather than at the transport
 /// boundary: the wire format (single-element JSON array of envelopes)
 /// is a publish-flow concern, not a transport-layer concern.
-async fn publish_event<C: HttpClient>(
+async fn publish_event<C: HttpClient, S: Sleeper>(
     client: &C,
+    policy: &RetryPolicy,
+    sleeper: &S,
     type_id: &str,
     data: &Value,
     meta: EventMetadata<'_>,
@@ -101,7 +106,7 @@ async fn publish_event<C: HttpClient>(
     // so .expect is appropriate here. A panic would indicate a bug
     // in serde, not a runtime condition.
     let body_bytes = serde_json::to_vec(&body).expect("envelope vec always serialises");
-    match client.post_json("/v1/events", body_bytes).await {
+    match post_json_with_retry(client, policy, sleeper, "/v1/events", body_bytes).await {
         Ok(response) => {
             // Server response shape: `{ ingested, deduped, ids }`.
             // serde_json::Value serialisation cannot fail for valid
@@ -231,7 +236,9 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
     };
 
     // Edge done. Delegate to the testable core.
-    publish_event(&client, args.type_id, &parsed_data, meta).await
+    let policy = RetryPolicy::default_publish();
+    let sleeper = TokioSleeper;
+    publish_event(&client, &policy, &sleeper, args.type_id, &parsed_data, meta).await
 }
 
 /// Validate the flag combination + parse `--source-attribute` entries.
@@ -286,6 +293,29 @@ mod tests {
     use crate::transport::TransportError;
     use serde_json::json;
     use std::sync::Mutex;
+    use std::time::Duration;
+
+    /// No-retry policy + no-op sleeper for the publish-orchestration
+    /// tests below. Each test cares about a single `publish_event`
+    /// branch (success / 401 / 422 / 5xx / Config); retry behaviour is
+    /// owned by `transport::retry_tests` and exercised end-to-end via
+    /// `tests/publish.rs`. Using `max_attempts = 1` keeps the
+    /// `FakeHttpClient` response queue size at one and surfaces the
+    /// recorded error verbatim, matching the original pre-Task-17 shape.
+    fn no_retry() -> RetryPolicy {
+        RetryPolicy {
+            max_attempts: 1,
+            base_delay: Duration::from_millis(0),
+        }
+    }
+
+    struct NoopSleeper;
+    impl Sleeper for NoopSleeper {
+        async fn sleep(&self, _: Duration) {
+            // `max_attempts=1` means this is never invoked, but the
+            // trait requires an impl.
+        }
+    }
 
     /// Records every `post_json` call and returns canned responses.
     /// One canned response per call, in FIFO order; missing canned
@@ -373,7 +403,15 @@ mod tests {
             "ingested": 1, "deduped": 0, "ids": ["evt_1"],
         })));
         let data = json!({ "taskId": "t-1" });
-        let code = publish_event(&fake, "ai.task.completed.v1", &data, bare_meta("demo")).await;
+        let code = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "ai.task.completed.v1",
+            &data,
+            bare_meta("demo"),
+        )
+        .await;
         assert_eq!(code, 0, "2xx must map to exit code 0");
     }
 
@@ -383,7 +421,15 @@ mod tests {
             "ingested": 1, "deduped": 0, "ids": ["x"],
         })));
         let data = json!({});
-        let _ = publish_event(&fake, "x.y.z.v1", &data, bare_meta("demo")).await;
+        let _ = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "x.y.z.v1",
+            &data,
+            bare_meta("demo"),
+        )
+        .await;
         let calls = fake.calls();
         assert_eq!(calls.len(), 1, "exactly one HTTP call");
         assert_eq!(calls[0].path, "/v1/events", "must POST to /v1/events");
@@ -397,6 +443,8 @@ mod tests {
         let data = json!({ "taskId": "t-1" });
         let _ = publish_event(
             &fake,
+            &no_retry(),
+            &NoopSleeper,
             "ai.task.completed.v1",
             &data,
             bare_meta("my-project"),
@@ -430,7 +478,15 @@ mod tests {
             status: 401,
             body: r#"{"error":"unauthorized"}"#.to_string(),
         }));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
+        let code = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "x.y.v1",
+            &json!({}),
+            bare_meta("demo"),
+        )
+        .await;
         assert_eq!(code, 1, "401 must map to exit code 1");
     }
 
@@ -440,7 +496,15 @@ mod tests {
             status: 422,
             body: r#"{"error":"validation_error"}"#.to_string(),
         }));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
+        let code = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "x.y.v1",
+            &json!({}),
+            bare_meta("demo"),
+        )
+        .await;
         assert_eq!(code, 1, "422 must map to exit code 1");
     }
 
@@ -450,7 +514,15 @@ mod tests {
             status: 503,
             body: String::new(),
         }));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
+        let code = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "x.y.v1",
+            &json!({}),
+            bare_meta("demo"),
+        )
+        .await;
         assert_eq!(code, 1, "5xx must map to exit code 1");
     }
 
@@ -459,7 +531,15 @@ mod tests {
         let fake = FakeHttpClient::with_response(Err(TransportError::Config(
             "invalid path \"/v1/events\"".to_string(),
         )));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
+        let code = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "x.y.v1",
+            &json!({}),
+            bare_meta("demo"),
+        )
+        .await;
         assert_eq!(code, 1, "Config error must map to exit code 1");
     }
 

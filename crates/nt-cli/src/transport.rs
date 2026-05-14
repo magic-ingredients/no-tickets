@@ -157,7 +157,6 @@ impl HttpClient for Client {
 /// 2nd attempt; subsequent waits double (`base`, `2 * base`, `4 * base`,
 /// …). No jitter in v1 — added when production data justifies it.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Wired by Task 17 GREEN.
 pub struct RetryPolicy {
     pub max_attempts: u32,
     pub base_delay: Duration,
@@ -167,7 +166,6 @@ impl RetryPolicy {
     /// Production defaults: 3 attempts, 100ms base delay. Matches the TS
     /// reference's backoff schedule (100ms → 200ms between attempts) for
     /// the cases where TS does retry (idempotent GETs).
-    #[allow(dead_code)] // Wired by Task 17 GREEN into commands::publish::run.
     pub fn default_publish() -> Self {
         Self {
             max_attempts: 3,
@@ -179,12 +177,10 @@ impl RetryPolicy {
 /// Abstract clock seam — production wires `TokioSleeper`; tests inject a
 /// recording fake that returns immediately and captures the requested
 /// durations so backoff schedule can be asserted without real waits.
-#[allow(dead_code)] // Implementations are exercised by Task 17 GREEN.
 pub trait Sleeper: Send + Sync {
     async fn sleep(&self, duration: Duration);
 }
 
-#[allow(dead_code)] // Constructed by Task 17 GREEN in commands::publish::run.
 pub struct TokioSleeper;
 
 impl Sleeper for TokioSleeper {
@@ -206,22 +202,65 @@ impl Sleeper for TokioSleeper {
 /// 3`: 100ms before attempt 2, 200ms before attempt 3. No sleep after
 /// the final attempt — give-up returns synchronously after the last
 /// transport call.
-#[allow(dead_code)] // Wired by Task 17 GREEN into commands::publish::run.
 pub async fn post_json_with_retry<C: HttpClient, S: Sleeper>(
-    _client: &C,
-    _policy: &RetryPolicy,
-    _sleeper: &S,
-    _path: &str,
-    _body: Vec<u8>,
+    client: &C,
+    policy: &RetryPolicy,
+    sleeper: &S,
+    path: &str,
+    body: Vec<u8>,
 ) -> Result<Value, TransportError> {
-    unimplemented!("Task 17 GREEN — bounded retry/backoff for transient publish errors")
+    // Tracks the most-recent transient error so we can surface it after
+    // the budget exhausts. Terminal errors short-circuit, so this only
+    // ever holds the last *retriable* failure.
+    let mut last_transient: Option<TransportError> = None;
+    for attempt in 1..=policy.max_attempts {
+        if attempt > 1 {
+            // Exponential backoff: base * 2^(attempt-2). For
+            // base=100ms and attempts 2, 3, 4 → 100ms, 200ms, 400ms.
+            // No jitter in v1; revisit when production data justifies.
+            let delay = policy.base_delay * 2u32.pow(attempt - 2);
+            sleeper.sleep(delay).await;
+        }
+        // post_json takes Vec<u8> by value (so reqwest can move it
+        // into its request builder), so we clone per attempt. The
+        // body is small (envelope JSON) so the clone cost is
+        // negligible compared with the network round trip it precedes.
+        match client.post_json(path, body.clone()).await {
+            Ok(value) => return Ok(value),
+            Err(err) if is_transient(&err) => {
+                last_transient = Some(err);
+                continue;
+            }
+            // Terminal error — short-circuit even if a previous
+            // transient retry happened. Caller sees the terminal cause,
+            // not the earlier transient one.
+            Err(err) => return Err(err),
+        }
+    }
+    // Budget exhausted. `last_transient` is set because the loop only
+    // exits here via the transient branch; `expect` documents that.
+    Err(last_transient.expect("retry loop ran at least once for max_attempts >= 1"))
 }
 
 /// Classifies a TransportError as retriable. Pure: no I/O, no clock.
 /// Exposed for the retry loop's branching and for direct test coverage.
-#[allow(dead_code)] // Exposed for retry-loop branching + direct test coverage.
-pub fn is_transient(_err: &TransportError) -> bool {
-    unimplemented!("Task 17 GREEN — classify Network + 5xx as transient; 4xx + Config as terminal")
+pub fn is_transient(err: &TransportError) -> bool {
+    match err {
+        // Network failures (DNS, TCP, TLS handshake, timeout) — the
+        // canonical retriable class. Reqwest's `is_timeout` / `is_connect`
+        // could refine this further once the structured-error contract
+        // lands; v1 retries every network-class error.
+        TransportError::Network(_) => true,
+        // 5xx are server-side transients; 4xx are client-side terminals
+        // and re-sending won't change the outcome. The 500 boundary is
+        // pinned by `is_transient_classifies_500_boundary_as_transient`
+        // and the 499 boundary by `is_transient_classifies_499_boundary_as_terminal`.
+        TransportError::HttpStatus { status, .. } => *status >= 500,
+        // Config errors are caller misuse (bad URL, malformed body) —
+        // retrying re-runs the same broken inputs against the same
+        // server. Never retry.
+        TransportError::Config(_) => false,
+    }
 }
 
 #[cfg(test)]

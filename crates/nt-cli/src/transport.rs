@@ -744,4 +744,24 @@ mod retry_tests {
             "exactly one sleep before the terminal attempt",
         );
     }
+
+    #[tokio::test]
+    async fn tokio_sleeper_actually_sleeps_for_requested_duration() {
+        // Pins the real-clock body of `TokioSleeper::sleep` against
+        // mutations that strip it to `()`. Without this, the suite
+        // only ever exercises `RecordingSleeper` and `NoopSleeper`
+        // (both no-op for testability) — production-binary backoff
+        // could regress to no-wait without any test signal.
+        //
+        // 50ms is short enough not to slow the suite meaningfully and
+        // long enough to absorb scheduler jitter on slow CI runners.
+        let sleeper = TokioSleeper;
+        let start = std::time::Instant::now();
+        sleeper.sleep(Duration::from_millis(50)).await;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(40),
+            "real sleep must elapse near the requested duration; got {elapsed:?}",
+        );
+    }
 }

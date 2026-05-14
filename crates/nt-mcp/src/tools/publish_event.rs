@@ -18,9 +18,10 @@
 //! callers can implement their own retry around the MCP tool call.
 //! See Task 24 for the eventual shared-retry extraction.
 
+use nt_schemas::validate;
 use rmcp::{model::*, ErrorData as McpError};
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 use crate::config::EnvConfig;
 
@@ -34,7 +35,6 @@ use crate::config::EnvConfig;
 pub const TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[allow(dead_code)] // Fields are consumed by Task 19 GREEN.
 pub struct PublishEventArgs {
     /// Project name; appears in `source.attributes.project` on the
     /// wire. Does NOT route to a different token — the MCP server is
@@ -62,8 +62,7 @@ pub struct PublishEventArgs {
     pub dedupe_key: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[allow(dead_code)] // Fields are consumed by Task 19 GREEN.
+#[derive(Debug, Deserialize, Serialize, Clone, schemars::JsonSchema)]
 pub struct SubjectRef {
     #[serde(rename = "type")]
     pub subject_type: String,
@@ -79,16 +78,128 @@ pub struct SubjectRef {
 /// `nt-core` in Task 24). Tests may inject a fake via the same trait
 /// once the testable seam lands in GREEN.
 pub async fn handle(
-    _args: &PublishEventArgs,
-    _config: &EnvConfig,
+    args: &PublishEventArgs,
+    config: &EnvConfig,
 ) -> Result<CallToolResult, McpError> {
-    // RED-phase sentinel: returns an MCP error rather than `panic!`-ing
-    // via `unimplemented!()` so the JSON-RPC server doesn't crash mid-
-    // request. Behavior tests see a structured `tools/call` error
-    // response instead of a hung pipe / dropped connection. GREEN
-    // replaces this body with the real handler.
-    Err(McpError::internal_error(
-        "Task 19 GREEN — publish_event handler not yet implemented".to_string(),
-        None,
-    ))
+    // 1. Local schema validation — gates before any HTTP. Mirrors the
+    //    TS handler's `validateAgainstBundledSchema` step. Unknown type
+    //    short-circuits with a typed McpError; schema-fail surfaces
+    //    per-issue paths so the agent knows what to fix.
+    match validate(&args.type_id, &args.data) {
+        None => {
+            return Err(McpError::invalid_params(
+                format!("unknown event type \"{}\"", args.type_id),
+                None,
+            ));
+        }
+        Some(issues) if !issues.is_empty() => {
+            let mut msg = format!(
+                "{}: {} schema validation error(s):",
+                args.type_id,
+                issues.len()
+            );
+            for issue in &issues {
+                msg.push_str(&format!("\n  {}: {}", issue.path, issue.message));
+            }
+            return Err(McpError::invalid_params(msg, None));
+        }
+        Some(_) => {}
+    }
+
+    // 2. Build the envelope. Source identity is fixed server-side:
+    //    `source.name = "nt-mcp"`, `source.attributes.project = args.
+    //    project`. The agent cannot override `source` — the input
+    //    schema doesn't expose it (pinned by the discovery test).
+    let envelope = build_envelope(args);
+
+    // 3. POST /v1/events with Bearer auth. Single attempt — retry is
+    //    deferred per the Task 19 scope note. A 5xx after one try
+    //    surfaces as a transport error; the agent / MCP client can
+    //    retry the tool call itself if it wants.
+    let url = format!("{}/v1/events", config.api_url.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .bearer_auth(&config.token)
+        .header("content-type", "application/json")
+        .json(&vec![envelope])
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("transport error: {e}"), None))?;
+
+    let status = response.status();
+    let body_text = response.text().await.map_err(|e| {
+        McpError::internal_error(format!("transport error reading body: {e}"), None)
+    })?;
+    if !status.is_success() {
+        return Err(McpError::internal_error(
+            format!("server returned {}: {}", status.as_u16(), body_text),
+            None,
+        ));
+    }
+
+    // 4. Parse server response and build the tool result. Mirrors the
+    //    TS handler's `{ id, deduped }` shape. `deduped: true` only
+    //    when the server reports the event went through dedupe rather
+    //    than fresh ingestion.
+    let parsed: Value = serde_json::from_str(&body_text).map_err(|e| {
+        McpError::internal_error(format!("invalid server JSON response: {e}"), None)
+    })?;
+    let id = parsed["ids"][0].as_str().ok_or_else(|| {
+        McpError::internal_error("server response missing ids[0]".to_string(), None)
+    })?;
+    let ingested = parsed["ingested"].as_u64().unwrap_or(0);
+    let deduped = parsed["deduped"].as_u64().unwrap_or(0);
+    let result_payload = serde_json::json!({
+        "id": id,
+        "deduped": ingested == 0 && deduped > 0,
+    });
+    let text =
+        serde_json::to_string(&result_payload).expect("simple JSON object always serialises");
+    Ok(CallToolResult::success(vec![Content::text(text)]))
+}
+
+/// Build the wire envelope from the tool args. Pure given inputs.
+/// Pinned shape: `type`, `data`, `subject?`, `source`,
+/// `parentEventId?`, `traceId?`, `dedupeKey?`, `occurredAt?` — the
+/// optional fields are OMITTED when absent (no JSON `null`, no empty
+/// string), matching the TS `eventSchema` emission order and the
+/// `nt publish` envelope from Task 15.
+fn build_envelope(args: &PublishEventArgs) -> Value {
+    let mut envelope = Map::new();
+    envelope.insert("type".to_string(), Value::String(args.type_id.clone()));
+    envelope.insert("data".to_string(), args.data.clone());
+    if let Some(s) = &args.subject {
+        envelope.insert(
+            "subject".to_string(),
+            serde_json::json!({ "type": s.subject_type, "id": s.id }),
+        );
+    }
+    envelope.insert("source".to_string(), build_source(args));
+    if let Some(p) = &args.parent_event_id {
+        envelope.insert("parentEventId".to_string(), Value::String(p.clone()));
+    }
+    if let Some(t) = &args.trace_id {
+        envelope.insert("traceId".to_string(), Value::String(t.clone()));
+    }
+    if let Some(d) = &args.dedupe_key {
+        envelope.insert("dedupeKey".to_string(), Value::String(d.clone()));
+    }
+    if let Some(o) = &args.occurred_at {
+        envelope.insert("occurredAt".to_string(), Value::String(o.clone()));
+    }
+    Value::Object(envelope)
+}
+
+/// Build the source identity attached to every MCP-published event.
+/// `name = "nt-mcp"` is fixed — the agent cannot spoof its source via
+/// tool args. `attributes.project` carries the per-call project so a
+/// single MCP server instance can publish to multiple project-labelled
+/// streams (token routing remains single-tenant per server invocation).
+fn build_source(args: &PublishEventArgs) -> Value {
+    serde_json::json!({
+        "name": "nt-mcp",
+        "sdkVersion": env!("CARGO_PKG_VERSION"),
+        "attributes": { "project": args.project },
+    })
 }

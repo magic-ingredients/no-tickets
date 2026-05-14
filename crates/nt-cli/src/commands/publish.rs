@@ -20,6 +20,18 @@ use crate::transport::{
 };
 use crate::urls::resolve_urls;
 
+/// Default `source.name` when no `--source-name` flag is supplied. Shared
+/// with `publish_batch` to keep single-event and batch paths in lockstep
+/// — a drift here would silently re-attribute every event from one
+/// surface but not the other.
+pub(super) const DEFAULT_SOURCE_NAME: &str = "nt-cli";
+
+/// SDK version stamped into every envelope's `source.sdkVersion`. Bound
+/// to the binary's own crate version at compile time so a binary
+/// release and the attribution it produces never disagree. Shared with
+/// `publish_batch` for the same single-source-of-truth reason.
+pub(super) const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub struct PublishArgs<'a> {
     pub type_id: &'a str,
     /// Raw `--data` argument. Parsed inside `run()` so the i32 exit-code
@@ -173,7 +185,7 @@ fn build_envelope<'a>(
         subject: meta.subject,
         source: Source {
             name: meta.source_name,
-            sdk_version: env!("CARGO_PKG_VERSION"),
+            sdk_version: SDK_VERSION,
             attributes: Some(meta.attributes),
         },
         parent_event_id: meta.parent,
@@ -284,7 +296,7 @@ fn build_metadata<'a>(
 
     Ok(EventMetadata {
         subject,
-        source_name: args.source_name.unwrap_or("nt-cli"),
+        source_name: args.source_name.unwrap_or(DEFAULT_SOURCE_NAME),
         attributes,
         parent: args.parent,
         trace: args.trace,

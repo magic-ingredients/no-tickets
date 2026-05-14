@@ -22,7 +22,7 @@ use crate::transport::{
 };
 use crate::urls::resolve_urls;
 
-use super::publish::parse_source_attribute;
+use super::publish::{parse_source_attribute, DEFAULT_SOURCE_NAME, SDK_VERSION};
 
 /// One parsed JSONL line, with its 1-based source line number for
 /// diagnostic messages.
@@ -184,8 +184,12 @@ fn validate_and_build_envelope(entry: &JsonlEntry, cli_source: &Value) -> Result
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("line {}: missing or empty \"type\" field", entry.line))?;
 
-    let data = obj.get("data").cloned().unwrap_or(Value::Null);
-    match validate(type_id, &data) {
+    // `validate` takes `&Value`, so the missing-`data` case borrows a
+    // module-scoped `Value::Null` rather than allocating a fresh one
+    // per entry. Saves a `.clone()` on every batch line.
+    static NULL: Value = Value::Null;
+    let data: &Value = obj.get("data").unwrap_or(&NULL);
+    match validate(type_id, data) {
         None => {
             return Err(format!(
                 "line {}: unknown event type \"{}\"",
@@ -230,10 +234,12 @@ pub fn parse_jsonl(input: &str) -> Result<Vec<JsonlEntry>, String> {
         // 1-based line numbering — matches the way every editor and
         // every error tool counts lines, and matches the TS reference.
         let line_number = i + 1;
-        // Strip trailing CR (Windows CRLF) then surrounding whitespace.
-        // A line that's all whitespace (incl. a lone CR) is treated as
-        // blank — no phantom entry on trailing newline.
-        let line = raw.trim_end_matches('\r').trim();
+        // `str::trim` strips ASCII whitespace including `\r`, so a
+        // trailing CR from Windows CRLF is removed alongside any other
+        // padding. The earlier explicit `trim_end_matches('\r')` was
+        // redundant against `trim()` and made the call read like the
+        // two had distinct semantics.
+        let line = raw.trim();
         if line.is_empty() {
             continue;
         }
@@ -322,10 +328,13 @@ pub fn build_cli_base_source(
     flag_attributes: &[String],
     machine_hash: Option<&str>,
 ) -> Result<Value, String> {
-    // Insertion order: project → machine hash → flag attributes.
-    // The flag attributes go last so an explicit `--source-attribute
-    // machine=X` overrides the auto-computed value (mirrors single-
-    // event semantics).
+    // Insert order matters only for last-write-wins on the `machine`
+    // key: flag attributes go AFTER the auto-computed machine hash so
+    // an explicit `--source-attribute machine=X` overwrites the auto
+    // value. Map iteration order on serialisation is independent
+    // (`serde_json::Map` without `preserve_order` enumerates keys
+    // alphabetically) — that's fine for the wire contract, which is
+    // a JSON object whose key order is not significant.
     let mut attrs = Map::new();
     attrs.insert("project".to_string(), Value::String(project.to_string()));
     if let Some(hash) = machine_hash {
@@ -339,11 +348,11 @@ pub fn build_cli_base_source(
     let mut source = Map::new();
     source.insert(
         "name".to_string(),
-        Value::String(source_name.unwrap_or("nt-cli").to_string()),
+        Value::String(source_name.unwrap_or(DEFAULT_SOURCE_NAME).to_string()),
     );
     source.insert(
         "sdkVersion".to_string(),
-        Value::String(env!("CARGO_PKG_VERSION").to_string()),
+        Value::String(SDK_VERSION.to_string()),
     );
     source.insert("attributes".to_string(), Value::Object(attrs));
     Ok(Value::Object(source))
@@ -352,6 +361,16 @@ pub fn build_cli_base_source(
 /// Read JSONL input from a file path or stdin (`-`). I/O-only; the
 /// returned string is then passed to `parse_jsonl`. File-read failures
 /// surface as a user-facing error string naming the path.
+///
+/// Memory: reads the entire input into a `String` before parsing. For
+/// the canonical batch size (hundreds to low thousands of envelopes,
+/// each a few KB), this fits comfortably in memory. Matches the TS
+/// reference (`src/cli/lib/jsonl.ts::readJsonl` reads the whole file
+/// with `readFileSync`). A future "stream-and-parse line-by-line"
+/// optimisation could land if a real workload pushed the bound, but
+/// the single-POST wire contract already caps a sensible batch size
+/// at whatever the server accepts in one body — so streaming the
+/// input wouldn't change the upper bound on memory anyway.
 pub async fn read_batch_input(batch_path: &str) -> Result<String, String> {
     if batch_path == "-" {
         let mut buf = String::new();
@@ -460,6 +479,205 @@ mod tests {
         assert!(result[0].value.is_array());
     }
 
+    #[test]
+    fn parse_jsonl_scalar_lines_are_accepted_at_parse_layer() {
+        // Same contract as the array-line test: any valid JSON value
+        // parses successfully here; the per-line shape filter
+        // (`validate_and_build_envelope`) is what rejects scalars and
+        // arrays with a "line N: expected an object event" message.
+        // Pinned per scalar type because a future "is_object early"
+        // optimisation in parse_jsonl could otherwise drift the
+        // contract on only some shapes.
+        for (line, predicate) in [
+            ("null", Value::is_null as fn(&Value) -> bool),
+            ("42", Value::is_number),
+            ("true", Value::is_boolean),
+            ("\"a string\"", Value::is_string),
+        ] {
+            let result = parse_jsonl(line).expect("scalar line parses at JSON layer");
+            assert_eq!(result.len(), 1);
+            assert!(
+                predicate(&result[0].value),
+                "scalar {line:?} should parse to its native JSON shape; got {:?}",
+                result[0].value,
+            );
+        }
+    }
+
+    // ─── validate_and_build_envelope ────────────────────────────────────
+
+    fn neutral_cli_source() -> Value {
+        // Minimal valid CLI base source for the validate_and_build_envelope
+        // tests — concrete shape doesn't matter beyond being an object;
+        // these tests pin per-line validation, not merge behaviour.
+        serde_json::json!({
+            "name": "nt-cli",
+            "attributes": { "project": "demo" }
+        })
+    }
+
+    #[test]
+    fn validate_and_build_envelope_rejects_array_line_with_line_number() {
+        let entry = JsonlEntry {
+            line: 7,
+            value: serde_json::json!([1, 2, 3]),
+        };
+        let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+            .expect_err("array line is not an event");
+        assert!(
+            err.contains("line 7"),
+            "error must name the line; got {err:?}"
+        );
+        assert!(
+            err.to_lowercase().contains("object"),
+            "error must explain the shape requirement; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn validate_and_build_envelope_rejects_scalar_lines_with_line_number() {
+        for (label, value) in [
+            ("null", Value::Null),
+            ("number", serde_json::json!(42)),
+            ("bool", serde_json::json!(true)),
+            ("string", serde_json::json!("a string")),
+        ] {
+            let entry = JsonlEntry {
+                line: 3,
+                value: value.clone(),
+            };
+            let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+                .expect_err("scalar line is not an event");
+            assert!(
+                err.contains("line 3"),
+                "scalar {label}: error must name the line; got {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn validate_and_build_envelope_rejects_empty_type_id_with_line_number() {
+        // Pins the `.filter(|s| !s.is_empty())` step against a mutation
+        // that drops the empty-check: type-id `""` would otherwise slip
+        // through to nt_schemas::validate as a known-no-match and fail
+        // there with an "unknown type" message — semantically the same
+        // outcome but a wrong diagnostic.
+        let entry = JsonlEntry {
+            line: 5,
+            value: serde_json::json!({ "type": "", "data": {} }),
+        };
+        let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+            .expect_err("empty type-id is a usage error");
+        assert!(err.contains("line 5"));
+        assert!(
+            err.to_lowercase().contains("type"),
+            "error must reference the type field; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn validate_and_build_envelope_rejects_non_string_type_id() {
+        let entry = JsonlEntry {
+            line: 2,
+            value: serde_json::json!({ "type": 42, "data": {} }),
+        };
+        let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+            .expect_err("non-string type-id is a usage error");
+        assert!(err.contains("line 2"));
+    }
+
+    #[test]
+    fn validate_and_build_envelope_reports_unknown_type_with_line_number() {
+        let entry = JsonlEntry {
+            line: 9,
+            value: serde_json::json!({ "type": "not.a.real.type.v999", "data": {} }),
+        };
+        let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+            .expect_err("unknown type rejected");
+        assert!(err.contains("line 9"));
+        assert!(
+            err.contains("not.a.real.type.v999"),
+            "error must surface the offending type; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn validate_and_build_envelope_missing_data_field_falls_back_to_null() {
+        // Pins the `obj.get("data").unwrap_or(&NULL)` contract: an
+        // event line without a `data` field is treated as if it had
+        // `data: null`. For a type whose schema requires a populated
+        // `data` (e.g. `ai.task.completed.v1` needs `taskId`), this
+        // produces a SCHEMA failure (not a missing-field crash). The
+        // line number lands on the schema error so the user knows
+        // which line to fix.
+        let entry = JsonlEntry {
+            line: 11,
+            value: serde_json::json!({ "type": "ai.task.completed.v1" }),
+        };
+        let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+            .expect_err("missing data → schema validation error");
+        assert!(err.contains("line 11"));
+        assert!(
+            err.to_lowercase().contains("validation error"),
+            "missing-data → schema error message; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn validate_and_build_envelope_schema_error_format_pins_header_and_indented_issues() {
+        // Pin the multi-line format: header `line N: K validation
+        // error(s):` followed by `  path: message` lines. Mutations
+        // that change the format (drop the indent, drop the count,
+        // re-order) get caught.
+        let entry = JsonlEntry {
+            line: 4,
+            value: serde_json::json!({
+                "type": "ai.task.completed.v1",
+                "data": { "taskId": 42 } // wrong type — should be string
+            }),
+        };
+        let err = validate_and_build_envelope(&entry, &neutral_cli_source())
+            .expect_err("invalid schema data");
+        assert!(
+            err.starts_with("line 4: "),
+            "header must start with `line N: `; got {err:?}",
+        );
+        assert!(
+            err.contains("validation error"),
+            "header must contain `validation error`; got {err:?}",
+        );
+        assert!(
+            err.contains("\n  "),
+            "issues must be on subsequent lines indented by two spaces; got {err:?}",
+        );
+    }
+
+    #[test]
+    fn validate_and_build_envelope_happy_path_returns_envelope_with_merged_source() {
+        let entry = JsonlEntry {
+            line: 1,
+            value: serde_json::json!({
+                "type": "ai.task.completed.v1",
+                "data": {
+                    "taskId": "t-1",
+                    "sessionId": "s-1",
+                    "startedAt": "2026-05-01T00:00:00.000Z",
+                    "completedAt": "2026-05-01T00:00:01.000Z",
+                    "durationMs": 1000,
+                    "outcome": "success",
+                    "callCount": 1
+                },
+                "source": { "name": "per-line-override" }
+            }),
+        };
+        let envelope =
+            validate_and_build_envelope(&entry, &neutral_cli_source()).expect("valid happy path");
+        // Per-line source name wins over the neutral CLI base.
+        assert_eq!(envelope["source"]["name"], "per-line-override");
+        // Other envelope-level keys flow through unchanged.
+        assert_eq!(envelope["type"], "ai.task.completed.v1");
+    }
+
     // ─── merge_source ───────────────────────────────────────────────────
 
     #[test]
@@ -525,6 +743,56 @@ mod tests {
             merged.get("attributes").is_none(),
             "no attributes anywhere → no `attributes` key on the merged source; got {merged}",
         );
+    }
+
+    #[test]
+    fn merge_source_keeps_cli_attributes_when_jsonl_source_has_no_attributes_key() {
+        // (Some, None) branch in the attributes match. The reviewer
+        // flagged that the `(None, None) → remove("attributes")` arm
+        // is only meaningfully different from the catch-all when CLI
+        // contributes attributes AND JSONL doesn't. Pin both halves:
+        // the resulting source must carry the CLI's project + ci, and
+        // the `attributes` key must NOT be removed.
+        let cli = json!({
+            "name": "nt-cli",
+            "attributes": { "project": "demo", "ci": "github-actions" }
+        });
+        let jsonl = json!({ "name": "custom-runner" });
+        let merged = merge_source(&cli, Some(&jsonl));
+        assert_eq!(merged["name"], "custom-runner", "JSONL top-level wins");
+        let attrs = &merged["attributes"];
+        assert_eq!(attrs["project"], "demo", "CLI attribute survives");
+        assert_eq!(attrs["ci"], "github-actions", "CLI attribute survives");
+    }
+
+    #[test]
+    fn merge_source_treats_non_object_cli_attributes_as_absent() {
+        // Defensive path: cli_obj.get("attributes").and_then(Value::as_object)
+        // returns None if the value is non-object (string, number, etc.).
+        // Pin that this drops CLI attrs entirely rather than panicking
+        // or somehow merging a non-object into the result.
+        let cli = json!({ "name": "nt-cli", "attributes": "not an object" });
+        let jsonl = json!({ "attributes": { "k": "v" } });
+        let merged = merge_source(&cli, Some(&jsonl));
+        // Only the JSONL attribute survives; the bogus CLI value is dropped.
+        assert_eq!(merged["attributes"]["k"], "v");
+        assert!(
+            merged["attributes"].get("project").is_none(),
+            "non-object CLI attrs must NOT leak into merged.attributes",
+        );
+    }
+
+    #[test]
+    fn merge_source_treats_non_object_jsonl_attributes_as_absent() {
+        // Symmetric to the above: non-object JSONL `attributes` is
+        // silently ignored. CLI attrs survive verbatim.
+        let cli = json!({
+            "name": "nt-cli",
+            "attributes": { "project": "demo" }
+        });
+        let jsonl = json!({ "attributes": 42 });
+        let merged = merge_source(&cli, Some(&jsonl));
+        assert_eq!(merged["attributes"]["project"], "demo");
     }
 
     // ─── build_cli_base_source ──────────────────────────────────────────

@@ -1467,6 +1467,216 @@ async fn publish_batch_file_with_per_event_metadata_flags_is_a_usage_error() {
 }
 
 #[tokio::test]
+async fn publish_batch_scalar_line_reports_line_number_and_object_requirement() {
+    // End-to-end pin for the validate-shape branch: a scalar JSON line
+    // (null, number, bool, string) parses at the JSON layer but
+    // `validate_and_build_envelope` rejects it as not-an-object. Line
+    // number and shape requirement land on stderr.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0) // shape rejection must short-circuit
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let valid = format!(r#"{{"type":"ai.task.completed.v1","data":{VALID_AI_TASK_DATA}}}"#);
+    let path = batch_file(home.path(), &[valid, "42".to_string()]);
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &["--file", path.to_str().unwrap(), "--project", "demo"],
+    )
+    .await;
+    assert_ne!(
+        out.code, 0,
+        "scalar line must reject; stdout={:?}",
+        out.stdout
+    );
+    assert!(
+        out.stderr.contains("line 2"),
+        "stderr must name the failing line; got {:?}",
+        out.stderr,
+    );
+    assert!(
+        out.stderr.to_lowercase().contains("object"),
+        "stderr must explain the object-shape requirement; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_batch_missing_data_field_falls_back_to_null_and_surfaces_schema_error() {
+    // End-to-end pin for the missing-`data` → `Value::Null` fallback:
+    // an entry without `data` validates against the schema as
+    // `data: null`. For `ai.task.completed.v1`, that fails the schema.
+    // The stderr message must name the line AND report it as a
+    // validation error (not a missing-field crash or a different
+    // error class).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let path = batch_file(
+        home.path(),
+        &[r#"{"type":"ai.task.completed.v1"}"#.to_string()],
+    );
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &["--file", path.to_str().unwrap(), "--project", "demo"],
+    )
+    .await;
+    assert_ne!(out.code, 0, "missing data must fail validation");
+    assert!(
+        out.stderr.contains("line 1"),
+        "stderr must name the line; got {:?}",
+        out.stderr,
+    );
+    assert!(
+        out.stderr.to_lowercase().contains("validation error"),
+        "stderr must surface this as a schema validation failure; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_batch_schema_validation_failure_emits_header_plus_indented_issues() {
+    // End-to-end pin for the multi-line schema-error format:
+    //   "line N: K validation error(s):\n  path: message\n  path: message"
+    // A future refactor that changes the indent, drops the count, or
+    // re-orders the parts would land here.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    // `taskId` and `sessionId` are required strings — passing numbers
+    // makes both fail (>= 2 schema issues).
+    let path = batch_file(
+        home.path(),
+        &[r#"{"type":"ai.task.completed.v1","data":{"taskId":42,"sessionId":99}}"#.to_string()],
+    );
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &["--file", path.to_str().unwrap(), "--project", "demo"],
+    )
+    .await;
+    assert_ne!(out.code, 0, "schema failure must fail");
+    assert!(
+        out.stderr.contains("line 1"),
+        "header must lead with line number; got {:?}",
+        out.stderr,
+    );
+    assert!(
+        out.stderr.contains("validation error"),
+        "header must contain `validation error`; got {:?}",
+        out.stderr,
+    );
+    // Indented per-issue line: two-space leading indent after a newline.
+    assert!(
+        out.stderr.contains("\n  "),
+        "per-issue lines must be indented by two spaces; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_batch_empty_type_id_is_rejected_with_line_number() {
+    // Integration pin for the `!s.is_empty()` filter on the type-id at
+    // the binary boundary. Without the filter, an empty type-id would
+    // fall through to `nt_schemas::validate("")` which would return
+    // `None` and surface as "unknown event type" — semantically the
+    // same outcome but a wrong diagnostic.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let path = batch_file(home.path(), &[r#"{"type":"","data":{}}"#.to_string()]);
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &["--file", path.to_str().unwrap(), "--project", "demo"],
+    )
+    .await;
+    assert_ne!(out.code, 0);
+    assert!(
+        out.stderr.contains("line 1"),
+        "stderr must name the line; got {:?}",
+        out.stderr,
+    );
+    assert!(
+        out.stderr.to_lowercase().contains("type"),
+        "stderr must reference the type field; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_batch_server_response_passes_through_to_stdout_verbatim() {
+    // The batch path uses its own `publish_envelopes` helper (distinct
+    // from single-event `publish_event`). Pin that it prints the
+    // server's JSON response verbatim to stdout — including
+    // forward-compat fields the binary doesn't yet know about. A
+    // refactor that introduced lossy "typed-struct" parsing on the
+    // batch response would silently drop unknown fields.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 2,
+            "deduped": 0,
+            "ids": ["evt_a", "evt_b"],
+            "futureField": "preserved",
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let line = format!(r#"{{"type":"ai.task.completed.v1","data":{VALID_AI_TASK_DATA}}}"#);
+    let path = batch_file(home.path(), &[line.clone(), line]);
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &["--file", path.to_str().unwrap(), "--project", "demo"],
+    )
+    .await;
+    assert_eq!(out.code, 0, "happy path expected; stderr={:?}", out.stderr);
+
+    let body: Value = serde_json::from_str(out.stdout.trim()).expect("stdout is JSON");
+    assert_eq!(body["ingested"], 2);
+    assert_eq!(body["deduped"], 0);
+    assert_eq!(body["ids"][0], "evt_a");
+    assert_eq!(body["ids"][1], "evt_b");
+    assert_eq!(
+        body["futureField"], "preserved",
+        "unknown fields on the server response must flow through stdout",
+    );
+}
+
+#[tokio::test]
 async fn publish_batch_missing_file_path_reports_path() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

@@ -16,20 +16,65 @@
 //! payload alongside the JSON Schema. RED-phase stub returns null for
 //! every input; GREEN fills in the resolution branches.
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// Synthesise a minimal valid example payload from a JSON Schema
 /// fragment. Returns `Value::Null` for malformed inputs.
 ///
-/// `#[allow(dead_code)]` at RED — production wire-up lives in
-/// `tools/describe_event_type.rs::handle` (also RED-stubbed), so the
-/// dead-code lint fires until GREEN connects the two.
-#[allow(dead_code)]
-pub fn synthesise_example(_raw_schema: &Value) -> Value {
-    // RED stub — replaced at GREEN with the full default → enum → type
-    // placeholder cascade. Returning Null here makes every behaviour
-    // assertion in the unit tests fail predictably.
-    Value::Null
+/// Resolution order per node, mirroring the TS reference:
+///   1. `default` — if the key is present, even when the value is
+///      falsy/null. Presence beats truthiness.
+///   2. first `enum` value — when `enum` is present AND non-empty.
+///   3. type-driven placeholder — `string` → "", `number`/`integer`
+///      → 0, `boolean` → false, `null` → null. `object` and `array`
+///      recurse into `properties` / `items`. Unknown or missing
+///      `type` collapses the node to null.
+///
+/// Top-level inputs that aren't JSON objects (primitives, arrays,
+/// nulls) also collapse to null — the trust boundary is permissive
+/// at the type level but strict at the shape level.
+pub fn synthesise_example(raw_schema: &Value) -> Value {
+    let Some(schema) = raw_schema.as_object() else {
+        return Value::Null;
+    };
+
+    if let Some(default) = schema.get("default") {
+        return default.clone();
+    }
+
+    if let Some(values) = schema.get("enum").and_then(Value::as_array) {
+        if let Some(first) = values.first() {
+            return first.clone();
+        }
+        // Empty enum: fall through to the type placeholder.
+    }
+
+    match schema.get("type").and_then(Value::as_str) {
+        Some("string") => Value::String(String::new()),
+        Some("number") | Some("integer") => Value::Number(0.into()),
+        Some("boolean") => Value::Bool(false),
+        Some("null") => Value::Null,
+        Some("object") => synthesise_object(schema),
+        Some("array") => synthesise_array(schema),
+        _ => Value::Null,
+    }
+}
+
+fn synthesise_object(schema: &Map<String, Value>) -> Value {
+    let mut out = Map::new();
+    if let Some(props) = schema.get("properties").and_then(Value::as_object) {
+        for (key, prop_schema) in props {
+            out.insert(key.clone(), synthesise_example(prop_schema));
+        }
+    }
+    Value::Object(out)
+}
+
+fn synthesise_array(schema: &Map<String, Value>) -> Value {
+    match schema.get("items") {
+        Some(items) => Value::Array(vec![synthesise_example(items)]),
+        None => Value::Array(Vec::new()),
+    }
 }
 
 #[cfg(test)]

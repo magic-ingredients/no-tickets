@@ -9,15 +9,13 @@
 //! Naturally pairs with Task 23 (in-memory registry cache); for now,
 //! every invocation is a fresh GET. Cache lives at the
 //! list/describe-registry layer once Task 23 lands.
-//!
-//! RED-phase stub: returns an internal error so the JSON-RPC server
-//! stays alive and the failing tests see a structured error response
-//! rather than a hung pipe.
 
 use rmcp::{model::*, ErrorData as McpError};
 use serde::Deserialize;
+use serde_json::{Map, Value};
 
 use crate::config::EnvConfig;
+use crate::example_synth::synthesise_example;
 
 /// Exact TS-parity description from
 /// `src/mcp/tools/describe-event-type.ts`. Pinned here as a constant so
@@ -29,9 +27,7 @@ pub const TS_PARITY_DESCRIPTION: &str = "Return schema, dedupe strategy, retenti
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct DescribeEventTypeArgs {
-    /// Event type id (domain.entity.action.vN). Unused at RED — the
-    /// GREEN handler consumes it when building the GET path.
-    #[allow(dead_code)]
+    /// Event type id (domain.entity.action.vN).
     pub id: String,
 }
 
@@ -46,16 +42,102 @@ pub struct DescribeEventTypeArgs {
 /// and threads it through every tool that does HTTP, so the connection
 /// pool / TLS state isn't rebuilt per invocation.
 pub async fn handle(
-    _args: &DescribeEventTypeArgs,
-    _config: &EnvConfig,
-    _http_client: &reqwest::Client,
+    args: &DescribeEventTypeArgs,
+    config: &EnvConfig,
+    http_client: &reqwest::Client,
 ) -> Result<CallToolResult, McpError> {
-    // RED stub — replaced at GREEN with the GET + unwrap + synthesise
-    // implementation. Returning an internal error here keeps the
-    // JSON-RPC pipe alive and lets every behavioural test fail with a
-    // predictable diagnostic rather than panicking the server.
-    Err(McpError::internal_error(
-        "describe_event_type not yet implemented (RED phase)".to_string(),
-        None,
-    ))
+    // 1. GET the detail endpoint. The id segment is dropped in
+    //    verbatim — canonical type ids are domain.entity.action.vN
+    //    with only `.` (URL-safe), matching the TS reference's use of
+    //    `encodeURIComponent` which is a no-op for that grammar.
+    let url = format!(
+        "{}/v1/registry/event-types/{}",
+        config.api_url.trim_end_matches('/'),
+        args.id,
+    );
+    let response = http_client
+        .get(&url)
+        .bearer_auth(&config.token)
+        .send()
+        .await
+        .map_err(|e| McpError::internal_error(format!("transport error: {e}"), None))?;
+
+    // 2. Map status codes to typed errors. 404 → not-found (named
+    //    after the id so the agent can correct the request). Other
+    //    non-2xx → transport error with the upstream body for
+    //    diagnostics.
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err(McpError::invalid_params(
+            format!("event type \"{}\" not found", args.id),
+            None,
+        ));
+    }
+    let body_text = response.text().await.map_err(|e| {
+        McpError::internal_error(format!("transport error reading body: {e}"), None)
+    })?;
+    if !status.is_success() {
+        return Err(McpError::internal_error(
+            format!("server returned {}: {}", status.as_u16(), body_text),
+            None,
+        ));
+    }
+
+    // 3. Parse `{ eventType: {...} }`. A 2xx without the envelope or
+    //    without an embedded `schema` field is a server-contract
+    //    violation — surface loudly rather than rendering an empty
+    //    example, matching the TS handler's explicit guard.
+    let parsed: Value = serde_json::from_str(&body_text).map_err(|e| {
+        McpError::internal_error(format!("invalid server JSON response: {e}"), None)
+    })?;
+    let Some(spec) = parsed.get("eventType").and_then(Value::as_object) else {
+        return Err(McpError::internal_error(
+            format!(
+                "server-contract violation: detail response for \"{}\" is missing the eventType wrapper",
+                args.id,
+            ),
+            None,
+        ));
+    };
+    let Some(schema) = spec.get("schema") else {
+        return Err(McpError::internal_error(
+            format!(
+                "server-contract violation: detail response for \"{}\" is missing the schema field",
+                args.id,
+            ),
+            None,
+        ));
+    };
+
+    // 4. Build the result envelope. camelCase → snake_case rename on
+    //    the optional fields, mirroring the TS handler's spread. Each
+    //    optional field is OMITTED when absent (no JSON null on the
+    //    wire) so an agent can distinguish "server didn't say" from
+    //    "server said null".
+    let mut result = Map::new();
+    result.insert("id".to_string(), Value::String(args.id.clone()));
+    result.insert("schema".to_string(), schema.clone());
+    result.insert("example".to_string(), synthesise_example(schema));
+    rename_into(spec, "dedupeStrategy", "dedupe_strategy", &mut result);
+    rename_into(spec, "retentionDays", "retention_days", &mut result);
+    rename_into(spec, "uiHints", "ui_hints", &mut result);
+    rename_into(spec, "deprecatedAt", "deprecated_at", &mut result);
+
+    let text = serde_json::to_string(&Value::Object(result))
+        .expect("describe result is always serialisable");
+    Ok(CallToolResult::success(vec![Content::text(text)]))
+}
+
+/// Copy `spec[wire_key]` into `result[snake_key]` when present.
+/// Absence is silent — the field stays omitted from the result so the
+/// downstream `omits_optional_fields_when_absent_from_spec` pin holds.
+fn rename_into(
+    spec: &Map<String, Value>,
+    wire_key: &str,
+    snake_key: &str,
+    result: &mut Map<String, Value>,
+) {
+    if let Some(value) = spec.get(wire_key) {
+        result.insert(snake_key.to_string(), value.clone());
+    }
 }

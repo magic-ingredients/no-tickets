@@ -727,7 +727,8 @@ Wrap the HTTP call in a bounded retry loop for transient-class failures (connect
 - 4xx never retries; exit 1 immediately
 
 ### 18. `nt publish` — source auto-detection / merging
-status: not_started
+status: completed
+commitSha: 79adaf4
 
 **Scope revision (2026-05-14):** the original task description called for CI-runner auto-detection (`GITHUB_ACTIONS`, `GITLAB_CI`, etc.) and a flag-vs-detected merge order. The TS reference (`src/agent-detect.ts` and its test file `src/__tests__/source-detect.test.ts`) **explicitly rejected** CI auto-detection — provenance is caller-driven via `--source-attribute`. The flag-vs-default merge order is already implemented (Task 15: `name: "nt-cli"` default, override-able by `--source-name`; `attributes` BTreeMap seeded with `project`, augmented by `--source-attribute KEY=VALUE`).
 

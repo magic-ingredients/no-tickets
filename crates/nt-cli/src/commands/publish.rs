@@ -1,9 +1,11 @@
 //! `nt publish` — single-event publish over HTTPS with Bearer auth.
 //! Mirrors `src/cli/commands/publish` + `src/transport/events.ts::publish`.
 //!
-//! Spike scope (Task 14): single event only. No batching, no `--stream`
-//! mode, no local schema validation, no source merging beyond
-//! auto-fill, no retries. Task 5 (full CLI port) owns the rest.
+//! Scope: single event. `--stream` mode (Task 4b), batch mode (Task 16),
+//! retry/backoff (Task 17), and source auto-detection (Task 18) live in
+//! their own tasks.
+
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -20,18 +22,45 @@ pub struct PublishArgs<'a> {
     /// dispatch-only; doesn't short-circuit with its own exit calls).
     pub data: &'a str,
     pub project: &'a str,
+    pub subject_type: Option<&'a str>,
+    pub subject_id: Option<&'a str>,
+    pub source_name: Option<&'a str>,
+    /// Raw `--source-attribute KEY=VALUE` repeats. Parsed inside `run()`
+    /// so usage errors flow through the same exit-1 path as the rest of
+    /// the input validation.
+    pub source_attributes: &'a [String],
+    pub parent: Option<&'a str>,
+    pub trace: Option<&'a str>,
+    pub dedupe_key: Option<&'a str>,
 }
 
 /// Serialised event envelope. Field declaration order is preserved by
-/// serde derive — `type` first, then `data`, then `source` — to match
-/// the TS `eventSchema` emission order. The wire-body field-order test
-/// pins this.
+/// serde derive — `type, data, subject?, source, parentEventId?,
+/// traceId?, dedupeKey?` — matching the TS `eventSchema` emission order.
+/// Every optional field is omitted (not null, not empty string) when
+/// unset, via `skip_serializing_if`. The wire-body field-order tests
+/// pin this.
 #[derive(Serialize)]
 struct EventEnvelope<'a> {
     #[serde(rename = "type")]
     type_id: &'a str,
     data: &'a Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subject: Option<Subject<'a>>,
     source: Source<'a>,
+    #[serde(rename = "parentEventId", skip_serializing_if = "Option::is_none")]
+    parent_event_id: Option<&'a str>,
+    #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
+    trace_id: Option<&'a str>,
+    #[serde(rename = "dedupeKey", skip_serializing_if = "Option::is_none")]
+    dedupe_key: Option<&'a str>,
+}
+
+#[derive(Serialize, Debug)]
+pub(crate) struct Subject<'a> {
+    #[serde(rename = "type")]
+    pub subject_type: &'a str,
+    pub id: &'a str,
 }
 
 #[derive(Serialize)]
@@ -39,18 +68,13 @@ struct Source<'a> {
     name: &'a str,
     #[serde(rename = "sdkVersion")]
     sdk_version: &'a str,
-    /// Project name flows through `source.attributes.project` since the
-    /// TS sourceSchema's `attributes: Record<string, string|number|bool>`
-    /// is the documented escape hatch for caller context. The server's
-    /// auth layer derives project context from the token; this field
-    /// is informational for the spike.
+    /// `attributes` is built as a single ordered map containing the
+    /// `project` entry (canonical) plus any `--source-attribute`
+    /// overrides. BTreeMap gives a deterministic key order — important
+    /// for wire-shape stability and for `last-wins` semantics on
+    /// duplicate keys (driven by insert order in `merge_attributes`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    attributes: Option<SourceAttributes<'a>>,
-}
-
-#[derive(Serialize)]
-struct SourceAttributes<'a> {
-    project: &'a str,
+    attributes: Option<BTreeMap<&'a str, &'a str>>,
 }
 
 /// Stateless core: takes an injected `HttpClient`, the resolved + parsed
@@ -69,9 +93,9 @@ async fn publish_event<C: HttpClient>(
     client: &C,
     type_id: &str,
     data: &Value,
-    project: &str,
+    meta: EventMetadata<'_>,
 ) -> i32 {
-    let body = vec![build_envelope(type_id, data, project)];
+    let body = vec![build_envelope(type_id, data, meta)];
     // serde_json::to_vec on `Vec<EventEnvelope>` cannot fail — every
     // field is a primitive Serialize impl over owned/borrowed data —
     // so .expect is appropriate here. A panic would indicate a bug
@@ -95,35 +119,87 @@ async fn publish_event<C: HttpClient>(
     }
 }
 
-/// Pure builder for a single event envelope. Caller passes the resolved
-/// type_id, the already-parsed data payload, and the project name.
+/// Already-validated metadata for a single event. Caller (`run()` or a
+/// test) is responsible for ensuring the subject pair invariant and for
+/// having pre-merged the `--source-attribute` flags into `attributes`
+/// (project entry + per-flag overrides, last-wins on duplicate keys).
+#[derive(Debug)]
+pub(crate) struct EventMetadata<'a> {
+    pub subject: Option<Subject<'a>>,
+    pub source_name: &'a str,
+    pub attributes: BTreeMap<&'a str, &'a str>,
+    pub parent: Option<&'a str>,
+    pub trace: Option<&'a str>,
+    pub dedupe_key: Option<&'a str>,
+}
+
+impl<'a> EventMetadata<'a> {
+    /// Bare metadata for a project: no subject, no flag overrides,
+    /// default source.name. Used by tests and as the starting point in
+    /// run() before merging `--source-attribute` and the optional flags.
+    pub(crate) fn for_project(project: &'a str) -> Self {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("project", project);
+        EventMetadata {
+            subject: None,
+            source_name: "nt-cli",
+            attributes,
+            parent: None,
+            trace: None,
+            dedupe_key: None,
+        }
+    }
+}
+
+/// Pure builder for a single event envelope.
 ///
 /// Returns a single `EventEnvelope`, not a one-element Vec — the wire
 /// format wraps a single event in `[...]`, but the array shape is a
 /// transport concern owned by the caller (`run()` does `vec![envelope]`),
-/// not by this builder. Keeps the builder honest about its scope
-/// (single-event) and avoids advertising a batching capability that
-/// doesn't exist in this spike.
+/// not by this builder.
 ///
 /// Pure: no I/O, no env reads, no time. Field order on the wire is
 /// pinned by EventEnvelope's declaration order (serde_derive emits in
-/// declaration order) — the inline tests assert byte-positions of
-/// `"type"` / `"data"` / `"source"` in the serialised form.
-fn build_envelope<'a>(type_id: &'a str, data: &'a Value, project: &'a str) -> EventEnvelope<'a> {
+/// declaration order); the inline tests assert byte-positions of every
+/// envelope-level key in the serialised form.
+fn build_envelope<'a>(
+    type_id: &'a str,
+    data: &'a Value,
+    meta: EventMetadata<'a>,
+) -> EventEnvelope<'a> {
+    let attributes = if meta.attributes.is_empty() {
+        None
+    } else {
+        Some(meta.attributes)
+    };
     EventEnvelope {
         type_id,
         data,
+        subject: meta.subject,
         source: Source {
-            name: "nt-cli",
+            name: meta.source_name,
             sdk_version: env!("CARGO_PKG_VERSION"),
-            attributes: Some(SourceAttributes { project }),
+            attributes,
         },
+        parent_event_id: meta.parent,
+        trace_id: meta.trace,
+        dedupe_key: meta.dedupe_key,
     }
 }
 
 pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
-    // URL resolution first (matches handleStatus pattern). A partial-pair
-    // env-var setup or unknown-preset error wins over auth missing.
+    // Usage validation FIRST — before any auth/network/file-system
+    // resolution — so a bad flag combo doesn't leak credentials state
+    // or surface a confusing "not authenticated" message when the real
+    // fault is a malformed argv.
+    let meta = match build_metadata(&args) {
+        Ok(m) => m,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return 1;
+        }
+    };
+
     let urls = match resolve_urls(env) {
         Ok(u) => u,
         Err(e) => {
@@ -167,7 +243,55 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
     };
 
     // Edge done. Delegate to the testable core.
-    publish_event(&client, args.type_id, &parsed_data, args.project).await
+    publish_event(&client, args.type_id, &parsed_data, meta).await
+}
+
+/// Validate the flag combination + parse `--source-attribute` entries.
+/// Returns the assembled metadata or a user-facing error string. Pure;
+/// no I/O. Borrows from `args`, so the returned metadata's lifetime is
+/// bounded by the caller's `args`.
+fn build_metadata<'a>(args: &'a PublishArgs<'a>) -> Result<EventMetadata<'a>, String> {
+    let subject = match (args.subject_type, args.subject_id) {
+        (Some(t), Some(i)) => Some(Subject {
+            subject_type: t,
+            id: i,
+        }),
+        (None, None) => None,
+        (Some(_), None) => {
+            return Err("--subject-type requires --subject-id".to_string());
+        }
+        (None, Some(_)) => {
+            return Err("--subject-id requires --subject-type".to_string());
+        }
+    };
+
+    let mut meta = EventMetadata::for_project(args.project);
+    meta.subject = subject;
+    if let Some(name) = args.source_name {
+        meta.source_name = name;
+    }
+    for raw in args.source_attributes {
+        let (key, value) = parse_source_attribute(raw)?;
+        meta.attributes.insert(key, value);
+    }
+    meta.parent = args.parent;
+    meta.trace = args.trace;
+    meta.dedupe_key = args.dedupe_key;
+    Ok(meta)
+}
+
+fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> {
+    let Some(eq) = raw.find('=') else {
+        return Err(format!(
+            "--source-attribute \"{raw}\" is malformed (expected key=value)"
+        ));
+    };
+    let key = &raw[..eq];
+    if key.is_empty() {
+        return Err(format!("--source-attribute \"{raw}\" has an empty key"));
+    }
+    let value = &raw[eq + 1..];
+    Ok((key, value))
 }
 
 #[cfg(test)]
@@ -239,13 +363,17 @@ mod tests {
     // call shape); the integration tests own the stdout/stderr
     // contract.
 
+    fn bare_meta<'a>(project: &'a str) -> EventMetadata<'a> {
+        EventMetadata::for_project(project)
+    }
+
     #[tokio::test]
     async fn publish_event_returns_zero_on_2xx_response() {
         let fake = FakeHttpClient::with_response(Ok(json!({
             "ingested": 1, "deduped": 0, "ids": ["evt_1"],
         })));
         let data = json!({ "taskId": "t-1" });
-        let code = publish_event(&fake, "ai.task.completed.v1", &data, "demo").await;
+        let code = publish_event(&fake, "ai.task.completed.v1", &data, bare_meta("demo")).await;
         assert_eq!(code, 0, "2xx must map to exit code 0");
     }
 
@@ -255,7 +383,7 @@ mod tests {
             "ingested": 1, "deduped": 0, "ids": ["x"],
         })));
         let data = json!({});
-        let _ = publish_event(&fake, "x.y.z.v1", &data, "demo").await;
+        let _ = publish_event(&fake, "x.y.z.v1", &data, bare_meta("demo")).await;
         let calls = fake.calls();
         assert_eq!(calls.len(), 1, "exactly one HTTP call");
         assert_eq!(calls[0].path, "/v1/events", "must POST to /v1/events");
@@ -267,7 +395,13 @@ mod tests {
             "ingested": 1, "deduped": 0, "ids": ["x"],
         })));
         let data = json!({ "taskId": "t-1" });
-        let _ = publish_event(&fake, "ai.task.completed.v1", &data, "my-project").await;
+        let _ = publish_event(
+            &fake,
+            "ai.task.completed.v1",
+            &data,
+            bare_meta("my-project"),
+        )
+        .await;
         let body_bytes = fake.calls()[0].body.clone();
         let body_str = String::from_utf8(body_bytes).expect("utf8 body");
         // Single-element array wrapping the envelope
@@ -296,7 +430,7 @@ mod tests {
             status: 401,
             body: r#"{"error":"unauthorized"}"#.to_string(),
         }));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
         assert_eq!(code, 1, "401 must map to exit code 1");
     }
 
@@ -306,7 +440,7 @@ mod tests {
             status: 422,
             body: r#"{"error":"validation_error"}"#.to_string(),
         }));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
         assert_eq!(code, 1, "422 must map to exit code 1");
     }
 
@@ -316,7 +450,7 @@ mod tests {
             status: 503,
             body: String::new(),
         }));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
         assert_eq!(code, 1, "5xx must map to exit code 1");
     }
 
@@ -325,7 +459,7 @@ mod tests {
         let fake = FakeHttpClient::with_response(Err(TransportError::Config(
             "invalid path \"/v1/events\"".to_string(),
         )));
-        let code = publish_event(&fake, "x.y.v1", &json!({}), "demo").await;
+        let code = publish_event(&fake, "x.y.v1", &json!({}), bare_meta("demo")).await;
         assert_eq!(code, 1, "Config error must map to exit code 1");
     }
 
@@ -338,7 +472,7 @@ mod tests {
     /// assertions don't risk false positives from payload content.
     fn serialise_with_neutral_data(project: &str) -> String {
         let data = json!({ "neutralKey": "neutralValue" });
-        let envelope = build_envelope("ai.task.completed.v1", &data, project);
+        let envelope = build_envelope("ai.task.completed.v1", &data, bare_meta(project));
         serde_json::to_string(&envelope).expect("envelope serialises")
     }
 
@@ -362,7 +496,11 @@ mod tests {
         // that the wire body is a JSON array containing exactly one
         // element by serialising the same wrapping run() uses.
         let data = json!({ "neutralKey": "neutralValue" });
-        let body = vec![build_envelope("ai.task.completed.v1", &data, "demo")];
+        let body = vec![build_envelope(
+            "ai.task.completed.v1",
+            &data,
+            bare_meta("demo"),
+        )];
         let wire = serde_json::to_string(&body).expect("serialises");
         assert!(
             wire.starts_with('['),
@@ -421,7 +559,7 @@ mod tests {
     #[test]
     fn build_envelope_preserves_object_data_payload_verbatim() {
         let data = json!({ "taskId": "t-1", "sessionId": "s-1", "nested": { "x": 42 } });
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let envelope = build_envelope("ai.task.completed.v1", &data, bare_meta("demo"));
         let body = serde_json::to_string(&envelope).expect("serialises");
         assert!(body.contains(r#""taskId":"t-1""#));
         assert!(body.contains(r#""sessionId":"s-1""#));
@@ -431,7 +569,7 @@ mod tests {
     #[test]
     fn build_envelope_preserves_string_data_payload() {
         let data = Value::String("plain-string-payload".to_string());
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let envelope = build_envelope("ai.task.completed.v1", &data, bare_meta("demo"));
         let body = serde_json::to_string(&envelope).expect("serialises");
         assert!(
             body.contains(r#""data":"plain-string-payload""#),
@@ -442,7 +580,7 @@ mod tests {
     #[test]
     fn build_envelope_preserves_null_data_payload() {
         let data = Value::Null;
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let envelope = build_envelope("ai.task.completed.v1", &data, bare_meta("demo"));
         let body = serde_json::to_string(&envelope).expect("serialises");
         assert!(
             body.contains(r#""data":null"#),
@@ -453,11 +591,71 @@ mod tests {
     #[test]
     fn build_envelope_preserves_array_data_payload() {
         let data = json!([1, 2, 3]);
-        let envelope = build_envelope("ai.task.completed.v1", &data, "demo");
+        let envelope = build_envelope("ai.task.completed.v1", &data, bare_meta("demo"));
         let body = serde_json::to_string(&envelope).expect("serialises");
         assert!(
             body.contains(r#""data":[1,2,3]"#),
             "array payload must serialise as-is; got {body}",
         );
+    }
+
+    // ─── build_metadata: usage-validation tests ──────────────────────────
+
+    fn args_with_attrs<'a>(project: &'a str, attrs: &'a [String]) -> PublishArgs<'a> {
+        PublishArgs {
+            type_id: "ai.task.completed.v1",
+            data: "{}",
+            project,
+            subject_type: None,
+            subject_id: None,
+            source_name: None,
+            source_attributes: attrs,
+            parent: None,
+            trace: None,
+            dedupe_key: None,
+        }
+    }
+
+    #[test]
+    fn build_metadata_subject_type_without_id_is_usage_error() {
+        let attrs: [String; 0] = [];
+        let mut args = args_with_attrs("demo", &attrs);
+        args.subject_type = Some("task");
+        let err = build_metadata(&args).expect_err("expected usage error");
+        assert!(err.contains("--subject-id"), "got {err:?}");
+    }
+
+    #[test]
+    fn build_metadata_subject_id_without_type_is_usage_error() {
+        let attrs: [String; 0] = [];
+        let mut args = args_with_attrs("demo", &attrs);
+        args.subject_id = Some("task-42");
+        let err = build_metadata(&args).expect_err("expected usage error");
+        assert!(err.contains("--subject-type"), "got {err:?}");
+    }
+
+    #[test]
+    fn build_metadata_repeated_attribute_last_wins_on_duplicate_key() {
+        let attrs = ["foo=first".to_string(), "foo=second".to_string()];
+        let args = args_with_attrs("demo", &attrs);
+        let meta = build_metadata(&args).expect("valid");
+        assert_eq!(meta.attributes.get("foo"), Some(&"second"));
+    }
+
+    #[test]
+    fn build_metadata_attribute_without_equals_is_usage_error() {
+        let attrs = ["bareword".to_string()];
+        let args = args_with_attrs("demo", &attrs);
+        let err = build_metadata(&args).expect_err("expected usage error");
+        assert!(err.contains("bareword"), "got {err:?}");
+        assert!(err.contains("--source-attribute"), "got {err:?}");
+    }
+
+    #[test]
+    fn build_metadata_attribute_with_empty_key_is_usage_error() {
+        let attrs = ["=value".to_string()];
+        let args = args_with_attrs("demo", &attrs);
+        let err = build_metadata(&args).expect_err("expected usage error");
+        assert!(err.contains("empty key"), "got {err:?}");
     }
 }

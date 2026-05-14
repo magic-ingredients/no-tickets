@@ -43,6 +43,29 @@ enum Commands {
         /// Bearer token.
         #[arg(long)]
         project: String,
+        /// Subject type (paired with `--subject-id`). Both flags must be
+        /// present together, or neither.
+        #[arg(long)]
+        subject_type: Option<String>,
+        /// Subject id (paired with `--subject-type`).
+        #[arg(long)]
+        subject_id: Option<String>,
+        /// Override the default `source.name` ("nt-cli").
+        #[arg(long)]
+        source_name: Option<String>,
+        /// Add an attribute to `source.attributes` as `KEY=VALUE`. May be
+        /// repeated; last value wins on duplicate keys.
+        #[arg(long = "source-attribute", value_name = "KEY=VALUE")]
+        source_attribute: Vec<String>,
+        /// Parent event id (`parentEventId` on the wire).
+        #[arg(long)]
+        parent: Option<String>,
+        /// Trace id (`traceId` on the wire).
+        #[arg(long)]
+        trace: Option<String>,
+        /// Idempotency key (`dedupeKey` on the wire).
+        #[arg(long)]
+        dedupe_key: Option<String>,
     },
     /// Manage locally-registered push tokens (paste from the web UI).
     Token {
@@ -99,12 +122,26 @@ async fn main() {
             r#type,
             data,
             project,
+            subject_type,
+            subject_id,
+            source_name,
+            source_attribute,
+            parent,
+            trace,
+            dedupe_key,
         } => {
             commands::publish::run(
                 commands::publish::PublishArgs {
                     type_id: &r#type,
                     data: &data,
                     project: &project,
+                    subject_type: subject_type.as_deref(),
+                    subject_id: subject_id.as_deref(),
+                    source_name: source_name.as_deref(),
+                    source_attributes: &source_attribute,
+                    parent: parent.as_deref(),
+                    trace: trace.as_deref(),
+                    dedupe_key: dedupe_key.as_deref(),
                 },
                 &env,
             )

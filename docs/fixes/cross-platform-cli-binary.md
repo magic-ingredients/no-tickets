@@ -467,7 +467,8 @@ This task is split into sub-tasks 19–24 below (integer suffixes match the Task
 - Real agent driving the Rust MCP server produces the same tool outputs as the TS server for the same inputs (per sub-task acceptance below).
 
 ### 19. `publish_event` MCP tool — local schema validate + HTTPS POST
-status: not_started
+status: completed
+commitSha: ce52ef0
 
 Implement the MCP `publish_event` tool against the canonical TS reference at `src/mcp/tools/handlers.ts::handlePublishEvent`. Single-event publish from the MCP server: local schema validation (bundled JSON Schema via `nt-schemas::validate`) gates the call before any HTTP, then POST to `/v1/events` with the resolved auth.
 

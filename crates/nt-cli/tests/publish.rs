@@ -68,6 +68,13 @@ async fn run_nt_publish(
         // The url-resolver enforces both env vars must be set together;
         // give it a placeholder for AUTH (publish never reads it).
         .env("NO_TICKETS_AUTH_URL", "https://unused.example/auth")
+        // Test-side speed-up: collapse exponential backoff to zero so
+        // the retry suite doesn't pay 100–300ms per worst-case run.
+        // Retry behaviour (call counts, classification, give-up
+        // surfacing) is unaffected — only the sleep durations change.
+        // The unit tests in `transport::retry_tests` own the schedule
+        // pin via `RecordingSleeper`.
+        .env("NT_RETRY_BASE_DELAY_MS", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

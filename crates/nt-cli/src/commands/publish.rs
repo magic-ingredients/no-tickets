@@ -106,7 +106,7 @@ async fn publish_event<C: HttpClient, S: Sleeper>(
     // so .expect is appropriate here. A panic would indicate a bug
     // in serde, not a runtime condition.
     let body_bytes = serde_json::to_vec(&body).expect("envelope vec always serialises");
-    match post_json_with_retry(client, policy, sleeper, "/v1/events", body_bytes).await {
+    match post_json_with_retry(client, policy, sleeper, "/v1/events", &body_bytes).await {
         Ok(response) => {
             // Server response shape: `{ ingested, deduped, ids }`.
             // serde_json::Value serialisation cannot fail for valid
@@ -292,6 +292,7 @@ mod tests {
     use super::*;
     use crate::transport::TransportError;
     use serde_json::json;
+    use std::num::NonZeroU32;
     use std::sync::Mutex;
     use std::time::Duration;
 
@@ -304,8 +305,9 @@ mod tests {
     /// recorded error verbatim, matching the original pre-Task-17 shape.
     fn no_retry() -> RetryPolicy {
         RetryPolicy {
-            max_attempts: 1,
+            max_attempts: NonZeroU32::new(1).expect("1 is non-zero"),
             base_delay: Duration::from_millis(0),
+            max_delay: Duration::from_millis(0),
         }
     }
 

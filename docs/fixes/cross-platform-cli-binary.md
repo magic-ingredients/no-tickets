@@ -667,7 +667,8 @@ files; rmcp; reqwest+TLS+auth) are all proven. Task 4 becomes a
 mechanical port.
 
 ### 15. `nt publish` — optional metadata fields
-status: not_started
+status: completed
+commitSha: 9ca9672
 
 Add the optional metadata flags from `runPublishSingle` (TS reference: `src/cli/commands/publish/single.ts`) to the Rust `nt publish`. These were OOS of the Task 14 spike; closing them here:
 

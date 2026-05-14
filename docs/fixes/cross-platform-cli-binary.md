@@ -515,7 +515,8 @@ This is single-token / single-project per server invocation. Multi-project routi
 - Wiremock test covers the happy path, schema-fail short-circuit, 401, 403, 422, 5xx-retry-exhausted
 
 ### 20. `describe_event_type` MCP tool — server GET + schema synthesis
-status: in_progress
+status: completed
+commitSha: c53bc52
 
 GET `/v1/registry/event-types/{id}` and return the JSON Schema plus a synthesised example payload (`example-synth.ts` equivalent in Rust). Smaller than Task 19 — single GET, response transformation. Naturally pairs with Task 23 (cache).
 

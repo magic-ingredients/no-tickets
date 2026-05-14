@@ -694,7 +694,8 @@ Wire-shape parity: each field is OMITTED when absent (no JSON `null` / no empty 
 - Existing publish tests stay green; new wire-shape tests pin every optional field independently
 
 ### 16. `nt publish` — batch mode (`--file` / stdin JSONL or JSON array)
-status: not_started
+status: completed
+commitSha: 1006d82
 
 Port the multi-event batch path from `runPublishBatch`. Reads either a JSON array (`[{event}, {event}, …]`) or JSONL (one event object per line) from `--file <path>` or `-` (stdin). Single POST to `/v1/events` with the array of envelopes.
 

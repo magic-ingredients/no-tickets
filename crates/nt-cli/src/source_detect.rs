@@ -15,7 +15,10 @@
 //! permission, etc.) silently drops the attribute. `nt publish` MUST
 //! NOT fail because the machine hash couldn't be computed.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use rand::RngCore;
+use sha2::{Digest, Sha256};
 
 use crate::env::Env;
 use crate::paths::config_dir;
@@ -32,17 +35,87 @@ pub const MACHINE_SALT_FILE: &str = ".machine-salt";
 ///
 /// On success returns a 16-character lowercase-hex string: the first
 /// 16 chars of `SHA-256("{salt}:{hostname}")`.
-#[allow(dead_code)] // Wired by Task 18 GREEN into commands::publish::build_metadata.
-pub fn machine_hash_attribute(_env: &dyn Env) -> Option<String> {
-    unimplemented!("Task 18 GREEN — opt-in machine-hash attribute")
+pub fn machine_hash_attribute(env: &dyn Env) -> Option<String> {
+    if env.var("NO_TICKETS_INCLUDE_MACHINE").as_deref() != Some("1") {
+        return None;
+    }
+    // Best-effort: any filesystem failure here drops the attribute.
+    let salt_path = machine_salt_path(env)?;
+    let salt = read_or_create_salt(&salt_path).ok()?;
+    let host = hostname::get().ok()?.to_string_lossy().into_owned();
+    let mut hasher = Sha256::new();
+    hasher.update(salt.as_bytes());
+    hasher.update(b":");
+    hasher.update(host.as_bytes());
+    let digest = hasher.finalize();
+    // First 8 bytes → 16 lowercase-hex chars.
+    let mut hex = String::with_capacity(16);
+    for byte in &digest[..8] {
+        use std::fmt::Write as _;
+        // SAFETY: writing to a String can't fail.
+        let _ = write!(&mut hex, "{byte:02x}");
+    }
+    Some(hex)
 }
 
 /// Resolved filesystem path of the salt file under the active config
 /// dir. Exposed so the inline tests can assert presence + read it back
 /// to drive "different salt → different hash" assertions.
-#[allow(dead_code)] // Wired by Task 18 GREEN; used directly in inline tests.
 pub fn machine_salt_path(env: &dyn Env) -> Option<PathBuf> {
     config_dir(env).map(|d| d.join(MACHINE_SALT_FILE))
+}
+
+/// Read the existing salt or atomically create a fresh one. The
+/// salt is 16 random bytes hex-encoded (32 chars). Empty or
+/// whitespace-only existing files are treated as missing and
+/// regenerated.
+///
+/// Returns `Err` for any I/O failure the caller hasn't already
+/// guarded against — including a parent directory that can't be
+/// created (e.g. the `NO_TICKETS_HOME` override points at a file).
+fn read_or_create_salt(path: &Path) -> std::io::Result<String> {
+    if let Ok(existing) = std::fs::read_to_string(path) {
+        let trimmed = existing.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    // Either missing, unreadable as text, or empty/whitespace-only —
+    // generate a fresh salt.
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let mut salt = String::with_capacity(32);
+    for byte in &bytes {
+        use std::fmt::Write as _;
+        let _ = write!(&mut salt, "{byte:02x}");
+    }
+    // Ensure parent dir exists. If creation fails (e.g. parent is
+    // a file, not a dir), propagate so the caller drops the attribute.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    write_salt_with_restrictive_perms(path, &salt)?;
+    Ok(salt)
+}
+
+#[cfg(unix)]
+fn write_salt_with_restrictive_perms(path: &Path, salt: &str) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    std::io::Write::write_all(&mut file, salt.as_bytes())
+}
+
+#[cfg(not(unix))]
+fn write_salt_with_restrictive_perms(path: &Path, salt: &str) -> std::io::Result<()> {
+    // Windows has no POSIX mode bits; the file inherits the parent's
+    // ACL. The .machine-salt dotfile under the user's profile dir is
+    // already user-scoped via the OS conventions.
+    std::fs::write(path, salt)
 }
 
 #[cfg(test)]

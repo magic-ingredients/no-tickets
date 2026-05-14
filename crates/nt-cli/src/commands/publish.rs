@@ -2,9 +2,10 @@
 //! Mirrors `src/cli/commands/publish` + `src/transport/events.ts::publish`.
 //!
 //! Scope: single event with bounded retry/backoff on transient failures
-//! (Task 17 — retry policy + classifier live in `transport`). `--stream`
-//! mode (Task 4b), batch mode (Task 16), and source auto-detection
-//! (Task 18) live in their own tasks.
+//! (Task 17 — retry policy + classifier live in `transport`) and an
+//! opt-in machine-hash source attribute (Task 18 — computed in
+//! `source_detect`, gated on `NO_TICKETS_INCLUDE_MACHINE=1`). `--stream`
+//! mode (Task 4b) and batch mode (Task 16) live in their own tasks.
 
 use std::collections::BTreeMap;
 
@@ -13,6 +14,7 @@ use serde_json::Value;
 
 use crate::auth::{emit_host_mismatch_warning, resolve_auth, AuthOutcome, NOT_AUTH_MSG};
 use crate::env::Env;
+use crate::source_detect::machine_hash_attribute;
 use crate::transport::{
     post_json_with_retry, Client, HttpClient, RetryPolicy, Sleeper, TokioSleeper,
 };
@@ -181,11 +183,18 @@ fn build_envelope<'a>(
 }
 
 pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
+    // Compute the optional machine-hash attribute first so its String
+    // borrow has a stable run-local lifetime that `build_metadata` can
+    // weave into the attributes BTreeMap alongside flag-derived
+    // entries. None means env-var off OR best-effort FS failure;
+    // either way, no attribute on the wire.
+    let machine_hash_owned: Option<String> = machine_hash_attribute(env);
+
     // Usage validation FIRST — before any auth/network/file-system
     // resolution — so a bad flag combo doesn't leak credentials state
     // or surface a confusing "not authenticated" message when the real
     // fault is a malformed argv.
-    let meta = match build_metadata(&args) {
+    let meta = match build_metadata(&args, machine_hash_owned.as_deref()) {
         Ok(m) => m,
         Err(msg) => {
             eprintln!("{msg}");
@@ -245,7 +254,10 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
 /// Returns the assembled metadata or a user-facing error string. Pure;
 /// no I/O. Borrows from `args`, so the returned metadata's lifetime is
 /// bounded by the caller's `args`.
-fn build_metadata<'a>(args: &'a PublishArgs<'a>) -> Result<EventMetadata<'a>, String> {
+fn build_metadata<'a>(
+    args: &'a PublishArgs<'a>,
+    machine_hash: Option<&'a str>,
+) -> Result<EventMetadata<'a>, String> {
     let subject = match (args.subject_type, args.subject_id) {
         (Some(t), Some(i)) => Some(Subject {
             subject_type: t,
@@ -258,6 +270,13 @@ fn build_metadata<'a>(args: &'a PublishArgs<'a>) -> Result<EventMetadata<'a>, St
 
     let mut attributes: BTreeMap<&'a str, &'a str> = BTreeMap::new();
     attributes.insert("project", args.project);
+    // Insert the auto-computed machine hash BEFORE the flag-derived
+    // attribute loop so a `--source-attribute machine=...` flag
+    // overrides the auto-value via BTreeMap last-wins on insert.
+    // Pinned by `publish_source_attribute_machine_flag_overrides_auto_hash`.
+    if let Some(hash) = machine_hash {
+        attributes.insert("machine", hash);
+    }
     for raw in args.source_attributes {
         let (key, value) = parse_source_attribute(raw)?;
         attributes.insert(key, value);
@@ -703,7 +722,7 @@ mod tests {
         let attrs: [String; 0] = [];
         let mut args = args_with_attrs("demo", &attrs);
         args.subject_type = Some("task");
-        let err = build_metadata(&args).expect_err("expected usage error");
+        let err = build_metadata(&args, None).expect_err("expected usage error");
         assert!(err.contains("--subject-id"), "got {err:?}");
     }
 
@@ -712,7 +731,7 @@ mod tests {
         let attrs: [String; 0] = [];
         let mut args = args_with_attrs("demo", &attrs);
         args.subject_id = Some("task-42");
-        let err = build_metadata(&args).expect_err("expected usage error");
+        let err = build_metadata(&args, None).expect_err("expected usage error");
         assert!(err.contains("--subject-type"), "got {err:?}");
     }
 
@@ -720,7 +739,7 @@ mod tests {
     fn build_metadata_repeated_attribute_last_wins_on_duplicate_key() {
         let attrs = ["foo=first".to_string(), "foo=second".to_string()];
         let args = args_with_attrs("demo", &attrs);
-        let meta = build_metadata(&args).expect("valid");
+        let meta = build_metadata(&args, None).expect("valid");
         assert_eq!(meta.attributes.get("foo"), Some(&"second"));
     }
 
@@ -728,7 +747,7 @@ mod tests {
     fn build_metadata_attribute_without_equals_is_usage_error() {
         let attrs = ["bareword".to_string()];
         let args = args_with_attrs("demo", &attrs);
-        let err = build_metadata(&args).expect_err("expected usage error");
+        let err = build_metadata(&args, None).expect_err("expected usage error");
         assert!(err.contains("bareword"), "got {err:?}");
         assert!(err.contains("--source-attribute"), "got {err:?}");
     }
@@ -737,7 +756,7 @@ mod tests {
     fn build_metadata_attribute_with_empty_key_is_usage_error() {
         let attrs = ["=value".to_string()];
         let args = args_with_attrs("demo", &attrs);
-        let err = build_metadata(&args).expect_err("expected usage error");
+        let err = build_metadata(&args, None).expect_err("expected usage error");
         assert!(err.contains("empty key"), "got {err:?}");
     }
 
@@ -749,7 +768,7 @@ mod tests {
         // wrapper-shared contract.
         let attrs = ["foo=".to_string()];
         let args = args_with_attrs("demo", &attrs);
-        let meta = build_metadata(&args).expect("empty value must be accepted");
+        let meta = build_metadata(&args, None).expect("empty value must be accepted");
         assert_eq!(meta.attributes.get("foo"), Some(&""));
     }
 }

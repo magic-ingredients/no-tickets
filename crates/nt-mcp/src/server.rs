@@ -5,6 +5,8 @@
 //! the surface (describe_event_type, publish_event, status, validate,
 //! create_subject, run_interaction).
 
+use std::time::Duration;
+
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
@@ -15,6 +17,12 @@ use crate::config::EnvConfig;
 use crate::fixtures::{all_event_types, EventTypeRow};
 use crate::tools::list_event_types::{self, ListEventTypesArgs};
 use crate::tools::publish_event::{self, PublishEventArgs};
+
+/// Per-request timeout for outbound HTTP calls. Matches `nt-cli`'s
+/// `DEFAULT_TIMEOUT`. A hung upstream must not block the JSON-RPC
+/// stdio pipe indefinitely — without this, the MCP client would have
+/// to enforce its own timeout from the outside.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Reported `serverInfo.name` in the initialize response. Matches the TS
 /// server (src/mcp/create-server.ts), which reports `no-tickets` —
@@ -28,6 +36,11 @@ pub struct NtServer {
     #[allow(dead_code)]
     tool_router: ToolRouter<NtServer>,
     fixtures: &'static [EventTypeRow],
+    /// Shared HTTP client for outbound calls (publish_event today;
+    /// future tools as Task 5 expands). `reqwest::Client` is `Clone`-
+    /// cheap — it's `Arc`-internal — so handing it to each tool
+    /// handler doesn't duplicate connection pools / TLS state.
+    http_client: reqwest::Client,
 }
 
 impl NtServer {
@@ -35,6 +48,10 @@ impl NtServer {
         Self {
             tool_router: Self::tool_router(),
             fixtures: all_event_types(),
+            http_client: reqwest::Client::builder()
+                .timeout(HTTP_TIMEOUT)
+                .build()
+                .expect("reqwest client build (rustls-tls features always present)"),
         }
     }
 }
@@ -79,7 +96,7 @@ impl NtServer {
         Parameters(args): Parameters<PublishEventArgs>,
     ) -> Result<CallToolResult, McpError> {
         let config = EnvConfig::from_env().map_err(|msg| McpError::invalid_params(msg, None))?;
-        publish_event::handle(&args, &config).await
+        publish_event::handle(&args, &config, &self.http_client).await
     }
 }
 

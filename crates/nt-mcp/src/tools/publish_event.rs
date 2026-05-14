@@ -20,7 +20,7 @@
 
 use nt_schemas::validate;
 use rmcp::{model::*, ErrorData as McpError};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::config::EnvConfig;
@@ -62,7 +62,7 @@ pub struct PublishEventArgs {
     pub dedupe_key: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, schemars::JsonSchema)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SubjectRef {
     #[serde(rename = "type")]
     pub subject_type: String,
@@ -73,13 +73,16 @@ pub struct SubjectRef {
 /// `config`, validates `args.data` locally, posts the envelope, maps
 /// the response to a `CallToolResult`.
 ///
-/// Production callers pass the real `reqwest::Client`-backed transport
-/// (lives inline in this module for the Task 19 slice; extracted to
-/// `nt-core` in Task 24). Tests may inject a fake via the same trait
-/// once the testable seam lands in GREEN.
+/// Takes a shared `&reqwest::Client` rather than constructing one per
+/// call — `NtServer` owns the client (with the per-request timeout
+/// configured) and threads it through every tool that does HTTP. A
+/// per-call `Client::new()` would re-init TLS state and rebuild the
+/// connection pool every invocation, costing real wall-clock on every
+/// publish.
 pub async fn handle(
     args: &PublishEventArgs,
     config: &EnvConfig,
+    http_client: &reqwest::Client,
 ) -> Result<CallToolResult, McpError> {
     // 1. Local schema validation — gates before any HTTP. Mirrors the
     //    TS handler's `validateAgainstBundledSchema` step. Unknown type
@@ -117,8 +120,7 @@ pub async fn handle(
     //    surfaces as a transport error; the agent / MCP client can
     //    retry the tool call itself if it wants.
     let url = format!("{}/v1/events", config.api_url.trim_end_matches('/'));
-    let client = reqwest::Client::new();
-    let response = client
+    let response = http_client
         .post(&url)
         .bearer_auth(&config.token)
         .header("content-type", "application/json")

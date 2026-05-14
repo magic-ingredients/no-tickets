@@ -1119,3 +1119,428 @@ async fn publish_event_wire_body_omits_optional_fields_when_args_absent() {
     }
     c.shutdown().await;
 }
+
+// ─── Empty-string env vars are treated identically to missing ────────────
+
+#[tokio::test]
+async fn publish_event_empty_token_treated_as_missing_var() {
+    // An empty NO_TICKETS_TOKEN is never valid — Bearer "" wouldn't
+    // authenticate anything. `EnvConfig::from_env` rejects it for the
+    // same reason it rejects unset, with the same diagnostic. Pins the
+    // `if !v.is_empty()` guard against a mutation that drops the
+    // emptiness check.
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", ""),
+        ("NO_TICKETS_API_URL", "http://unused.example"),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_TOKEN"),
+        "empty-token error must name the var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_empty_api_url_treated_as_missing_var() {
+    let mut c =
+        McpClient::spawn_with_env(&[("NO_TICKETS_TOKEN", "nt_test"), ("NO_TICKETS_API_URL", "")])
+            .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_API_URL"),
+        "empty-api-url error must name the var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Malformed server responses ──────────────────────────────────────────
+
+#[tokio::test]
+async fn publish_event_empty_ids_array_surfaces_error() {
+    // Server-contract violation: a 2xx response with `ids: []` means
+    // the server claims success but didn't return an event id. Surface
+    // as an error rather than handing the agent a blank id it might
+    // later use as `parent_event_id`. Mirrors the TS handler's
+    // "missing id" defensive branch.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 1, "deduped": 0, "ids": [],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("ids") || msg.to_lowercase().contains("missing"),
+        "empty-ids error must mention the missing id; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Dedupe-detection truth table (ingested == 0 && deduped > 0) ─────────
+
+#[tokio::test]
+async fn publish_event_dedupe_false_when_both_zero() {
+    // (ingested=0, deduped=0). Server returned an id but neither
+    // ingested nor deduped. Per the TS handler's truth table, this
+    // is NOT a dedupe — deduped flag must be false.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 0, "deduped": 0, "ids": ["evt_z"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["deduped"], false,
+        "(0,0) must surface deduped=false; got {payload}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_dedupe_false_when_both_positive() {
+    // (ingested=1, deduped=1). The && in `ingested == 0 && deduped > 0`
+    // requires ingested==0 for deduped:true to flip on. With ingested>0
+    // the answer MUST be false even when deduped is also >0. Catches a
+    // mutation from `&&` to `||`.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 1, "deduped": 1, "ids": ["evt_w"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["deduped"], false,
+        "(1,1) must surface deduped=false (ingested>0 wins); got {payload}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_missing_ingested_field_defaults_to_zero_for_dedupe_detection() {
+    // Server response lacks `ingested`; our impl uses `unwrap_or(0)`.
+    // Pin the lenient default by constructing a response where the
+    // default matters: present `deduped: 5`, missing `ingested`.
+    //   Default 0:   0 == 0 && 5 > 0 → deduped=true
+    //   Mutation 1:  1 == 0 && 5 > 0 → deduped=false
+    // Test pin asserts deduped=true. Kills `unwrap_or(1)` mutation on
+    // the `ingested` line.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "deduped": 5, "ids": ["evt_m"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["deduped"], true,
+        "missing ingested → defaults to 0 → satisfies the && → deduped=true; got {payload}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_missing_deduped_field_defaults_to_zero_for_dedupe_detection() {
+    // Symmetric pin for the `deduped` unwrap_or default. Server
+    // response lacks `deduped`; present `ingested: 0`.
+    //   Default 0:   0 == 0 && 0 > 0 → deduped=false
+    //   Mutation 1:  0 == 0 && 1 > 0 → deduped=true
+    // Test asserts deduped=false → kills `unwrap_or(1)` on `deduped`.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 0, "ids": ["evt_n"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["deduped"], false,
+        "missing deduped → defaults to 0 → fails the > 0 check → deduped=false; got {payload}",
+    );
+    c.shutdown().await;
+}
+
+// ─── URL normalisation + identity-spoof protection ────────────────────────
+
+#[tokio::test]
+async fn publish_event_trailing_slash_api_url_routes_to_v1_events_unchanged() {
+    // `NO_TICKETS_API_URL` with a trailing slash MUST land on
+    // `<api_url>/v1/events` (single `/`, not double). Pins
+    // `trim_end_matches('/')` against a regression that drops it or
+    // mutates to `trim_start_matches`.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 1, "deduped": 0, "ids": ["evt_slash"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri_with_slash = format!("{}/", server.uri());
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri_with_slash.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["id"], "evt_slash",
+        "trailing-slash URL must still POST to /v1/events"
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_extra_source_arg_does_not_spoof_identity() {
+    // Defence in depth: the input schema doesn't declare a `source`
+    // property (pinned by the discovery test), but serde's default
+    // behaviour silently ignores unknown fields. If an agent (or a
+    // future schema change with `#[serde(deny_unknown_fields)]`
+    // dropped) passes `source: {...}` in args, it MUST NOT reach the
+    // wire — `build_source` ignores tool args entirely and uses the
+    // fixed `nt-mcp` identity.
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                    "source": { "name": "evil-agent", "sdkVersion": "0", "attributes": { "spoofed": "yes" } }
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let envelope: Value = serde_json::from_str(&body).expect("body JSON");
+    let src = &envelope[0]["source"];
+    assert_eq!(
+        src["name"], "nt-mcp",
+        "source.name must NOT be spoofable; got body={body}"
+    );
+    assert!(
+        src["attributes"].get("spoofed").is_none(),
+        "spoofed attribute must not leak; got src={src}",
+    );
+}
+
+// ─── Stdout-purity coverage for publish_event ────────────────────────────
+
+#[tokio::test]
+async fn publish_event_call_does_not_corrupt_stdout_jsonrpc_stream() {
+    // The Task 2 stdout-purity test covered list_event_types. publish_
+    // event has its own code path (HTTP I/O, JSON serialisation, error
+    // mapping); a stray `println!` or a logger misconfigured to stdout
+    // anywhere in that path would corrupt JSON-RPC framing and silently
+    // disconnect Claude Code. Re-pin the invariant for publish_event.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 1, "deduped": 0, "ids": ["evt_pure"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let (captured, _stderr) = c.shutdown().await;
+    for line in &captured {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        serde_json::from_str::<Value>(trimmed)
+            .unwrap_or_else(|e| panic!("stdout polluted by non-JSON line {trimmed:?}: {e}"));
+    }
+}

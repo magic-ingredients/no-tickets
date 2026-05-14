@@ -1,0 +1,201 @@
+{
+  "id": "event-actor-metadata",
+  "title": "Actor metadata on every event + `nt session` lifecycle",
+  "type": "active",
+  "status": "not_started",
+  "prdId": "event-actor-metadata",
+  "prdDirPath": "/Users/andyrichardson/work/repos/no-tickets/no-tickets/docs/prd/event-actor-metadata",
+  "created": "2026-05-14T08:40:29.242Z",
+  "lastUpdated": "2026-05-14T08:40:29.282Z",
+  "features": [
+    {
+      "id": "schemas-and-nt-session",
+      "number": 1,
+      "title": "Schemas + `nt session` + `nt publish` actor wiring",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-1-1",
+          "description": "Define actor + metadata schemas in `packages/schemas`",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-2",
+          "description": "Make `metadata` optional on the server envelope schema",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-3",
+          "description": "Wire `validate_metadata` into the Rust `nt-schemas` crate",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-4",
+          "description": "Implement `nt session start / show / end` subcommands",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-5",
+          "description": "Add actor resolution + `metadata` emission to `nt publish`",
+          "status": "not_started"
+        },
+        {
+          "id": "task-1-6",
+          "description": "Document the public binary contract for `metadata`",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 6,
+        "completed": 0,
+        "remaining": 6
+      }
+    },
+    {
+      "id": "server-validation-and-storage",
+      "number": 2,
+      "title": "Server-side validation gate + DB column + backfill",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-2-1",
+          "description": "Add `metadata` jsonb column to `events` table",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-2",
+          "description": "Apply migration strategy for existing rows",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-3",
+          "description": "Validate `metadata` against the canonical schema on ingest",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-4",
+          "description": "Emit `events_ingested_without_metadata_total` metric",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-5",
+          "description": "Surface `metadata` on read APIs",
+          "status": "not_started"
+        },
+        {
+          "id": "task-2-6",
+          "description": "Migrate internal callers to emit metadata",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 6,
+        "completed": 0,
+        "remaining": 6
+      }
+    },
+    {
+      "id": "hard-requirement-and-ui",
+      "number": 3,
+      "title": "Hard requirement + indexes + read APIs + UI",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-3-1",
+          "description": "Flip `metadata` from optional to required on the server",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-2",
+          "description": "Make `events.metadata` NOT NULL",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-3",
+          "description": "Add partial GIN indexes on actor identifiers",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-4",
+          "description": "Add `?actorType`, `?agentId`, `?userId` filters to read APIs",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-5",
+          "description": "Add `/v1/projects/:projectId/actors` endpoint",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-6",
+          "description": "Render actor pill on event cards",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-7",
+          "description": "Add actor filter to activity feeds",
+          "status": "not_started"
+        },
+        {
+          "id": "task-3-8",
+          "description": "Extend GDPR user-deletion to redact actor identifiers",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 8,
+        "completed": 0,
+        "remaining": 8
+      }
+    },
+    {
+      "id": "per-language-wrappers",
+      "number": 4,
+      "title": "Per-language wrappers inherit `nt session`",
+      "status": "not_started",
+      "tasks": [
+        {
+          "id": "task-4-1",
+          "description": "TS wrapper: spawn `nt session start` + `withActor` API",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-2",
+          "description": "Python wrapper: spawn `nt session start` + `with_actor` API",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-3",
+          "description": "Go wrapper: spawn `nt session start` + `WithActor` API",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-4",
+          "description": "Shared conformance harness for all wrappers",
+          "status": "not_started"
+        },
+        {
+          "id": "task-4-5",
+          "description": "Wrapper documentation: actor model section",
+          "status": "not_started"
+        }
+      ],
+      "taskSummary": {
+        "total": 5,
+        "completed": 0,
+        "remaining": 5
+      }
+    }
+  ],
+  "gitUserName": "Andy Richardson",
+  "gitUserEmail": "rishson@gmail.com",
+  "author": "Andy Richardson",
+  "currentState": {
+    "overallProgress": {
+      "completedFeatures": 0,
+      "totalFeatures": 4,
+      "completedTasks": 0,
+      "totalTasks": 25,
+      "percentComplete": 0
+    }
+  }
+}

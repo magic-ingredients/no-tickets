@@ -712,7 +712,8 @@ Distinct from Task 4b (`--stream` mode) — batch is "one finite read → one HT
 - Mixed validation: any one bad envelope rolls up to exit 1 with a per-line error count
 
 ### 17. `nt publish` — retry/backoff on transient errors
-status: not_started
+status: completed
+commitSha: 3144c6f
 
 Wrap the HTTP call in a bounded retry loop for transient-class failures (connection refused, 5xx, request timeouts). Exponential backoff with jitter; cap at N attempts. Non-transient (4xx, JSON parse errors, etc.) fails immediately.
 

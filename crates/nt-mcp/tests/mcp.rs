@@ -8,12 +8,15 @@
 //! so the raw stdout-purity property is directly inspectable.
 
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
+use wiremock::matchers::{header, method, path as wm_path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -30,13 +33,34 @@ struct McpClient {
 
 impl McpClient {
     async fn spawn() -> Self {
+        Self::spawn_with_env(&[]).await
+    }
+
+    /// Spawn nt-mcp with additional env vars (e.g. NO_TICKETS_TOKEN +
+    /// NO_TICKETS_API_URL for publish_event tests pointing at a
+    /// wiremock instance). Caller-supplied env layers on top of the
+    /// inherited process env; callers should also `env_remove` any
+    /// host-shell vars they want guaranteed-absent (the helper itself
+    /// doesn't strip — different tests need different defaults).
+    async fn spawn_with_env(extra_env: &[(&str, &str)]) -> Self {
         let bin = env!("CARGO_BIN_EXE_nt-mcp");
-        let mut child = Command::new(bin)
-            .stdin(Stdio::piped())
+        let mut cmd = Command::new(bin);
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn nt-mcp binary");
+            .stderr(Stdio::piped());
+        // Default-strip publish-time env vars so a host shell with
+        // NO_TICKETS_TOKEN set can't leak into tests that don't opt in.
+        // Callers that want them set pass via `extra_env` AFTER these
+        // removals.
+        cmd.env_remove("NO_TICKETS_TOKEN")
+            .env_remove("NO_TICKETS_API_URL")
+            .env_remove("NO_TICKETS_AUTH_URL")
+            .env_remove("NO_TICKETS_ENV")
+            .env_remove("NO_TICKETS_INCLUDE_MACHINE");
+        for (k, v) in extra_env {
+            cmd.env(k, v);
+        }
+        let mut child = cmd.spawn().expect("spawn nt-mcp binary");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = BufReader::new(child.stdout.take().expect("stdout"));
         Self {
@@ -160,9 +184,7 @@ async fn tools_list_includes_list_event_types_with_exact_ts_parity_description()
     c.handshake().await;
 
     let resp = c.request("tools/list", json!({})).await;
-    let tools = resp["result"]["tools"]
-        .as_array()
-        .expect("tools array");
+    let tools = resp["result"]["tools"].as_array().expect("tools array");
     let entry = tools
         .iter()
         .find(|t| t["name"] == "list_event_types")
@@ -188,7 +210,7 @@ async fn tools_list_includes_list_event_types_with_exact_ts_parity_description()
     // Neither parameter is required.
     let required = schema["required"].as_array();
     assert!(
-        required.map_or(true, |r| r.is_empty()),
+        required.is_none_or(|r| r.is_empty()),
         "domain and deprecated must both be optional",
     );
 
@@ -227,9 +249,7 @@ async fn list_event_types_returns_typed_rows() {
 
     // CallToolResult contract: content array with one text item containing
     // a JSON-encoded { types: [...] } payload.
-    let content = resp["result"]["content"]
-        .as_array()
-        .expect("content array");
+    let content = resp["result"]["content"].as_array().expect("content array");
     assert_eq!(content.len(), 1, "single content item expected");
     let text = content[0]["text"].as_str().expect("text content");
     let payload: Value = serde_json::from_str(text).expect("payload parses");
@@ -326,10 +346,8 @@ async fn list_event_types_filters_by_domain() {
             }),
         )
         .await;
-    let filtered_payload: Value = serde_json::from_str(
-        filtered["result"]["content"][0]["text"].as_str().unwrap(),
-    )
-    .unwrap();
+    let filtered_payload: Value =
+        serde_json::from_str(filtered["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     let filtered_types = filtered_payload["types"].as_array().unwrap();
     assert!(
         !filtered_types.is_empty(),
@@ -547,4 +565,557 @@ async fn stderr_receives_per_call_logs_without_polluting_stdout() {
         }
         serde_json::from_str::<Value>(trimmed).expect("stdout still pure JSON");
     }
+}
+
+// ─── publish_event tool (Task 19) ──────────────────────────────────────────
+
+/// Byte-for-byte TS-parity description from `src/mcp/tools/publish-event.ts`.
+/// Pinned here as a string literal (not a path import — the binary's
+/// production constant lives in `crates/nt-mcp/src/tools/publish_event.rs`
+/// but the binary isn't a library, so the test can't see it). Drift
+/// here is the same kind of drift the list_event_types parity test
+/// catches.
+const PUBLISH_EVENT_TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
+
+/// Valid `ai.task.completed.v1` data payload — matches the
+/// `crates/nt-cli/tests/publish.rs::VALID_AI_TASK_DATA` shape and is
+/// the canonical happy-path event payload used across the binary
+/// tests. Includes all server-required fields so schema validation
+/// passes.
+fn valid_ai_task_data() -> Value {
+    json!({
+        "taskId": "task-1",
+        "sessionId": "sess-1",
+        "startedAt": "2026-05-01T00:00:00.000Z",
+        "completedAt": "2026-05-01T00:00:01.000Z",
+        "durationMs": 1000,
+        "outcome": "success",
+        "callCount": 1,
+    })
+}
+
+/// Wire-body capturer for the publish_event tests. Mounts a wiremock
+/// route on `POST /v1/events` that responds 200 with a canned body
+/// and stores the request body for later inspection. The returned
+/// Arc<Mutex<Option<String>>> holds the raw body bytes as a UTF-8
+/// String — tests parse it into a Value to assert on shape.
+async fn capture_publish_body(server: &MockServer) -> Arc<Mutex<Option<String>>> {
+    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let cap_for_responder = captured.clone();
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(move |req: &wiremock::Request| {
+            let body = String::from_utf8(req.body.clone()).expect("request body utf8");
+            *cap_for_responder.lock().unwrap() = Some(body);
+            ResponseTemplate::new(200).set_body_json(json!({
+                "ingested": 1, "deduped": 0, "ids": ["evt_captured"],
+            }))
+        })
+        .expect(1)
+        .mount(server)
+        .await;
+    captured
+}
+
+/// Extract the `tools/call publish_event` text-content JSON payload
+/// from a JSON-RPC response. The MCP `CallToolResult` carries content
+/// as `[{ type: "text", text: "<json string>" }]`; this helper parses
+/// the inner JSON for direct field assertions.
+fn extract_tool_result_payload(resp: &Value) -> Value {
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("tools/call response missing text content; got {resp:?}"));
+    serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("tool result text is not JSON: {e}; raw={text:?}"))
+}
+
+/// Pretty error-message accessor for assertion messages. Looks at
+/// both `result.content[0].text` (which carries the structured error
+/// when rmcp wraps a McpError into a CallToolResult error) AND
+/// `error.message` (which carries protocol-level errors).
+fn collect_error_text(resp: &Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(s) = resp["error"]["message"].as_str() {
+        parts.push(s.to_string());
+    }
+    if let Some(s) = resp["result"]["content"][0]["text"].as_str() {
+        parts.push(s.to_string());
+    }
+    parts.join(" | ")
+}
+
+// ─── Discovery: tool is registered with the right shape ──────────────────
+
+#[tokio::test]
+async fn tools_list_includes_publish_event_with_ts_parity_description() {
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let tools = resp["result"]["tools"].as_array().expect("tools array");
+    let entry = tools
+        .iter()
+        .find(|t| t["name"] == "publish_event")
+        .expect("publish_event tool registered");
+    assert_eq!(
+        entry["description"].as_str(),
+        Some(PUBLISH_EVENT_TS_PARITY_DESCRIPTION),
+        "publish_event description must byte-match TS reference",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_input_schema_declares_required_and_optional_fields() {
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let entry = resp["result"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|t| t["name"] == "publish_event")
+        .expect("publish_event tool registered")
+        .clone();
+
+    let schema = &entry["inputSchema"];
+    let props = &schema["properties"];
+
+    // Required: project, type, data — every event needs these for a
+    // wire-valid envelope.
+    let required = schema["required"]
+        .as_array()
+        .expect("required array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for needed in ["project", "type", "data"] {
+        assert!(
+            required.iter().any(|r| r == needed),
+            "schema must require `{needed}`; required={required:?}",
+        );
+    }
+
+    // Optional fields surfaced via JSON Schema properties even though
+    // they're not in `required`. Mirrors the TS reference's input
+    // schema. A missing entry means the schema-derive macro lost a
+    // field — caught here.
+    for optional in [
+        "subject",
+        "occurred_at",
+        "parent_event_id",
+        "trace_id",
+        "dedupe_key",
+    ] {
+        assert!(
+            props[optional].is_object(),
+            "schema must declare optional property `{optional}`; got props={props}",
+        );
+    }
+
+    // Source identity is fixed server-side — agents must NOT be able
+    // to override `source` via tool args. A regression that adds a
+    // `source` property to the schema would let an agent spoof its
+    // identity.
+    assert!(
+        props.get("source").is_none(),
+        "schema must NOT declare a `source` property — server fills it; got props={props}",
+    );
+
+    c.shutdown().await;
+}
+
+// ─── Behavior: happy path posts to /v1/events ────────────────────────────
+
+#[tokio::test]
+async fn publish_event_happy_path_posts_and_returns_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .and(header("authorization", "Bearer nt_test_token"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 1, "deduped": 0, "ids": ["evt_happy"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test_token"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["id"], "evt_happy",
+        "tool result must surface the server-returned event id"
+    );
+    assert_eq!(
+        payload["deduped"], false,
+        "deduped=false when server reports ingested=1, deduped=0",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_marks_deduped_when_server_reports_only_deduped() {
+    // Pin the dedupe-detection branch: when server returns
+    // `ingested: 0, deduped: 1`, the tool reports `deduped: true`.
+    // Matches the TS handler's `ingested === 0 && deduped > 0`.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ingested": 0, "deduped": 1, "ids": ["evt_dup"],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test_token"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["deduped"], true,
+        "deduped=true when ingested=0 + deduped>0"
+    );
+    c.shutdown().await;
+}
+
+// ─── Behavior: failure modes (handler short-circuits before HTTP) ────────
+
+#[tokio::test]
+async fn publish_event_missing_token_surfaces_auth_error_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0) // no token → must short-circuit before any HTTP
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        // NO_TICKETS_TOKEN deliberately absent
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_TOKEN"),
+        "missing-token error must name the env var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_missing_api_url_surfaces_config_error_before_http() {
+    // Symmetric to missing-token: NO_TICKETS_API_URL absent must
+    // produce a config error rather than a hung HTTP call against
+    // the default production URL (which a test machine probably
+    // can't reach).
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        // NO_TICKETS_API_URL deliberately absent
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_API_URL"),
+        "missing-api-url error must name the env var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_unknown_event_type_short_circuits_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0) // unknown type → local validate fails → no HTTP
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "not.a.real.type.v999",
+                    "data": {},
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("unknown") || msg.contains("not.a.real.type.v999"),
+        "unknown-type error must name the offending type or describe it as unknown; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_schema_validation_failure_short_circuits_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0) // schema fail → local validate → no HTTP
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    // `taskId` should be a string; pass a number to force a schema fail.
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": { "taskId": 42 },
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("validation") || msg.to_lowercase().contains("schema"),
+        "schema-fail error must say so; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Behavior: server-side failure responses surface as MCP errors ───────
+
+#[tokio::test]
+async fn publish_event_5xx_response_surfaces_transport_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1) // single attempt — no retry in this slice
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("503") || msg.to_lowercase().contains("server"),
+        "5xx must surface as a transport/server error; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Wire shape: source identity + project attribute ─────────────────────
+
+#[tokio::test]
+async fn publish_event_wire_body_has_source_name_nt_mcp() {
+    // Source identity is server-side per the TS reference. Agents
+    // cannot override `source` via tool args (schema test above pins
+    // the absence of a `source` property), AND the server fills
+    // source.name with the fixed identity `"nt-mcp"`. A regression
+    // that copied `nt-cli`'s default (`"nt-cli"`) would land here.
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let parsed: Value = serde_json::from_str(&body).expect("body is JSON");
+    let envelope = &parsed[0];
+    assert_eq!(
+        envelope["source"]["name"], "nt-mcp",
+        "MCP-side source.name must be `nt-mcp`; got body={body}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_wire_body_carries_project_in_source_attributes() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo-project",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let envelope: Value = serde_json::from_str(&body).expect("body JSON");
+    assert_eq!(
+        envelope[0]["source"]["attributes"]["project"], "demo-project",
+        "project arg must land on source.attributes.project; got body={body}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_wire_body_omits_optional_fields_when_args_absent() {
+    // Regression pin: optional envelope-level fields (subject,
+    // parentEventId, traceId, dedupeKey, occurredAt) MUST NOT appear
+    // on the wire when not supplied. Matches the single-event publish
+    // semantics from Task 15.
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "project": "demo",
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let envelope: Value = serde_json::from_str(&body).expect("body JSON");
+    let env = &envelope[0];
+    for key in [
+        "subject",
+        "parentEventId",
+        "traceId",
+        "dedupeKey",
+        "occurredAt",
+    ] {
+        assert!(
+            env.get(key).is_none(),
+            "{key} must be absent when arg not supplied; got envelope={env}",
+        );
+    }
+    c.shutdown().await;
 }

@@ -1,8 +1,9 @@
+mod config;
 mod fixtures;
 mod server;
 mod tools;
 
-use rmcp::{ServiceExt, transport::stdio};
+use rmcp::{transport::stdio, ServiceExt};
 use server::NtServer;
 use tracing_subscriber::EnvFilter;
 
@@ -16,8 +17,7 @@ async fn main() -> anyhow::Result<()> {
     // future usage in tests) is a no-op rather than a panic.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
         .with_ansi(false)

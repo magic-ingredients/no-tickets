@@ -6,14 +6,17 @@
 //! here, so Task 5 (full MCP surface) can add tools alongside without
 //! the impl block becoming a god struct.
 
-use rmcp::{ErrorData as McpError, model::*};
+use rmcp::{model::*, ErrorData as McpError};
 use serde::{Deserialize, Serialize};
 
 use crate::fixtures::EventTypeRow;
 
 /// Exact TS-parity description from src/mcp/tools/list-event-types.ts.
 /// Pinned here as a constant so the integration test asserts on
-/// byte-for-byte equality rather than a substring match.
+/// byte-for-byte equality rather than a substring match. The literal
+/// lives in the `#[tool]` attribute over in `server.rs` (rmcp's macro
+/// requires a string literal); this constant is the test-side anchor.
+#[allow(dead_code)] // Test-only anchor; the literal lives in the #[tool] attribute.
 pub const TS_PARITY_DESCRIPTION: &str = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async.";
 
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
@@ -54,7 +57,6 @@ pub fn handle(
         .collect();
 
     let payload = Payload { types: filtered };
-    let json = serde_json::to_string(&payload)
-        .expect("Payload always serialises");
+    let json = serde_json::to_string(&payload).expect("Payload always serialises");
     Ok(CallToolResult::success(vec![Content::text(json)]))
 }

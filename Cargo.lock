@@ -1228,6 +1228,8 @@ name = "nt-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "nt-schemas",
+ "reqwest",
  "rmcp",
  "schemars",
  "serde",
@@ -1236,6 +1238,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

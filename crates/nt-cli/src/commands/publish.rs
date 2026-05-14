@@ -771,4 +771,69 @@ mod tests {
         let meta = build_metadata(&args, None).expect("empty value must be accepted");
         assert_eq!(meta.attributes.get("foo"), Some(&""));
     }
+
+    // ─── machine_hash injection ordering (Task 18) ───────────────────────
+
+    #[test]
+    fn build_metadata_machine_hash_inserts_under_machine_key_when_present() {
+        let attrs: [String; 0] = [];
+        let args = args_with_attrs("demo", &attrs);
+        let meta = build_metadata(&args, Some("abcd1234ef567890")).expect("machine hash injection");
+        assert_eq!(
+            meta.attributes.get("machine"),
+            Some(&"abcd1234ef567890"),
+            "machine hash must land under the `machine` attributes key",
+        );
+        assert_eq!(
+            meta.attributes.get("project"),
+            Some(&"demo"),
+            "project entry must remain alongside the machine hash",
+        );
+    }
+
+    #[test]
+    fn build_metadata_omits_machine_key_when_no_hash_provided() {
+        let attrs: [String; 0] = [];
+        let args = args_with_attrs("demo", &attrs);
+        let meta = build_metadata(&args, None).expect("no machine hash");
+        assert!(
+            !meta.attributes.contains_key("machine"),
+            "no `machine` key when hash is None; got {:?}",
+            meta.attributes,
+        );
+    }
+
+    #[test]
+    fn build_metadata_source_attribute_machine_overrides_auto_hash_unit_pin() {
+        // Direct unit-level pin of the override invariant the
+        // integration test `publish_source_attribute_machine_flag_
+        // overrides_auto_hash` covers end-to-end. Catches a regression
+        // that swaps the insert order (auto-hash AFTER flag-loop)
+        // without requiring a binary build + wiremock round-trip.
+        let attrs = ["machine=manual-override".to_string()];
+        let args = args_with_attrs("demo", &attrs);
+        let meta =
+            build_metadata(&args, Some("auto-computed-hash")).expect("override case must parse");
+        assert_eq!(
+            meta.attributes.get("machine"),
+            Some(&"manual-override"),
+            "--source-attribute machine= MUST overwrite the auto-computed hash",
+        );
+    }
+
+    #[test]
+    fn build_metadata_unrelated_flag_attributes_coexist_with_machine_hash() {
+        // Mixed-key pin: auto-hash and unrelated flag attributes
+        // (different keys) must both land. A mutation that overrides
+        // ALL keys with the auto-hash (or inserts the auto-hash
+        // somewhere wrong) would fail this test.
+        let attrs = ["foo=bar".to_string(), "baz=qux".to_string()];
+        let args = args_with_attrs("demo", &attrs);
+        let meta =
+            build_metadata(&args, Some("hash-value-here")).expect("mixed-key case must parse");
+        assert_eq!(meta.attributes.get("machine"), Some(&"hash-value-here"));
+        assert_eq!(meta.attributes.get("foo"), Some(&"bar"));
+        assert_eq!(meta.attributes.get("baz"), Some(&"qux"));
+        assert_eq!(meta.attributes.get("project"), Some(&"demo"));
+    }
 }

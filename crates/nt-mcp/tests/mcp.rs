@@ -1544,3 +1544,555 @@ async fn publish_event_call_does_not_corrupt_stdout_jsonrpc_stream() {
             .unwrap_or_else(|e| panic!("stdout polluted by non-JSON line {trimmed:?}: {e}"));
     }
 }
+
+// ─── describe_event_type tool (Task 20) ────────────────────────────────────
+
+/// Byte-for-byte TS-parity description from
+/// `src/mcp/tools/describe-event-type.ts`. Pinned as a string literal
+/// (the binary's production constant lives in
+/// `crates/nt-mcp/src/tools/describe_event_type.rs` but the binary
+/// isn't a library, so the test can't see it). Drift here is the same
+/// kind the list_event_types / publish_event parity tests catch.
+const DESCRIBE_EVENT_TYPE_TS_PARITY_DESCRIPTION: &str = "Return schema, dedupe strategy, retention, and a synthesised example payload for a single event type. Call this before publish_event when you do not already know the schema; the example field is a starting point you can adapt.";
+
+/// Canonical event-type detail body — the wire shape the server
+/// returns for `GET /v1/registry/event-types/{id}`. Matches the TS
+/// `detailResponseSchema` in `src/registry/client.ts`: a top-level
+/// `eventType` envelope wrapping the spec. Only the fields the test
+/// is asserting on are populated; the per-test helpers below extend
+/// with optional fields (`dedupeStrategy`, `retentionDays`, etc).
+fn detail_body_minimal(id: &str) -> Value {
+    json!({
+        "eventType": {
+            "id": id,
+            "domain": "ai",
+            "entity": "task",
+            "action": "completed",
+            "version": "v1",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "taskId": { "type": "string" },
+                    "outcome": { "type": "string", "enum": ["success", "failure"] }
+                },
+                "required": ["taskId", "outcome"]
+            }
+        }
+    })
+}
+
+// ─── Discovery: tool is registered with the right shape ──────────────────
+
+#[tokio::test]
+async fn tools_list_includes_describe_event_type_with_ts_parity_description() {
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let tools = resp["result"]["tools"].as_array().expect("tools array");
+    let entry = tools
+        .iter()
+        .find(|t| t["name"] == "describe_event_type")
+        .expect("describe_event_type tool registered");
+    assert_eq!(
+        entry["description"].as_str(),
+        Some(DESCRIBE_EVENT_TYPE_TS_PARITY_DESCRIPTION),
+        "describe_event_type description must byte-match TS reference",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_input_schema_requires_id() {
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let entry = resp["result"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|t| t["name"] == "describe_event_type")
+        .expect("describe_event_type tool registered")
+        .clone();
+    let schema = &entry["inputSchema"];
+    let props = &schema["properties"];
+    assert!(
+        props["id"].is_object(),
+        "schema must declare an `id` property; got props={props}",
+    );
+    let required = schema["required"]
+        .as_array()
+        .expect("required array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    assert!(
+        required.iter().any(|r| r == "id"),
+        "schema must require `id`; required={required:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Behavior: happy path GETs the detail endpoint ───────────────────────
+
+#[tokio::test]
+async fn describe_event_type_happy_path_returns_id_schema_and_example() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(detail_body_minimal("ai.task.completed.v1")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["id"], "ai.task.completed.v1",
+        "result.id must echo the requested type id; got {payload}",
+    );
+    assert!(
+        payload["schema"]["properties"].is_object(),
+        "result.schema must be the full JSON Schema; got {payload}",
+    );
+    // The example field comes from synthesise_example on the schema.
+    // For the minimal body, taskId is a string (→ "") and outcome is
+    // an enum-of-strings (→ "success", the first value).
+    let example = &payload["example"];
+    assert_eq!(
+        example["taskId"], "",
+        "example.taskId must be the type-placeholder for string; got example={example}",
+    );
+    assert_eq!(
+        example["outcome"], "success",
+        "example.outcome must be the first enum value; got example={example}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_sends_bearer_token_on_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .and(header("authorization", "Bearer nt_test_token"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(detail_body_minimal("ai.task.completed.v1")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test_token"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["id"], "ai.task.completed.v1",
+        "happy path must complete when bearer matches; got {resp}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_trailing_slash_api_url_routes_to_endpoint_unchanged() {
+    // `NO_TICKETS_API_URL` with a trailing slash MUST land on
+    // `<api_url>/v1/registry/event-types/{id}` (single `/`, not double).
+    // Mirrors the publish_event trailing-slash pin.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(detail_body_minimal("ai.task.completed.v1")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri_with_slash = format!("{}/", server.uri());
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri_with_slash.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["id"], "ai.task.completed.v1",
+        "trailing-slash URL must still GET the detail endpoint",
+    );
+    c.shutdown().await;
+}
+
+// ─── Behavior: failure modes ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn describe_event_type_404_surfaces_not_found_error_naming_the_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ghost.entity.action.v1"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ghost.entity.action.v1" }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("ghost.entity.action.v1"),
+        "404 error must name the missing id verbatim; got {msg:?}",
+    );
+    assert!(
+        msg.to_lowercase().contains("not found") || msg.to_lowercase().contains("unknown"),
+        "404 error must read as not-found; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_5xx_response_surfaces_transport_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1) // single attempt — no retry per PRD
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("503") || msg.to_lowercase().contains("server"),
+        "5xx must surface as a transport/server error; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_missing_schema_field_surfaces_contract_violation() {
+    // The detail endpoint MUST include `schema`; the list endpoint
+    // omits it but describe always hits detail. Absence is a server-
+    // contract violation worth surfacing loudly rather than rendering
+    // an empty example. Mirrors the TS handler's explicit guard.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "eventType": {
+                "id": "ai.task.completed.v1",
+                "domain": "ai",
+                "entity": "task",
+                "action": "completed",
+                "version": "v1"
+                // schema deliberately absent
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("schema"),
+        "missing-schema error must mention the field; got {msg:?}",
+    );
+    assert!(
+        msg.to_lowercase().contains("contract") || msg.to_lowercase().contains("missing"),
+        "missing-schema error must call out the server-contract issue; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_missing_token_surfaces_auth_error_before_http() {
+    // Symmetric to publish_event's pre-HTTP env guard. Without
+    // NO_TICKETS_TOKEN we must short-circuit before issuing the GET
+    // — otherwise the mock would record the request.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        // NO_TICKETS_TOKEN deliberately absent
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_TOKEN"),
+        "missing-token error must name the env var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_missing_api_url_surfaces_config_error_before_http() {
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        // NO_TICKETS_API_URL deliberately absent
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_API_URL"),
+        "missing-api-url error must name the env var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Optional-field passthrough on the result envelope ───────────────────
+
+#[tokio::test]
+async fn describe_event_type_passes_through_optional_fields_when_present() {
+    // The TS handler camelCase → snake_case maps the optional fields:
+    //   dedupeStrategy  → dedupe_strategy
+    //   retentionDays   → retention_days
+    //   uiHints         → ui_hints
+    //   deprecatedAt    → deprecated_at
+    // Pin the renames + presence end-to-end so a regression that drops
+    // one of them silently doesn't pass.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "eventType": {
+                "id": "ai.task.completed.v1",
+                "domain": "ai",
+                "entity": "task",
+                "action": "completed",
+                "version": "v1",
+                "schema": {
+                    "type": "object",
+                    "properties": { "taskId": { "type": "string" } }
+                },
+                "dedupeStrategy": "by-dedupe-key",
+                "retentionDays": 30,
+                "uiHints": { "color": "blue" },
+                "deprecatedAt": "2026-01-01T00:00:00.000Z"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert_eq!(
+        payload["dedupe_strategy"], "by-dedupe-key",
+        "dedupeStrategy must rename to dedupe_strategy; got {payload}",
+    );
+    assert_eq!(
+        payload["retention_days"], 30,
+        "retentionDays must rename to retention_days; got {payload}",
+    );
+    assert_eq!(
+        payload["ui_hints"]["color"], "blue",
+        "uiHints must rename to ui_hints; got {payload}",
+    );
+    assert_eq!(
+        payload["deprecated_at"], "2026-01-01T00:00:00.000Z",
+        "deprecatedAt must rename to deprecated_at; got {payload}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn describe_event_type_omits_optional_fields_when_absent_from_spec() {
+    // Symmetric to passthrough — when the server omits the optional
+    // fields, the tool result MUST also omit them (not emit JSON null
+    // / empty string / 0). Mirrors the TS handler's spread pattern.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(detail_body_minimal("ai.task.completed.v1")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    for absent in ["dedupe_strategy", "retention_days", "ui_hints", "deprecated_at"] {
+        assert!(
+            payload.get(absent).is_none(),
+            "{absent} must be omitted when the spec doesn't carry it; got payload={payload}",
+        );
+    }
+    c.shutdown().await;
+}
+
+// ─── Stdout-purity coverage for describe_event_type ──────────────────────
+
+#[tokio::test]
+async fn describe_event_type_call_does_not_corrupt_stdout_jsonrpc_stream() {
+    // Same invariant as the publish_event / list_event_types stdout-
+    // purity tests. The describe path has its own code (HTTP GET, JSON
+    // unwrap, synthesise_example); a stray `println!` anywhere in
+    // that path would silently disconnect Claude Code.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(wm_path("/v1/registry/event-types/ai.task.completed.v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(detail_body_minimal("ai.task.completed.v1")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "describe_event_type",
+                "arguments": { "id": "ai.task.completed.v1" }
+            }),
+        )
+        .await;
+    let (captured, _stderr) = c.shutdown().await;
+    for line in &captured {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        serde_json::from_str::<Value>(trimmed)
+            .unwrap_or_else(|e| panic!("stdout polluted by non-JSON line {trimmed:?}: {e}"));
+    }
+}

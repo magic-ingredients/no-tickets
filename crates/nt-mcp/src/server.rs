@@ -15,6 +15,7 @@ use rmcp::{
 
 use crate::config::EnvConfig;
 use crate::fixtures::{all_event_types, EventTypeRow};
+use crate::tools::describe_event_type::{self, DescribeEventTypeArgs};
 use crate::tools::list_event_types::{self, ListEventTypesArgs};
 use crate::tools::publish_event::{self, PublishEventArgs};
 
@@ -97,6 +98,26 @@ impl NtServer {
     ) -> Result<CallToolResult, McpError> {
         let config = EnvConfig::from_env().map_err(|msg| McpError::invalid_params(msg, None))?;
         publish_event::handle(&args, &config, &self.http_client).await
+    }
+
+    // Description MUST stay byte-for-byte in sync with
+    // `tools::describe_event_type::TS_PARITY_DESCRIPTION`. rmcp's
+    // `#[tool]` macro requires a string literal so the constant can't
+    // be referenced directly here.
+    //
+    // Env resolution is lazy, matching `publish_event` — a missing
+    // NO_TICKETS_TOKEN / NO_TICKETS_API_URL surfaces per-call rather
+    // than failing the server at boot, so the auth-not-required tools
+    // remain callable in the same session.
+    #[tool(
+        description = "Return schema, dedupe strategy, retention, and a synthesised example payload for a single event type. Call this before publish_event when you do not already know the schema; the example field is a starting point you can adapt."
+    )]
+    async fn describe_event_type(
+        &self,
+        Parameters(args): Parameters<DescribeEventTypeArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let config = EnvConfig::from_env().map_err(|msg| McpError::invalid_params(msg, None))?;
+        describe_event_type::handle(&args, &config, &self.http_client).await
     }
 }
 

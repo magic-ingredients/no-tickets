@@ -32,14 +32,29 @@ enum Commands {
     Logout,
     /// Print authentication and locally-registered push tokens as JSON.
     Status,
-    /// Publish a single event to the configured no-tickets API.
+    /// Publish one or more events to the configured no-tickets API.
+    ///
+    /// Two modes:
+    /// - Single-event: `--type` + `--data` (a JSON payload string).
+    /// - Batch: `--file <path>` (or `-` for stdin) — JSONL, one event
+    ///   object per line. Each line may carry its own `source`
+    ///   override; otherwise the CLI base source is applied.
+    ///
+    /// `--file` is mutually exclusive with `--type` and `--data`.
     Publish {
-        /// Event type id (e.g., `ai.task.completed.v1`).
-        #[arg(long)]
-        r#type: String,
-        /// Event payload as a JSON string.
-        #[arg(long)]
-        data: String,
+        /// Event type id (e.g., `ai.task.completed.v1`). Required in
+        /// single-event mode; unused (and forbidden) with `--file`.
+        #[arg(long, conflicts_with = "file", required_unless_present = "file")]
+        r#type: Option<String>,
+        /// Event payload as a JSON string. Required in single-event
+        /// mode; unused (and forbidden) with `--file`.
+        #[arg(long, conflicts_with = "file", required_unless_present = "file")]
+        data: Option<String>,
+        /// Read a JSONL batch of events from <PATH>, or `-` for stdin.
+        /// One JSON object per line. Mutually exclusive with `--type`
+        /// and `--data`.
+        #[arg(long, value_name = "PATH")]
+        file: Option<String>,
         /// Project name; sent as `--project` for routing alongside the
         /// Bearer token.
         #[arg(long)]
@@ -122,6 +137,7 @@ async fn main() {
         Commands::Publish {
             r#type,
             data,
+            file,
             project,
             subject_type,
             subject_id,
@@ -131,22 +147,58 @@ async fn main() {
             trace,
             dedupe_key,
         } => {
-            commands::publish::run(
-                commands::publish::PublishArgs {
-                    type_id: &r#type,
-                    data: &data,
-                    project: &project,
-                    subject_type: subject_type.as_deref(),
-                    subject_id: subject_id.as_deref(),
-                    source_name: source_name.as_deref(),
-                    source_attributes: &source_attribute,
-                    parent: parent.as_deref(),
-                    trace: trace.as_deref(),
-                    dedupe_key: dedupe_key.as_deref(),
-                },
-                &env,
-            )
-            .await
+            if let Some(batch_path) = file.as_deref() {
+                // Per-event metadata flags (--subject-*, --parent,
+                // --trace, --dedupe-key) are single-event-only: each
+                // batch line carries its own envelope-level metadata.
+                // We could clap-conflict these too, but the cost of a
+                // surface that quietly ignores them is high (silent
+                // data loss); reject early with a clear message.
+                if subject_type.is_some()
+                    || subject_id.is_some()
+                    || parent.is_some()
+                    || trace.is_some()
+                    || dedupe_key.is_some()
+                {
+                    eprintln!(
+                        "--file is incompatible with --subject-type/--subject-id/--parent/--trace/--dedupe-key. \
+                         Per-event metadata in batch mode lives in each JSONL line."
+                    );
+                    1
+                } else {
+                    commands::publish_batch::run(
+                        commands::publish_batch::PublishBatchArgs {
+                            batch_path,
+                            project: &project,
+                            source_name: source_name.as_deref(),
+                            source_attributes: &source_attribute,
+                        },
+                        &env,
+                    )
+                    .await
+                }
+            } else {
+                // clap's `required_unless_present = "file"` guarantees
+                // both --type and --data are Some when --file is None.
+                let r#type = r#type.expect("clap required_unless_present");
+                let data = data.expect("clap required_unless_present");
+                commands::publish::run(
+                    commands::publish::PublishArgs {
+                        type_id: &r#type,
+                        data: &data,
+                        project: &project,
+                        subject_type: subject_type.as_deref(),
+                        subject_id: subject_id.as_deref(),
+                        source_name: source_name.as_deref(),
+                        source_attributes: &source_attribute,
+                        parent: parent.as_deref(),
+                        trace: trace.as_deref(),
+                        dedupe_key: dedupe_key.as_deref(),
+                    },
+                    &env,
+                )
+                .await
+            }
         }
         Commands::Token { action } => match action {
             TokenAction::Add {

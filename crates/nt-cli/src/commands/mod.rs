@@ -1,6 +1,7 @@
 pub mod init;
 pub mod logout;
 pub mod publish;
+pub mod publish_batch;
 pub mod status;
 pub mod token_add;
 pub mod token_list;

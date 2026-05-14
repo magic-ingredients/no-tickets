@@ -232,6 +232,395 @@ async fn publish_wire_body_field_order_is_type_data_source() {
     );
 }
 
+// ─── Task 15: optional metadata fields on the wire body ──────────────────
+//
+// Each test mounts a wiremock that records the request body so the
+// assertions can pin both the *presence* and *placement* of each
+// optional field. Field-shape parity with the TS reference (src/cli/
+// commands/publish/single.ts) is the contract: a field is OMITTED when
+// the flag is absent (no JSON null, no empty string), and the on-wire
+// order is `type, data, subject?, source, parentEventId?, traceId?,
+// dedupeKey?`.
+
+const HAPPY_RESPONSE: &str = r#"{"ingested":1,"deduped":0,"ids":["x"]}"#;
+
+fn happy_responder() -> impl Fn(&wiremock::Request) -> ResponseTemplate + Send + Sync + 'static {
+    |_req: &wiremock::Request| {
+        ResponseTemplate::new(200).set_body_raw(HAPPY_RESPONSE.as_bytes(), "application/json")
+    }
+}
+
+async fn capture_publish_body(
+    server: &MockServer,
+) -> std::sync::Arc<std::sync::Mutex<Option<String>>> {
+    use std::sync::{Arc, Mutex};
+    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let captured_for_responder = captured.clone();
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(move |req: &wiremock::Request| {
+            let body = String::from_utf8(req.body.clone()).expect("body utf8");
+            *captured_for_responder.lock().unwrap() = Some(body);
+            ResponseTemplate::new(200).set_body_raw(HAPPY_RESPONSE.as_bytes(), "application/json")
+        })
+        .expect(1)
+        .mount(server)
+        .await;
+    captured
+}
+
+const BASE_TYPE: &str = "ai.task.completed.v1";
+const BASE_DATA: &str = r#"{"taskId":"t-1","sessionId":"s-1"}"#;
+
+fn base_args<'a>() -> Vec<&'a str> {
+    vec![
+        "--type",
+        BASE_TYPE,
+        "--data",
+        BASE_DATA,
+        "--project",
+        "demo",
+    ]
+}
+
+#[tokio::test]
+async fn publish_emits_subject_when_both_subject_flags_are_set() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--subject-type", "task", "--subject-id", "task-42"]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        body.contains(r#""subject":{"type":"task","id":"task-42"}"#),
+        "expected subject object on wire; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_omits_subject_when_neither_flag_present() {
+    // Regression pin for current spike behaviour: no subject flags →
+    // the `subject` key MUST NOT appear on the wire (TS conditional-
+    // spread emission; not JSON `null`, not an empty object).
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &base_args(),
+    )
+    .await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        !body.contains(r#""subject""#),
+        "subject must be omitted when no subject flags set; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_subject_type_without_subject_id_exits_one_with_usage_error() {
+    // No server needed — the binary must reject before any HTTP call.
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--subject-type", "task"]);
+    // Use a deliberately-unreachable URL so any escape past the usage
+    // gate would surface as a network error (not a silent success).
+    let server_uri = "http://127.0.0.1:1"; // port 1 is reserved/refused
+    let out = run_nt_publish(server_uri, Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 1, "expected usage-error exit; got {out:?}");
+    assert!(
+        out.stderr.contains("--subject-id"),
+        "stderr must name the missing flag; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_subject_id_without_subject_type_exits_one_with_usage_error() {
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--subject-id", "task-42"]);
+    let server_uri = "http://127.0.0.1:1";
+    let out = run_nt_publish(server_uri, Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 1, "expected usage-error exit; got {out:?}");
+    assert!(
+        out.stderr.contains("--subject-type"),
+        "stderr must name the missing flag; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_emits_parent_event_id_when_parent_flag_set() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--parent", "evt_parent_123"]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        body.contains(r#""parentEventId":"evt_parent_123""#),
+        "expected parentEventId on wire; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_emits_trace_id_when_trace_flag_set() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--trace", "trace-abc"]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        body.contains(r#""traceId":"trace-abc""#),
+        "expected traceId on wire; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_emits_dedupe_key_when_dedupe_key_flag_set() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--dedupe-key", "dk-001"]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        body.contains(r#""dedupeKey":"dk-001""#),
+        "expected dedupeKey on wire; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_source_name_flag_overrides_default_nt_cli() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--source-name", "my-cli-wrapper"]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        body.contains(r#""name":"my-cli-wrapper""#),
+        "source.name must reflect --source-name override; got {body}",
+    );
+    // Pin: when --source-name is set, the default "nt-cli" must NOT
+    // appear as the source.name. (It could still appear elsewhere if
+    // a future caller stuck it in data, but with the test payload it
+    // wouldn't.)
+    assert!(
+        !body.contains(r#""name":"nt-cli""#),
+        "default source.name must be replaced; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_source_attribute_flag_merges_into_attributes() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--source-attribute", "runner=github-actions"]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    // Both the existing `project` AND the new flag-derived attribute
+    // must appear in source.attributes.
+    assert!(
+        body.contains(r#""runner":"github-actions""#),
+        "flag attribute must merge into source.attributes; got {body}",
+    );
+    assert!(
+        body.contains(r#""project":"demo""#),
+        "existing project attribute must be preserved; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_repeated_source_attribute_last_wins_on_duplicate_key() {
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend([
+        "--source-attribute",
+        "foo=first",
+        "--source-attribute",
+        "foo=second",
+    ]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    assert!(
+        body.contains(r#""foo":"second""#),
+        "last value must win on duplicate keys; got {body}",
+    );
+    assert!(
+        !body.contains(r#""foo":"first""#),
+        "first value must be replaced; got {body}",
+    );
+}
+
+#[tokio::test]
+async fn publish_malformed_source_attribute_without_equals_exits_one() {
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--source-attribute", "bareword"]);
+    let server_uri = "http://127.0.0.1:1";
+    let out = run_nt_publish(server_uri, Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 1, "expected usage-error exit; got {out:?}");
+    assert!(
+        out.stderr.contains("--source-attribute"),
+        "stderr must name the flag; got {:?}",
+        out.stderr,
+    );
+    assert!(
+        out.stderr.contains("bareword"),
+        "stderr must surface the malformed value; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_malformed_source_attribute_with_empty_key_exits_one() {
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend(["--source-attribute", "=value"]);
+    let server_uri = "http://127.0.0.1:1";
+    let out = run_nt_publish(server_uri, Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 1, "expected usage-error exit; got {out:?}");
+    assert!(
+        out.stderr.contains("--source-attribute"),
+        "stderr must name the flag; got {:?}",
+        out.stderr,
+    );
+}
+
+#[tokio::test]
+async fn publish_optional_metadata_fields_are_omitted_when_no_flags_set() {
+    // Single regression pin combining all optional fields: with none
+    // of the new flags, none of the new wire keys can appear. Prevents
+    // any default-emission regression that would creep in if a future
+    // change defaulted `--trace` to something or always wrote
+    // `dedupeKey: ""`.
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+
+    let home = tempdir();
+    let out = run_nt_publish(
+        &server.uri(),
+        Some("nt_push_token"),
+        home.path(),
+        &base_args(),
+    )
+    .await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    for omitted in [
+        r#""subject""#,
+        r#""parentEventId""#,
+        r#""traceId""#,
+        r#""dedupeKey""#,
+    ] {
+        assert!(
+            !body.contains(omitted),
+            "{omitted} must be omitted when its flag is absent; got {body}",
+        );
+    }
+}
+
+#[tokio::test]
+async fn publish_wire_field_order_with_all_optionals_set() {
+    // ADR-2-aligned wire order: type, data, subject?, source,
+    // parentEventId?, traceId?, dedupeKey?. With every optional field
+    // set, the byte-position assertions cover the full envelope shape.
+    use std::sync::{Arc, Mutex};
+
+    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let captured_for_responder = captured.clone();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(move |req: &wiremock::Request| {
+            let body = String::from_utf8(req.body.clone()).expect("body utf8");
+            *captured_for_responder.lock().unwrap() = Some(body);
+            ResponseTemplate::new(200).set_body_raw(HAPPY_RESPONSE.as_bytes(), "application/json")
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+    let _ = happy_responder; // suppress unused-warning while keeping helper exported in module scope
+
+    let home = tempdir();
+    let mut args = base_args();
+    args.extend([
+        "--subject-type",
+        "task",
+        "--subject-id",
+        "task-7",
+        "--parent",
+        "evt_p",
+        "--trace",
+        "tr",
+        "--dedupe-key",
+        "dk",
+    ]);
+    let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
+    assert_eq!(out.code, 0, "unexpected failure: stderr={:?}", out.stderr);
+
+    let body = captured.lock().unwrap().clone().expect("captured body");
+    let p = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing {needle:?} in {body:?}"))
+    };
+    let t_type = p(r#""type":"ai.task.completed.v1""#);
+    let t_data = p(r#""data":{"#);
+    let t_subj = p(r#""subject":{"type":"task""#);
+    let t_src = p(r#""source":{"#);
+    let t_par = p(r#""parentEventId":"evt_p""#);
+    let t_trc = p(r#""traceId":"tr""#);
+    let t_dk = p(r#""dedupeKey":"dk""#);
+    assert!(
+        t_type < t_data
+            && t_data < t_subj
+            && t_subj < t_src
+            && t_src < t_par
+            && t_par < t_trc
+            && t_trc < t_dk,
+        "wire order must be type, data, subject, source, parentEventId, traceId, dedupeKey — got {body}",
+    );
+}
+
 // ─── Missing token short-circuits BEFORE any request ─────────────────────
 
 #[tokio::test]

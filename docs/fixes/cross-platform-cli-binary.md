@@ -985,7 +985,8 @@ Once the Rust binary covers the full surface and self-update is in place (Task 1
 - `package.json` — retire the npm package or strip to a placeholder, depending on the chosen Phase 4 path
 
 ### 13. Documentation: install paths
-status: not_started
+status: completed
+commitSha: 3f2c3bd
 
 README + docs covering:
 - Each install channel actually shipping in v0.1.0: `brew install magic-ingredients/tap/no-tickets`, `cargo install no-tickets --locked`, `curl -fsSL https://get.no-tickets.com | sh`, PowerShell installer for Windows, direct tarball download per target

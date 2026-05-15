@@ -504,7 +504,8 @@ End-to-end validation of the assembled distribution pipeline before committing t
 - `publish-homebrew-formula` job shows "skipped" status (not failed) — proves cargo-dist's prerelease gating works as expected
 
 ### 30. Rename source.name wire identifier `"nt-cli"` → `"no-tickets"`
-status: not_started
+status: completed
+commitSha: 8cc2aaa
 
 Every event the CLI publishes carries `"source": { "name": "nt-cli" }` — a vestige of the original package name. Memory `[[project_no_v1_backcompat]]` permits wire-format changes; renaming to `"no-tickets"` aligns with the cargo package + product name. Binary name `nt` stays the daily-use identifier; source.name is the product-facing wire identifier.
 

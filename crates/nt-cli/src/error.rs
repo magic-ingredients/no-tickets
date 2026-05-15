@@ -54,9 +54,18 @@ pub enum NtError {
     /// than 401/403 (which map to NotAuthenticated/PermissionDenied).
     #[error("transport error: {message}")]
     Transport { message: String, retriable: bool },
-    /// Bearer token absent, mis-shaped, or rejected (server 401).
+    /// Bearer token absent, mis-shaped, or rejected (server 401). When
+    /// the failure is a stored-session host mismatch (ADR-0002), the
+    /// optional `stored_host` / `current_host` fields surface the
+    /// concrete hosts so wrappers can show a targeted reconnect prompt
+    /// without parsing `message` (the contract forbids `message`
+    /// parsing).
     #[error("not authenticated: {message}")]
-    NotAuthenticated { message: String },
+    NotAuthenticated {
+        message: String,
+        stored_host: Option<String>,
+        current_host: Option<String>,
+    },
     /// `--project <name>` referenced a project that's not in the local
     /// config registry. `known_projects` carries the locally-registered
     /// project names so wrappers can prompt or auto-complete.
@@ -149,10 +158,23 @@ impl NtError {
                 "message": message,
                 "retriable": retriable,
             }),
-            NtError::NotAuthenticated { message } => json!({
-                "error": class,
-                "message": message,
-            }),
+            NtError::NotAuthenticated {
+                message,
+                stored_host,
+                current_host,
+            } => {
+                let mut obj = json!({
+                    "error": class,
+                    "message": message,
+                });
+                if let Some(h) = stored_host {
+                    obj["storedHost"] = json!(h);
+                }
+                if let Some(h) = current_host {
+                    obj["currentHost"] = json!(h);
+                }
+                obj
+            }
             NtError::ProjectNotRegistered {
                 project,
                 known_projects,
@@ -211,7 +233,7 @@ impl NtError {
                     format!("transport error: {message}")
                 }
             }
-            NtError::NotAuthenticated { message } => {
+            NtError::NotAuthenticated { message, .. } => {
                 format!("not authenticated: {message}")
             }
             NtError::ProjectNotRegistered {
@@ -333,6 +355,8 @@ mod tests {
     fn exit_code_not_authenticated_is_five() {
         let err = NtError::NotAuthenticated {
             message: "no credentials".into(),
+            stored_host: None,
+            current_host: None,
         };
         assert_eq!(err.exit_code(), 5);
     }
@@ -379,6 +403,8 @@ mod tests {
             .exit_code(),
             NtError::NotAuthenticated {
                 message: "x".into(),
+                stored_host: None,
+                current_host: None,
             }
             .exit_code(),
             NtError::ProjectNotRegistered {
@@ -441,7 +467,9 @@ mod tests {
         );
         assert_eq!(
             NtError::NotAuthenticated {
-                message: "x".into()
+                message: "x".into(),
+                stored_host: None,
+                current_host: None,
             }
             .class(),
             "not_authenticated"
@@ -565,10 +593,36 @@ mod tests {
     fn json_not_authenticated_includes_message() {
         let err = NtError::NotAuthenticated {
             message: "no credentials configured".into(),
+            stored_host: None,
+            current_host: None,
         };
         let v = err.to_json();
         assert_eq!(v["error"], "not_authenticated");
         assert_eq!(v["message"], "no credentials configured");
+        // stored/currentHost absent when None — wrappers iterate
+        // present-only fields.
+        assert!(
+            v.get("storedHost").is_none(),
+            "storedHost must be omitted when None, got: {v:?}"
+        );
+        assert!(
+            v.get("currentHost").is_none(),
+            "currentHost must be omitted when None, got: {v:?}"
+        );
+    }
+
+    #[test]
+    fn json_not_authenticated_includes_hosts_when_present() {
+        // The structured payload carries stored / current hosts as
+        // dedicated fields so wrappers don't have to parse `message`.
+        let err = NtError::NotAuthenticated {
+            message: "host mismatch".into(),
+            stored_host: Some("https://api-staging.no-tickets.com".into()),
+            current_host: Some("http://127.0.0.1:5173".into()),
+        };
+        let v = err.to_json();
+        assert_eq!(v["storedHost"], "https://api-staging.no-tickets.com");
+        assert_eq!(v["currentHost"], "http://127.0.0.1:5173");
     }
 
     #[test]
@@ -662,11 +716,15 @@ mod tests {
     }
 
     #[test]
-    fn human_lines_never_contain_json_braces() {
-        // The whole point of the human variant: no machine-readable
-        // braces leak into a TTY render. Pin across every variant so a
-        // careless refactor can't accidentally route to_json through
-        // to_human.
+    fn human_render_does_not_leak_json_braces_when_payload_is_brace_free() {
+        // Pins the renderer's own behaviour — i.e. `to_human` doesn't
+        // accidentally route through `to_json`. Inputs here are
+        // deliberately brace-free; if a real `ValidationIssue.message`
+        // legitimately contained a `{` (e.g. JSON Schema reporting an
+        // illegal property in `{x: 1}`), this guard would NOT fire and
+        // shouldn't — the renderer faithfully passes through whatever
+        // its payload says. Test scope is "renderer can't synthesise
+        // braces on its own".
         let variants = [
             NtError::Validation {
                 type_id: "x".into(),
@@ -684,6 +742,8 @@ mod tests {
             },
             NtError::NotAuthenticated {
                 message: "x".into(),
+                stored_host: None,
+                current_host: None,
             },
             NtError::ProjectNotRegistered {
                 project: "x".into(),
@@ -784,5 +844,183 @@ mod tests {
         let s = String::from_utf8(stderr).unwrap();
         assert!(!s.contains('{'), "tty render must not be JSON, got: {s}");
         assert!(s.contains("missing --type"), "got: {s}");
+    }
+
+    /// Stand-in for a closed stderr (`nt 2>&-` from the user's shell).
+    /// Every write returns `BrokenPipe`. The contract is: the process
+    /// is exiting anyway, so a stderr-write failure must NOT panic and
+    /// must NOT change the exit code — we still surface the variant's
+    /// documented code so the parent sees the *reason* the binary
+    /// failed, even if the textual description got lost.
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "stderr closed",
+            ))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "stderr closed",
+            ))
+        }
+    }
+
+    #[test]
+    fn emit_and_exit_code_swallows_stderr_write_failure_and_still_returns_variant_code() {
+        // `nt 2>&-` closes the inherited stderr fd. The binary must
+        // still exit with the variant-correct code; the stderr-write
+        // failure is dropped because the process is exiting anyway and
+        // there's no way to surface the secondary failure either.
+        let mut writer = FailingWriter;
+        let code = emit_and_exit_code(
+            Err(NtError::PermissionDenied {
+                domain: "events".into(),
+            }),
+            &mut writer,
+            false,
+        );
+        assert_eq!(
+            code, 3,
+            "failing stderr writer must not change the exit code; \
+             wrapper still needs the variant signal even if the message \
+             was lost"
+        );
+    }
+
+    #[test]
+    fn emit_and_exit_code_ok_with_failing_writer_still_returns_zero() {
+        // Ok path never writes, so a failing writer is unobserved.
+        let mut writer = FailingWriter;
+        let code = emit_and_exit_code(Ok(()), &mut writer, false);
+        assert_eq!(code, 0);
+    }
+
+    // ---- wire-byte stability per variant ------------------------------
+    //
+    // serde_json with the default feature set sorts object keys
+    // alphabetically (BTreeMap-backed `serde_json::Map`). That gives
+    // us a deterministic wire-byte sequence regardless of how the
+    // `json!()` macro orders fields in source — a strictly stronger
+    // property than "preserves insertion order". The snapshots below
+    // pin the alphabetical sequence for each variant so a refactor
+    // that, say, enables the `preserve_order` feature on serde_json
+    // (which would silently re-order keys) fails loudly here.
+    //
+    // If a future change deliberately changes the wire shape (add a
+    // field, rename a key, switch a default), update the snapshot AND
+    // the example in `docs/binary-error-contract.md` in the same
+    // commit.
+
+    #[test]
+    fn wire_byte_snapshot_validation_single_event() {
+        let err = NtError::Validation {
+            type_id: "ai.task.completed.v1".into(),
+            batch_index: None,
+            issues: vec![issue("/taskId", "required")],
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"validation_error","issues":[{"message":"required","path":"/taskId"}],"typeId":"ai.task.completed.v1"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_validation_batch_mode_includes_batch_index() {
+        let err = NtError::Validation {
+            type_id: "ai.task.completed.v1".into(),
+            batch_index: Some(3),
+            issues: vec![issue("/taskId", "required")],
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"batchIndex":3,"error":"validation_error","issues":[{"message":"required","path":"/taskId"}],"typeId":"ai.task.completed.v1"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_unknown_event_type() {
+        let err = NtError::UnknownEventType {
+            type_id: "no.such.v1".into(),
+            suggestions: vec!["maybe.this.v1".into()],
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"unknown_event_type","suggestions":["maybe.this.v1"],"typeId":"no.such.v1"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_permission_denied() {
+        let err = NtError::PermissionDenied {
+            domain: "events".into(),
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"domain":"events","error":"permission_denied"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_transport_retriable() {
+        let err = NtError::Transport {
+            message: "server returned 503".into(),
+            retriable: true,
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"transport_error","message":"server returned 503","retriable":true}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_not_authenticated_with_hosts() {
+        let err = NtError::NotAuthenticated {
+            message: "host mismatch".into(),
+            stored_host: Some("https://a.example".into()),
+            current_host: Some("https://b.example".into()),
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"currentHost":"https://b.example","error":"not_authenticated","message":"host mismatch","storedHost":"https://a.example"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_not_authenticated_without_hosts() {
+        let err = NtError::NotAuthenticated {
+            message: "no creds".into(),
+            stored_host: None,
+            current_host: None,
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"not_authenticated","message":"no creds"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_project_not_registered() {
+        let err = NtError::ProjectNotRegistered {
+            project: "missing".into(),
+            known_projects: vec!["demo".into(), "prod".into()],
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"project_not_registered","knownProjects":["demo","prod"],"project":"missing"}"#
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_usage() {
+        let err = NtError::Usage {
+            message: "missing --type".into(),
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"usage","message":"missing --type"}"#
+        );
     }
 }

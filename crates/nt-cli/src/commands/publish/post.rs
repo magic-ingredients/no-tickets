@@ -46,6 +46,22 @@ fn map_transport_error(e: TransportError) -> NtError {
                 } else {
                     format!("server rejected the bearer token (401): {body}")
                 },
+                stored_host: None,
+                current_host: None,
+            },
+            // 429 — rate-limited. The server is asking us to back off,
+            // not refusing the request on its merits. retriable=true so
+            // wrappers and batch loops back off rather than terminating.
+            // (Pre-Task-26 this fell through to the generic 4xx arm and
+            // got retriable=false, incorrectly classifying throttling
+            // as terminal.)
+            429 => NtError::Transport {
+                message: if body.is_empty() {
+                    "server returned 429 (rate-limited) after retries".to_string()
+                } else {
+                    format!("server returned 429 (rate-limited) after retries: {body}")
+                },
+                retriable: true,
             },
             403 => NtError::PermissionDenied {
                 domain: "events".to_string(),

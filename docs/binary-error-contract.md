@@ -22,7 +22,7 @@ stdout is reserved for the command's success output and stays empty on failure.
 | 2 | `unknown_event_type` | `{"error":"unknown_event_type","typeId":"…","suggestions":["…"]}` |
 | 3 | `permission_denied` | `{"error":"permission_denied","domain":"…"}` |
 | 4 | `transport_error` | `{"error":"transport_error","message":"…","retriable":true\|false}` |
-| 5 | `not_authenticated` | `{"error":"not_authenticated","message":"…"}` |
+| 5 | `not_authenticated` | `{"error":"not_authenticated","message":"…","storedHost"?:"…","currentHost"?:"…"}` |
 | 6 | `project_not_registered` | `{"error":"project_not_registered","project":"…","knownProjects":["…"]}` |
 | 7 | `usage` | `{"error":"usage","message":"…"}` |
 | 64+ | reserved | future error classes |
@@ -34,10 +34,13 @@ stdout is reserved for the command's success output and stays empty on failure.
 - **`batchIndex`** — present only in `validation_error` produced by JSONL batch mode; carries the 1-based line number that failed. Absent (not `null`) in single-event mode.
 - **`issues[]`** — non-empty array; each `{path, message}` describes one schema failure. `path` is a JSON Pointer (`""` for the root).
 - **`suggestions[]`** — possibly-empty fuzzy-match candidates for an unknown type id. Always an array (never `null`) so wrappers can iterate unconditionally.
-- **`domain`** — string identifying the server resource (e.g. `events`, `tokens`). The wrapper can use this to surface a targeted hint.
-- **`retriable`** — boolean. `true` for 5xx / network failure (the caller may retry after a delay). `false` for terminal 4xx that the caller should surface to the user directly.
+- **`domain`** — string identifying the server resource that rejected the request. **As of Task 26 the only emitted value is `"events"`** — the wire layer only touches `/v1/events`. The field exists so wrappers can discriminate when a second domain lands (e.g. `tokens`); building against a single value today is forward-compatible.
+- **`retriable`** — boolean. `true` for 5xx / network failure / **429 (rate-limit)** — the caller may retry after a delay. `false` for terminal 4xx that the caller should surface to the user directly.
 - **`message`** — human-readable context. Pass through to the user, never parse for discrimination.
+- **`storedHost`**, **`currentHost`** — optional, only present on a `not_authenticated` raised by ADR-0002 stored-session host mismatch. When present, the wrapper has enough structured information to build a targeted reconnect prompt without parsing `message`. Both fields are absent (not `null`) when the failure is a plain missing-token case.
 - **`project`**, **`knownProjects[]`** — the unrecognised project name and the locally-registered set. `knownProjects` is always an array (possibly empty).
+
+> **Note on `project_not_registered`**: the variant + its shape are pinned by tests and reserved by the contract, but **as of Task 26 no command's code path constructs it** (the project-registry resolver hasn't been threaded through `publish` / `validate` yet). Wrappers should be prepared to receive it but should not expect to see it in production today. Exit code 6 is reserved either way.
 
 ### Versioning policy
 

@@ -9,8 +9,7 @@
 use crate::credentials::{self, LoadOutcome};
 use crate::env::Env;
 
-pub const NOT_AUTH_MSG: &str =
-    "Not authenticated. Set NO_TICKETS_TOKEN or run `npx no-tickets init`.";
+pub const NOT_AUTH_MSG: &str = "Not authenticated. Set NO_TICKETS_TOKEN or run `nt init`.";
 
 /// Emits the ADR-0002 stored-session host-mismatch warning to stderr.
 /// Centralised so identity-aware callers (status, publish, future commands)

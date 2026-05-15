@@ -207,6 +207,161 @@ async fn publish_bad_data_json_is_usage_exit_7() {
     assert_eq!(v["error"], "usage");
 }
 
+#[tokio::test]
+async fn publish_with_429_surfaces_transport_retriable_true() {
+    // Rate-limit is retriable. Pre-Task-26 fell through to the
+    // generic 4xx arm and got retriable=false, incorrectly telling
+    // batch loops to give up on a transient throttle.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let out = run_nt(
+        home.path(),
+        &[
+            ("NO_TICKETS_TOKEN", "nt_push_test"),
+            ("NO_TICKETS_API_URL", &server.uri()),
+            ("NO_TICKETS_AUTH_URL", "https://unused.example/auth"),
+        ],
+        &[
+            "publish",
+            "--type",
+            TYPE,
+            "--data",
+            DATA,
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+
+    assert_eq!(out.code, 4, "429 must surface as transport_error exit 4");
+    let v = out.stderr_json();
+    assert_eq!(v["error"], "transport_error");
+    assert_eq!(v["retriable"], true, "429 must mark the error retriable");
+    assert!(
+        v["message"].as_str().is_some_and(|m| m.contains("429")),
+        "message must name the status: {v:?}"
+    );
+}
+
+#[tokio::test]
+async fn publish_with_422_preserves_server_body_in_transport_message() {
+    // 422 (server-side validation) maps to Transport retriable=false
+    // today; the body is preserved verbatim so wrappers can surface
+    // the server's error context. If the server ever ships a stable
+    // structured body, a future task can promote this to a discrete
+    // error class.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(
+            ResponseTemplate::new(422)
+                .set_body_string(r#"{"error":"server_validation","detail":"x"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let out = run_nt(
+        home.path(),
+        &[
+            ("NO_TICKETS_TOKEN", "nt_push_test"),
+            ("NO_TICKETS_API_URL", &server.uri()),
+            ("NO_TICKETS_AUTH_URL", "https://unused.example/auth"),
+        ],
+        &[
+            "publish",
+            "--type",
+            TYPE,
+            "--data",
+            DATA,
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+
+    assert_eq!(out.code, 4, "422 must surface as transport_error exit 4");
+    let v = out.stderr_json();
+    assert_eq!(v["retriable"], false, "4xx other than 429 must be terminal");
+    let msg = v["message"].as_str().expect("message must be string");
+    assert!(msg.contains("422"), "must name status: {msg}");
+    assert!(
+        msg.contains("server_validation"),
+        "server body must be preserved verbatim so wrappers can surface it: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn publish_host_mismatch_surfaces_stored_and_current_host_fields() {
+    // ADR-0002 stored-session host mismatch maps to NotAuthenticated
+    // with dedicated `storedHost` / `currentHost` fields (the contract
+    // forbids wrappers from parsing `message`). Pinned here against
+    // the binary's outside.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let dir = home.path().join(".notickets");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("credentials"),
+        r#"{"token":"nt_session_staging","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api-staging.no-tickets.com"}"#,
+    )
+    .unwrap();
+
+    let out = run_nt(
+        home.path(),
+        &[
+            ("NO_TICKETS_API_URL", &server.uri()),
+            ("NO_TICKETS_AUTH_URL", "https://unused.example/auth"),
+        ],
+        &[
+            "publish",
+            "--type",
+            TYPE,
+            "--data",
+            DATA,
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+
+    assert_eq!(
+        out.code, 5,
+        "host mismatch must surface as not_authenticated"
+    );
+    let v = out.stderr_json();
+    assert_eq!(v["error"], "not_authenticated");
+    assert_eq!(
+        v["storedHost"], "https://api-staging.no-tickets.com",
+        "storedHost field must be on the payload: {v:?}"
+    );
+    let current = v["currentHost"]
+        .as_str()
+        .expect("currentHost must be string");
+    assert!(
+        current.starts_with("http://127.0.0.1:") || current.starts_with("http://[::1]:"),
+        "currentHost must resolve to the wiremock URI, got: {current}"
+    );
+    assert!(
+        !out.stderr.contains("nt_session_staging"),
+        "token MUST NOT leak into the error payload, got: {}",
+        out.stderr
+    );
+}
+
 // Local pre-flight `unknown_event_type` and `validation_error` for
 // `nt publish` are out of scope for Task 26: today `nt publish` ships
 // straight to the server (no local schema check) and surfaces the

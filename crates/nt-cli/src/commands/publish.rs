@@ -90,22 +90,25 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
             stored_host,
             current_host,
         } => {
-            // The host-mismatch context is folded into the
-            // `NotAuthenticated` message so wrappers see exactly one
-            // structured line on stderr (not a free-text warning
-            // followed by a JSON error). The diagnostic value is
-            // preserved — humans see which hosts disagreed; wrappers
-            // get a single parseable line.
+            // Stored / current hosts go into dedicated fields on the
+            // structured payload so wrappers can build their own
+            // reconnect prompt without parsing `message` (which the
+            // contract reserves for human display). `message` itself
+            // gives a TTY user a useful summary.
             return Err(NtError::NotAuthenticated {
                 message: format!(
                     "{NOT_AUTH_MSG} (stored session host {stored_host:?} \
                      does not match current host {current_host:?})"
                 ),
+                stored_host: Some(stored_host),
+                current_host: Some(current_host),
             });
         }
         AuthOutcome::None => {
             return Err(NtError::NotAuthenticated {
                 message: NOT_AUTH_MSG.to_string(),
+                stored_host: None,
+                current_host: None,
             });
         }
     };

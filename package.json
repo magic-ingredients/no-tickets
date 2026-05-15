@@ -38,8 +38,8 @@
     "typecheck": "tsc --noEmit",
     "rust:check": "cargo check -p no-tickets --tests",
     "rust:clippy": "cargo clippy -p no-tickets --all-targets -- -D warnings",
-    "rust:fmt": "cargo fmt --check -p no-tickets",
-    "rust:fmt:fix": "cargo fmt -p no-tickets",
+    "rust:fmt": "cargo fmt --check",
+    "rust:fmt:fix": "cargo fmt",
     "rust:test": "cargo test -p no-tickets",
     "rust:mutants": "cargo mutants --package no-tickets",
     "rust:precommit": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check"

@@ -17,7 +17,7 @@ use rmcp::{
 };
 
 use crate::config::EnvConfig;
-use crate::fixtures::{all_event_types, EventTypeRow};
+use crate::registry_cache::RegistryCache;
 use crate::tools::describe_event_type::{self, DescribeEventTypeArgs};
 use crate::tools::list_event_types::{self, ListEventTypesArgs};
 use crate::tools::publish_event::{self, PublishEventArgs};
@@ -39,11 +39,16 @@ pub struct NtServer {
     // the dead-code analyser doesn't see that path. Narrow allow.
     #[allow(dead_code)]
     tool_router: ToolRouter<NtServer>,
-    fixtures: &'static [EventTypeRow],
-    /// Shared HTTP client for outbound calls (publish_event today;
-    /// future tools as Task 5 expands). `reqwest::Client` is `Clone`-
-    /// cheap — it's `Arc`-internal — so handing it to each tool
-    /// handler doesn't duplicate connection pools / TLS state.
+    /// Process-lifetime in-memory cache for the event-type registry.
+    /// Populated on first list_event_types call, refreshed
+    /// opportunistically on subsequent ones. Shared (clone is cheap —
+    /// Arc inside) across cloned NtServer instances so rmcp's
+    /// per-request handler cloning doesn't reset the cache.
+    registry: RegistryCache,
+    /// Shared HTTP client for outbound calls (list_event_types,
+    /// publish_event, describe_event_type). `reqwest::Client` is
+    /// `Clone`-cheap — it's `Arc`-internal — so handing it to each
+    /// tool handler doesn't duplicate connection pools / TLS state.
     http_client: reqwest::Client,
 }
 
@@ -51,7 +56,7 @@ impl NtServer {
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
-            fixtures: all_event_types(),
+            registry: RegistryCache::new(),
             http_client: reqwest::Client::builder()
                 .timeout(HTTP_TIMEOUT)
                 .build()
@@ -76,11 +81,12 @@ impl NtServer {
     #[tool(
         description = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async."
     )]
-    fn list_event_types(
+    async fn list_event_types(
         &self,
         Parameters(args): Parameters<ListEventTypesArgs>,
     ) -> Result<CallToolResult, McpError> {
-        list_event_types::handle(&args, self.fixtures)
+        let config = EnvConfig::from_env().map_err(|msg| McpError::invalid_params(msg, None))?;
+        list_event_types::handle(&args, &config, &self.http_client, &self.registry).await
     }
 
     // Description MUST stay byte-for-byte in sync with

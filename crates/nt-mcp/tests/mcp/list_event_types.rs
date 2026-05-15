@@ -22,12 +22,17 @@ use super::common::{collect_error_text, extract_tool_result_payload, McpClient};
 /// would miss.
 const TS_PARITY_DESCRIPTION: &str = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async.";
 
+/// (id, domain, entity, action, version, deprecatedAt-or-None).
+/// Aliased to keep clippy's `type_complexity` lint quiet without
+/// suppressing it crate-wide.
+type RowTuple<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, Option<&'a str>);
+
 /// Canonical list-endpoint body shape — matches the TS
 /// `listResponseSchema` in src/registry/client.ts: a top-level
 /// `eventTypes` envelope wrapping an array of specs.
 /// `deprecatedAt: null` means active; a string datetime means
 /// deprecated. Only the fields tests assert on are populated.
-fn list_body(rows: &[(&str, &str, &str, &str, &str, Option<&str>)]) -> Value {
+fn list_body(rows: &[RowTuple<'_>]) -> Value {
     let arr: Vec<Value> = rows
         .iter()
         .map(|(id, domain, entity, action, version, deprecated_at)| {

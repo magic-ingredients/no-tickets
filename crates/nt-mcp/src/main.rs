@@ -1,7 +1,7 @@
 mod config;
 mod error_map;
 mod example_synth;
-mod fixtures;
+mod registry_cache;
 mod server;
 mod tools;
 

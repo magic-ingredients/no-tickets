@@ -680,8 +680,11 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
     let schema = &entry["inputSchema"];
     let props = &schema["properties"];
 
-    // Required: project, type, data — every event needs these for a
-    // wire-valid envelope.
+    // Required: type, data — every event needs these for a wire-valid
+    // envelope. Project tenancy is server-resolved from the push
+    // token (see notickets-service/.../routes/events.ts); there is no
+    // `project` arg on the tool, and a regression that re-adds one
+    // would fail the "must NOT declare" assertion below.
     let required = schema["required"]
         .as_array()
         .expect("required array")
@@ -689,7 +692,7 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
         .filter_map(|v| v.as_str())
         .map(str::to_string)
         .collect::<Vec<_>>();
-    for needed in ["project", "type", "data"] {
+    for needed in ["type", "data"] {
         assert!(
             required.iter().any(|r| r == needed),
             "schema must require `{needed}`; required={required:?}",
@@ -720,6 +723,15 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
     assert!(
         props.get("source").is_none(),
         "schema must NOT declare a `source` property — server fills it; got props={props}",
+    );
+
+    // `project` was removed 2026-05-15: project tenancy is server-
+    // resolved from the push token, so a client-supplied label
+    // would be advisory-only dead weight. A regression that re-
+    // introduces the arg lands here.
+    assert!(
+        props.get("project").is_none(),
+        "schema must NOT declare a `project` property — tenancy is token-derived; got props={props}",
     );
 
     c.shutdown().await;
@@ -753,7 +765,6 @@ async fn publish_event_happy_path_posts_and_returns_id() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -799,7 +810,6 @@ async fn publish_event_marks_deduped_when_server_reports_only_deduped() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -838,7 +848,6 @@ async fn publish_event_missing_token_surfaces_auth_error_before_http() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -871,7 +880,6 @@ async fn publish_event_missing_api_url_surfaces_config_error_before_http() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -908,7 +916,6 @@ async fn publish_event_unknown_event_type_short_circuits_before_http() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "not.a.real.type.v999",
                     "data": {},
                 }
@@ -946,7 +953,6 @@ async fn publish_event_schema_validation_failure_short_circuits_before_http() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": { "taskId": 42 },
                 }
@@ -985,7 +991,6 @@ async fn publish_event_5xx_response_surfaces_transport_error() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1024,7 +1029,6 @@ async fn publish_event_wire_body_has_source_name_nt_mcp() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1042,7 +1046,14 @@ async fn publish_event_wire_body_has_source_name_nt_mcp() {
 }
 
 #[tokio::test]
-async fn publish_event_wire_body_carries_project_in_source_attributes() {
+async fn publish_event_wire_body_omits_source_attributes_block() {
+    // 2026-05-15: dropped the client-supplied `project` from
+    // `source.attributes`. Project tenancy is server-resolved from
+    // the push token (`pushToken.projectId` in
+    // notickets-service/.../routes/events.ts), so emitting a client
+    // label would be advisory-only dead weight. Pin that the
+    // `attributes` block is OMITTED from the wire (no empty object,
+    // no JSON null) so a regression re-adding it is caught.
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
     let uri = server.uri();
@@ -1058,7 +1069,6 @@ async fn publish_event_wire_body_carries_project_in_source_attributes() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo-project",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1067,9 +1077,17 @@ async fn publish_event_wire_body_carries_project_in_source_attributes() {
         .await;
     let body = captured.lock().unwrap().clone().expect("body captured");
     let envelope: Value = serde_json::from_str(&body).expect("body JSON");
-    assert_eq!(
-        envelope[0]["source"]["attributes"]["project"], "demo-project",
-        "project arg must land on source.attributes.project; got body={body}",
+    let src = &envelope[0]["source"];
+    assert!(
+        src.get("attributes").is_none(),
+        "source.attributes must be omitted from the wire envelope; got src={src}",
+    );
+    // Source still carries name + sdkVersion — only the attributes
+    // block is gone.
+    assert_eq!(src["name"], "nt-mcp", "source.name preserved");
+    assert!(
+        src["sdkVersion"].is_string(),
+        "source.sdkVersion preserved; got src={src}",
     );
     c.shutdown().await;
 }
@@ -1095,7 +1113,6 @@ async fn publish_event_wire_body_omits_optional_fields_when_args_absent() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1141,7 +1158,6 @@ async fn publish_event_empty_token_treated_as_missing_var() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1168,7 +1184,6 @@ async fn publish_event_empty_api_url_treated_as_missing_var() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1214,7 +1229,6 @@ async fn publish_event_empty_ids_array_surfaces_error() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1258,7 +1272,6 @@ async fn publish_event_dedupe_false_when_both_zero() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1301,7 +1314,6 @@ async fn publish_event_dedupe_false_when_both_positive() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1347,7 +1359,6 @@ async fn publish_event_missing_ingested_field_defaults_to_zero_for_dedupe_detect
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1391,7 +1402,6 @@ async fn publish_event_missing_deduped_field_defaults_to_zero_for_dedupe_detecti
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1436,7 +1446,6 @@ async fn publish_event_trailing_slash_api_url_routes_to_v1_events_unchanged() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }
@@ -1475,7 +1484,6 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                     "source": { "name": "evil-agent", "sdkVersion": "0", "attributes": { "spoofed": "yes" } }
@@ -1490,9 +1498,12 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
         src["name"], "nt-mcp",
         "source.name must NOT be spoofable; got body={body}"
     );
+    // No `attributes` block at all on MCP-emitted events as of
+    // 2026-05-15. A spoofed nested `attributes.spoofed` therefore
+    // can't leak — the whole sub-tree is absent.
     assert!(
-        src["attributes"].get("spoofed").is_none(),
-        "spoofed attribute must not leak; got src={src}",
+        src.get("attributes").is_none(),
+        "source.attributes must be absent (and therefore unspoofable); got src={src}",
     );
 }
 
@@ -1527,7 +1538,6 @@ async fn publish_event_call_does_not_corrupt_stdout_jsonrpc_stream() {
             json!({
                 "name": "publish_event",
                 "arguments": {
-                    "project": "demo",
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
                 }

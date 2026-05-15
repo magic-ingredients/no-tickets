@@ -7,9 +7,12 @@
 //!
 //! Source identity (`source.name`) is fixed at `"nt-mcp"` and cannot
 //! be overridden by the agent — matches the TS reference, where the
-//! MCP server fills source server-side. Source attributes carry the
-//! `project` arg (NOT used for token routing — single-token per MCP
-//! server instance per `config::EnvConfig`).
+//! MCP server fills source server-side. No `source.attributes` block:
+//! project tenancy is server-resolved from the push token
+//! (`pushToken.projectId` in
+//! `notickets-service/src/server/routes/events.ts`), so a client-
+//! supplied `project` label would be advisory-only and never
+//! consulted for routing, authz, or counting.
 //!
 //! Retry is intentionally OUT of scope for this slice. The Task 17
 //! retry policy is unlikely to fit MCP's "tool call returns
@@ -36,10 +39,6 @@ pub const TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_e
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PublishEventArgs {
-    /// Project name; appears in `source.attributes.project` on the
-    /// wire. Does NOT route to a different token — the MCP server is
-    /// single-token per invocation (see `config::EnvConfig`).
-    pub project: String,
     /// Event type id (domain.entity.action.vN).
     #[serde(rename = "type")]
     pub type_id: String,
@@ -109,10 +108,10 @@ pub async fn handle(
         Some(_) => {}
     }
 
-    // 2. Build the envelope. Source identity is fixed server-side:
-    //    `source.name = "nt-mcp"`, `source.attributes.project = args.
-    //    project`. The agent cannot override `source` — the input
-    //    schema doesn't expose it (pinned by the discovery test).
+    // 2. Build the envelope. Source identity is fixed: `source.name =
+    //    "nt-mcp"`, no `attributes`. The agent cannot override
+    //    `source` — the input schema doesn't expose it (pinned by the
+    //    discovery test).
     let envelope = build_envelope(args);
 
     // 3. POST /v1/events with Bearer auth. Single attempt — retry is
@@ -177,7 +176,7 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
             serde_json::json!({ "type": s.subject_type, "id": s.id }),
         );
     }
-    envelope.insert("source".to_string(), build_source(args));
+    envelope.insert("source".to_string(), build_source());
     if let Some(p) = &args.parent_event_id {
         envelope.insert("parentEventId".to_string(), Value::String(p.clone()));
     }
@@ -195,13 +194,15 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
 
 /// Build the source identity attached to every MCP-published event.
 /// `name = "nt-mcp"` is fixed — the agent cannot spoof its source via
-/// tool args. `attributes.project` carries the per-call project so a
-/// single MCP server instance can publish to multiple project-labelled
-/// streams (token routing remains single-tenant per server invocation).
-fn build_source(args: &PublishEventArgs) -> Value {
+/// tool args. No `attributes` block: the project is server-resolved
+/// from the push token (`pushToken.projectId` in
+/// `notickets-service/src/server/routes/events.ts`), so a client-
+/// supplied label would be advisory-only and the wire-stored value
+/// would never be consulted for routing, authz, or counting. Keeping
+/// the slot empty avoids the lying-shaped field problem.
+fn build_source() -> Value {
     serde_json::json!({
         "name": "nt-mcp",
         "sdkVersion": env!("CARGO_PKG_VERSION"),
-        "attributes": { "project": args.project },
     })
 }

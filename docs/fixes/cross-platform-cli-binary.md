@@ -411,7 +411,8 @@ Port all commands to Rust per the ADR-0002 surface (the task description here pr
 - Feature-equivalence smoke matrix (above) passes for every command
 
 ### 26. Structured error contract on stderr + exit codes
-status: not_started
+status: completed
+commitSha: 2bc103b
 
 Implement the structured-error contract documented in "Public binary contract" above. Every failure case maps to a typed exit code with a single-line JSON object on stderr. This is the contract per-language wrappers parse; backward compatibility is mandatory.
 

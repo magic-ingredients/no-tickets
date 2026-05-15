@@ -659,7 +659,7 @@ This is bookkeeping — no behaviour change. Pinned by every existing test suite
 
 ### 6. Distribution pipeline via `cargo-dist`
 status: not_started
-depends_on: [24, 25, 11]
+depends_on: [24, 25, 11, 12]
 
 **Why Task 11 (self-update) is a hard prerequisite, not a follow-up:**
 the moment we publish v0.1.0 to install.sh / GH Releases, every
@@ -680,6 +680,30 @@ exempt: those users update via their manager. Task 11 detects the
 install path and redirects appropriately. The blocker only applies
 to the install.sh / direct-download cohort, but they're the
 biggest cohort by design.)
+
+**Why Task 12 (retire TS CLI + MCP code) is also a hard
+prerequisite:** the repo state at the moment of the first public
+release is the reference any contributor or curious user lands on.
+Shipping v0.1.0 with `src/cli/`, `src/cli.ts`, `src/mcp/`, and
+`bin/no-tickets.js` still present advertises a dual TS+Rust surface
+that no longer exists in practice — the TS surface is unmaintained,
+the Rust binary is canonical. Two concrete failures from that state:
+
+1. **`npx @magic-ingredients/no-tickets` keeps serving the old TS
+   CLI** to anyone whose first instinct is npm, directly contradicting
+   the Homebrew/Scoop/install.sh release we just announced. No
+   backcompat is being kept (`project_no_v1_backcompat` is the explicit
+   call), so leaving the npm package on the air is a foot-gun, not a
+   migration path.
+2. **Contributor PRs land on dead code.** A new contributor who
+   reads the README, clones the repo, and modifies what they think is
+   the canonical CLI may spend hours fixing `src/cli/*.ts` before
+   realising it doesn't ship.
+
+Task 12 retires `src/cli/`, `src/cli.ts`, `src/mcp/`,
+`bin/no-tickets.js`, and either strips the npm package to a redirect
+placeholder or retires it entirely. It must land before Task 6 so
+v0.1.0 ships a clean repo with a single canonical surface.
 
 Single config block in `Cargo.toml` drives the full distribution surface: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula publish-and-update, Scoop manifest publish-and-update. Replaces what would otherwise be four separate hand-rolled workflows.
 

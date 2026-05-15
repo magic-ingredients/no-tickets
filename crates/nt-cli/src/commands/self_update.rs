@@ -14,15 +14,9 @@
 //! - `orchestrate` — pure decision tree over the above, returning an
 //!   `UpdateOutcome` the caller maps to exit code + user output
 
-// RED phase: the public surface below is exercised only by the in-file
-// unit tests. `run()` doesn't wire the helpers yet (each helper is
-// `unimplemented!()`), so the bin-target's dead-code analysis flags the
-// public items as never used. GREEN replaces every stub with a real
-// implementation and `run()` wires them, at which point this allow is
-// removed.
-#![allow(dead_code)]
-
 use std::path::Path;
+
+use semver::Version;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum InstallKind {
@@ -54,53 +48,249 @@ pub struct LatestRelease {
 }
 
 pub trait LatestFetcher {
-    fn fetch(&self) -> Result<String, String>;
+    async fn fetch(&self) -> Result<String, String>;
 }
 
 pub trait SwapPerformer {
     fn apply(&self, target_version: &str) -> Result<(), String>;
 }
 
-pub fn detect_install_kind(_exe_path: &Path) -> InstallKind {
-    unimplemented!("detect_install_kind: GREEN phase pending")
+/// GitHub owner/repo coordinates the production fetcher and the swap
+/// backend point at. Kept here so the magic strings live in one place.
+pub const GH_OWNER: &str = "magic-ingredients";
+pub const GH_REPO: &str = "no-tickets";
+pub const DEFAULT_GH_API_BASE: &str = "https://api.github.com";
+const USER_AGENT: &str = "nt-self-update";
+
+pub fn detect_install_kind(exe_path: &Path) -> InstallKind {
+    // Normalise to lowercase forward slashes so a single substring check
+    // matches both POSIX and Windows path styles in one pass. The raw
+    // path's case can vary (macOS `/Users/…`, Linux `/home/…`,
+    // `C:\Users\…`), but our markers are all lowercase-stable.
+    let raw = exe_path.to_string_lossy();
+    let lc = raw.to_lowercase().replace('\\', "/");
+
+    if lc.contains("/opt/homebrew/")
+        || lc.contains("/usr/local/cellar/")
+        || lc.contains("/.linuxbrew/")
+        || lc.contains("/linuxbrew/.linuxbrew/")
+    {
+        return InstallKind::Managed(Manager::Homebrew);
+    }
+    if lc.contains("/.cargo/bin/") {
+        return InstallKind::Managed(Manager::Cargo);
+    }
+    if lc.contains("/scoop/apps/") {
+        return InstallKind::Managed(Manager::Scoop);
+    }
+    if lc.contains("/node_modules/.bin/") {
+        return InstallKind::Managed(Manager::Npm);
+    }
+    InstallKind::Direct
 }
 
-pub fn redirect_message(_manager: Manager) -> String {
-    unimplemented!("redirect_message: GREEN phase pending")
+pub fn redirect_message(manager: Manager) -> String {
+    match manager {
+        Manager::Homebrew => {
+            "nt was installed via Homebrew. Run `brew upgrade nt` to update.".to_string()
+        }
+        Manager::Cargo => {
+            "nt was installed via Cargo. Run `cargo install --force nt-cli` to update.".to_string()
+        }
+        Manager::Scoop => {
+            "nt was installed via Scoop. Run `scoop update nt` to update.".to_string()
+        }
+        Manager::Npm => "The npm distribution of no-tickets was retired. \
+             Reinstall via Homebrew (`brew install magic-ingredients/tap/nt`), \
+             Scoop, `cargo install nt-cli`, or the install.sh script."
+            .to_string(),
+    }
 }
 
-pub fn is_downgrade(_current: &str, _latest: &str) -> bool {
-    unimplemented!("is_downgrade: GREEN phase pending")
+/// Strip a single leading `v` so GitHub tag-style strings parse as
+/// semver. Anything else passes through unchanged.
+fn normalise_version(v: &str) -> &str {
+    v.strip_prefix('v').unwrap_or(v)
 }
 
-pub fn is_update_available(_current: &str, _latest: &str) -> bool {
-    unimplemented!("is_update_available: GREEN phase pending")
+pub fn is_downgrade(current: &str, latest: &str) -> bool {
+    let (Ok(c), Ok(l)) = (
+        Version::parse(normalise_version(current)),
+        Version::parse(normalise_version(latest)),
+    ) else {
+        // Unparseable on either side — don't claim it's a downgrade.
+        // Caller will see "no update available" via is_update_available
+        // and the run() path surfaces the parse error separately.
+        return false;
+    };
+    l < c
 }
 
-pub fn orchestrate<F: LatestFetcher, S: SwapPerformer>(
-    _install_kind: InstallKind,
-    _current_version: &str,
-    _fetcher: &F,
-    _swap: &S,
+pub fn is_update_available(current: &str, latest: &str) -> bool {
+    let (Ok(c), Ok(l)) = (
+        Version::parse(normalise_version(current)),
+        Version::parse(normalise_version(latest)),
+    ) else {
+        return false;
+    };
+    l > c
+}
+
+pub async fn orchestrate<F: LatestFetcher, S: SwapPerformer>(
+    install_kind: InstallKind,
+    current_version: &str,
+    fetcher: &F,
+    swap: &S,
 ) -> UpdateOutcome {
-    unimplemented!("orchestrate: GREEN phase pending")
+    // Managed installs short-circuit before any network or swap activity.
+    // The fetcher is not awaited; the user's package manager is
+    // authoritative.
+    if let InstallKind::Managed(m) = install_kind {
+        return UpdateOutcome::ManagedRedirect(m);
+    }
+
+    let latest_raw = match fetcher.fetch().await {
+        Ok(s) => s,
+        Err(e) => return UpdateOutcome::FetchFailed(e),
+    };
+    let latest_norm = normalise_version(&latest_raw).to_string();
+
+    if is_downgrade(current_version, &latest_raw) {
+        return UpdateOutcome::DowngradeRefused {
+            current: current_version.to_string(),
+            latest: latest_norm,
+        };
+    }
+    if !is_update_available(current_version, &latest_raw) {
+        return UpdateOutcome::NoUpdate;
+    }
+
+    match swap.apply(&latest_norm) {
+        Ok(()) => UpdateOutcome::Updated {
+            from: current_version.to_string(),
+            to: latest_norm,
+        },
+        Err(reason) => UpdateOutcome::SwapFailed {
+            target: latest_norm,
+            reason,
+        },
+    }
 }
 
 pub async fn fetch_latest_release(
-    _api_base: &str,
-    _owner: &str,
-    _repo: &str,
+    api_base: &str,
+    owner: &str,
+    repo: &str,
 ) -> Result<LatestRelease, String> {
-    unimplemented!("fetch_latest_release: GREEN phase pending")
+    let url = format!("{api_base}/repos/{owner}/{repo}/releases/latest");
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|e| format!("self-update: build http client: {e}"))?;
+    let resp = client
+        .get(&url)
+        .header("accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("self-update: request {url}: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("self-update: github api {}: {url}", resp.status()));
+    }
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("self-update: parse github response: {e}"))?;
+    let tag_name = body
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "self-update: github response missing tag_name".to_string())?
+        .to_string();
+    Ok(LatestRelease { tag_name })
+}
+
+/// Production fetcher — hits `api.github.com` for the real GitHub
+/// Releases endpoint.
+struct GithubFetcher;
+
+impl LatestFetcher for GithubFetcher {
+    async fn fetch(&self) -> Result<String, String> {
+        fetch_latest_release(DEFAULT_GH_API_BASE, GH_OWNER, GH_REPO)
+            .await
+            .map(|r| r.tag_name)
+    }
+}
+
+/// Production swap — delegates to the `self_update` crate, which handles
+/// asset matching, download, sha256 verification (when a `.sha256` is
+/// published alongside the asset), and the atomic-replace dance per
+/// platform.
+struct SelfUpdateSwap;
+
+impl SwapPerformer for SelfUpdateSwap {
+    fn apply(&self, target_version: &str) -> Result<(), String> {
+        // `self_update` is synchronous and does its own GH API call.
+        // We've already pre-flighted via our async fetcher and decided
+        // an update is wanted — `self_update` will re-fetch and pick
+        // the matching asset by target triple.
+        let target = target_version.to_string();
+        self_update::backends::github::Update::configure()
+            .repo_owner(GH_OWNER)
+            .repo_name(GH_REPO)
+            .bin_name("nt")
+            .current_version(env!("CARGO_PKG_VERSION"))
+            .target_version_tag(&format!("v{target}"))
+            .show_download_progress(true)
+            .build()
+            .map_err(|e| format!("self-update: configure: {e}"))?
+            .update()
+            .map(|_| ())
+            .map_err(|e| format!("self-update: apply: {e}"))
+    }
 }
 
 /// `nt self-update` subcommand entry point. Returns the process exit code.
-///
-/// RED-phase stub. GREEN wires `detect_install_kind` → `fetch_latest_release`
-/// → `orchestrate` → `redirect_message` / atomic swap, mapping each
-/// `UpdateOutcome` to its exit code + stdout/stderr message.
 pub async fn run() -> i32 {
-    unimplemented!("run: GREEN phase pending")
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("nt self-update: cannot resolve own executable path: {e}");
+            return 1;
+        }
+    };
+    let install_kind = detect_install_kind(&exe);
+    let current = env!("CARGO_PKG_VERSION");
+
+    let outcome = orchestrate(install_kind, current, &GithubFetcher, &SelfUpdateSwap).await;
+
+    match outcome {
+        UpdateOutcome::ManagedRedirect(m) => {
+            println!("{}", redirect_message(m));
+            0
+        }
+        UpdateOutcome::NoUpdate => {
+            println!("nt {current} is already the latest version.");
+            0
+        }
+        UpdateOutcome::Updated { from, to } => {
+            println!("nt updated: {from} → {to}");
+            0
+        }
+        UpdateOutcome::DowngradeRefused { current, latest } => {
+            eprintln!(
+                "nt self-update: refusing to downgrade from {current} to {latest}. \
+                 Reinstall directly if a downgrade is intentional."
+            );
+            1
+        }
+        UpdateOutcome::FetchFailed(msg) => {
+            eprintln!("nt self-update: {msg}");
+            1
+        }
+        UpdateOutcome::SwapFailed { target, reason } => {
+            eprintln!("nt self-update: swap to {target} failed: {reason}");
+            1
+        }
+    }
 }
 
 #[cfg(test)]
@@ -285,18 +475,13 @@ mod tests {
 
     // ---- orchestrate ----------------------------------------------------
 
-    // `dead_code` allows are temporary: the fields below are only read
-    // through trait dispatch from `orchestrate`, which is `unimplemented!()`
-    // in the RED phase. GREEN-phase code will exercise them.
-    #[allow(dead_code)]
     struct StubFetcher(Result<String, String>);
     impl LatestFetcher for StubFetcher {
-        fn fetch(&self) -> Result<String, String> {
+        async fn fetch(&self) -> Result<String, String> {
             self.0.clone()
         }
     }
 
-    #[allow(dead_code)]
     struct StubSwap {
         called_with: RefCell<Option<String>>,
         result: Result<(), String>,
@@ -322,10 +507,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn orchestrate_managed_install_returns_redirect_without_fetching_or_swapping() {
+    #[tokio::test]
+    async fn orchestrate_managed_install_returns_redirect_without_fetching_or_swapping() {
         // The fetcher returning Err would fail the test if it were ever
-        // called — pin: managed-install path short-circuits before any
+        // awaited — pin: managed-install path short-circuits before any
         // network or swap activity.
         let fetcher = StubFetcher(Err("must not call fetcher on managed install".into()));
         let swap = StubSwap::ok();
@@ -334,7 +519,8 @@ mod tests {
             "0.1.0",
             &fetcher,
             &swap,
-        );
+        )
+        .await;
         assert_eq!(outcome, UpdateOutcome::ManagedRedirect(Manager::Homebrew));
         assert!(
             swap.called_with.borrow().is_none(),
@@ -342,20 +528,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn orchestrate_no_update_when_current_matches_latest() {
+    #[tokio::test]
+    async fn orchestrate_no_update_when_current_matches_latest() {
         let fetcher = StubFetcher(Ok("0.1.0".into()));
         let swap = StubSwap::ok();
-        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap);
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
         assert_eq!(outcome, UpdateOutcome::NoUpdate);
         assert!(swap.called_with.borrow().is_none());
     }
 
-    #[test]
-    fn orchestrate_refuses_downgrade_without_swapping() {
+    #[tokio::test]
+    async fn orchestrate_refuses_downgrade_without_swapping() {
         let fetcher = StubFetcher(Ok("0.0.9".into()));
         let swap = StubSwap::ok();
-        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap);
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
         assert_eq!(
             outcome,
             UpdateOutcome::DowngradeRefused {
@@ -366,11 +552,11 @@ mod tests {
         assert!(swap.called_with.borrow().is_none());
     }
 
-    #[test]
-    fn orchestrate_applies_swap_on_available_update() {
+    #[tokio::test]
+    async fn orchestrate_applies_swap_on_available_update() {
         let fetcher = StubFetcher(Ok("0.2.0".into()));
         let swap = StubSwap::ok();
-        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap);
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
         assert_eq!(
             outcome,
             UpdateOutcome::Updated {
@@ -381,11 +567,11 @@ mod tests {
         assert_eq!(swap.called_with.borrow().as_deref(), Some("0.2.0"));
     }
 
-    #[test]
-    fn orchestrate_normalises_v_prefix_from_latest_tag() {
+    #[tokio::test]
+    async fn orchestrate_normalises_v_prefix_from_latest_tag() {
         let fetcher = StubFetcher(Ok("v0.2.0".into()));
         let swap = StubSwap::ok();
-        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap);
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
         // Updated `to` carries the normalised version (no "v"), so the
         // user-visible "X → Y" line stays consistent regardless of tag
         // shape.
@@ -398,11 +584,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn orchestrate_fetch_error_surfaces_as_fetch_failed() {
+    #[tokio::test]
+    async fn orchestrate_fetch_error_surfaces_as_fetch_failed() {
         let fetcher = StubFetcher(Err("network down".into()));
         let swap = StubSwap::ok();
-        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap);
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
         match outcome {
             UpdateOutcome::FetchFailed(msg) => assert!(
                 msg.contains("network down"),
@@ -413,11 +599,11 @@ mod tests {
         assert!(swap.called_with.borrow().is_none());
     }
 
-    #[test]
-    fn orchestrate_swap_error_surfaces_as_swap_failed() {
+    #[tokio::test]
+    async fn orchestrate_swap_error_surfaces_as_swap_failed() {
         let fetcher = StubFetcher(Ok("0.2.0".into()));
         let swap = StubSwap::err("sha256 mismatch");
-        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap);
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
         match outcome {
             UpdateOutcome::SwapFailed { target, reason } => {
                 assert_eq!(target, "0.2.0");

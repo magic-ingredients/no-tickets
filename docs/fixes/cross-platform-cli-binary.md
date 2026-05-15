@@ -565,20 +565,42 @@ Decision blocks nothing in Phase 3 but sets the Phase 4 scope and tells Task 13 
 - A short ADR or a paragraph in `docs/rust-spike-notes.md` captures the decision and its rationale, so future Phase 4 work doesn't have to re-litigate it.
 
 ### 34. Scoop manifest support (Windows)
+status: superseded
+commitSha: null
+
+**Superseded — premature for v0.1.0 and possibly indefinitely.** Two-audience analysis (session 2026-05-15): CI runners install via curl regardless of platform; only developer workstations care about package managers. Scoop targets workstation-Windows users only, and Windows is one of three PM ecosystems (Scoop, winget, Chocolatey) — Scoop is the smallest-reach of the three (winget ships with Windows 10/11 by default, Chocolatey has wider enterprise penetration, Scoop requires the user to bootstrap Scoop itself first). Optimising for the smallest Windows-workstation slice before there's any Windows demand signal isn't worth the maintenance cost.
+
+The PowerShell installer + direct ZIP download cover day-one Windows users. If Windows demand surfaces and a PM channel is asked for, `winget` is the strategic pick (Microsoft first-party, no bucket-repo bootstrap, manifests committed via PR to `microsoft/winget-pkgs`). Open a new task at that point.
+
+### 35. CI integration polish
 status: not_started
-depends_on: [6]
+depends_on: [13, 29]
 
-cargo-dist 0.31.0's installer set is shell/powershell/npm/homebrew/msi — no scoop. Hand-rolled scoop manifest publish required, mirroring the homebrew-tap approach: separate `magic-ingredients/scoop-bucket` repo + manifest committed by a CI step after each release.
+Two-audience framing surfaced during session 2026-05-15: CI runners use `curl … | sh` regardless of platform (no PM, no state between runs); only developer workstations install via brew/cargo/PowerShell/etc. CI usage is likely the larger volume once adoption picks up — every PR / push pulls the binary, vs. one install per dev workstation. This task closes the gap on CI-side ergonomics.
 
-The PowerShell installer covers Windows users on day one; this task is the conventional package-manager experience on top of that.
+**`docs/install.md` additions:**
+- A new "Using no-tickets in CI" section with copy-pasteable recipes for the common providers:
+  - GitHub Actions — single install step + the `echo "$HOME/.local/bin" >> $GITHUB_PATH` step that's required because the shell installer modifies rc files but each Actions step is a fresh shell
+  - GitLab CI — `before_script` install + PATH
+  - Generic shell (CircleCI, Bitbucket Pipelines, Jenkins, Drone) — equivalent recipe
+- A short note on CI auth: `NO_TICKETS_TOKEN` env var bypasses the interactive `nt init` flow; tokens are minted via `nt token add` on a workstation and stashed in the CI provider's secret store.
 
-**Files to modify/create:**
-- `magic-ingredients/scoop-bucket` repo (new, external — empty repo with README; CI populates `bucket/no-tickets.json`)
-- A new GH Actions job that runs after `host`, generates the scoop manifest from release artifact URLs + sha256, and commits to the bucket repo (token: `SCOOP_BUCKET_TOKEN`, parallel to `HOMEBREW_TAP_TOKEN`)
-- Probably `infra/scoop-publisher/` if it grows beyond a few lines of YAML
+**Optional second deliverable: `magic-ingredients/install-no-tickets@v1` GitHub Action**
+
+A composite Action that wraps `curl … | sh` + the PATH addition + a `nt --version` smoke check into one `uses:` line. Marketplace-published so GH-Actions users can do:
+```yaml
+- uses: magic-ingredients/install-no-tickets@v1
+- run: nt publish ...
+  env:
+    NO_TICKETS_TOKEN: ${{ secrets.NO_TICKETS_TOKEN }}
+```
+instead of the 3-step recipe. Optional because the recipe is what most CI providers can use; the Action is the gold-plating for GH-Actions users specifically.
+
+**Smoke-test prerequisite:** the GH Actions recipe should be verified against a real workflow run — fits naturally into Task 29's smoke-test of `v0.0.1-prerelease.1` (add a "verify CI install" step to that task's checklist).
 
 **Acceptance:**
-- After tag push, `scoop bucket add magic-ingredients https://github.com/magic-ingredients/scoop-bucket && scoop install no-tickets` works on Windows
+- `docs/install.md` gains a verified "Using no-tickets in CI" section with at least the GH Actions recipe.
+- (Optional) `magic-ingredients/install-no-tickets@v1` published on the GH Marketplace, with README pointing at it as the preferred GH-Actions install path.
 
 ### 5. Full MCP server surface port
 status: in_progress

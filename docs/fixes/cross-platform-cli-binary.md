@@ -526,7 +526,8 @@ Every event the CLI publishes carries `"source": { "name": "nt-cli" }` — a ves
 - `cargo test --workspace` clean
 
 ### 31. Public-repo polish files
-status: not_started
+status: completed
+commitSha: 670ca49
 
 Repo is going public. Add the GitHub-recognized OSS files so the repo page surfaces the right buttons.
 

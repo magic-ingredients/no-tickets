@@ -7,6 +7,14 @@ repository.workspace = true
 homepage.workspace = true
 description = "no-tickets CLI — Rust port (Phase 2/3 of cross-platform-cli-binary fix)"
 
+# Cargo package stays `nt-cli` (the `nt` name on crates.io is taken;
+# `no-tickets` rename is a Task 8 / Task 13 decision). The homebrew
+# formula is independently namespaced — overriding it to `nt` means
+# `brew install magic-ingredients/tap/nt` works as the fix doc requires
+# even while the cargo package keeps the longer name.
+[package.metadata.dist]
+formula = "nt"
+
 [[bin]]
 name = "nt"
 path = "src/main.rs"

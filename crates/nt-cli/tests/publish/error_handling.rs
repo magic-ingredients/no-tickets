@@ -243,21 +243,28 @@ async fn publish_session_host_mismatch_emits_warning_and_declines_session() {
     )
     .await;
 
-    assert_ne!(out.code, 0, "publish must fail; got {:?}", out);
-    assert!(out.stderr.contains("Warning:"), "got: {:?}", out.stderr);
+    // Task 26: host mismatch now surfaces as the structured
+    // not_authenticated error (exit 5). The stored-host / current-host
+    // context is folded into the `message` field rather than a separate
+    // "Warning:" stderr line — wrappers need exactly one parseable line.
+    assert_eq!(
+        out.code, 5,
+        "publish must surface not_authenticated; got {:?}",
+        out
+    );
     assert!(
-        out.stderr.contains("https://api-staging.no-tickets.com"),
-        "stored host must be named; got: {:?}",
+        out.stderr.contains("\"not_authenticated\""),
+        "stderr must carry structured class; got: {:?}",
         out.stderr,
     );
     assert!(
-        out.stderr.contains("re-authenticate"),
-        "warning must tell the user to re-init; got: {:?}",
+        out.stderr.contains("https://api-staging.no-tickets.com"),
+        "stored host must be named in the message; got: {:?}",
         out.stderr,
     );
     assert!(
         !out.stderr.contains("nt_session_staging"),
-        "token MUST NOT leak into the warning; got: {:?}",
+        "token MUST NOT leak into the error payload; got: {:?}",
         out.stderr,
     );
 }

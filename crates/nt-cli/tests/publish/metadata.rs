@@ -81,7 +81,10 @@ async fn publish_subject_type_without_subject_id_short_circuits_before_any_reque
     let mut args = base_args();
     args.extend(["--subject-type", "task"]);
     let out = run_nt_publish(&server.uri(), Some("nt_push_token"), home.path(), &args).await;
-    assert_eq!(out.code, 1, "expected usage-error exit; got {out:?}");
+    // Task 26: usage errors now exit 7 (was generic exit 1). Stderr
+    // still names the missing flag — the message is preserved inside
+    // the structured payload.
+    assert_eq!(out.code, 7, "expected usage-error exit; got {out:?}");
     assert!(
         out.stderr.contains("--subject-id"),
         "stderr must name the missing flag; got {:?}",

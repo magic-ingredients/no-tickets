@@ -6,9 +6,69 @@
 
 use serde_json::Value;
 
-use crate::transport::{post_json_with_retry, HttpClient, RetryPolicy, Sleeper};
+use crate::error::NtError;
+use crate::transport::{post_json_with_retry, HttpClient, RetryPolicy, Sleeper, TransportError};
 
 use super::envelope::{build_envelope, EventMetadata};
+
+/// Map the transport's untyped errors onto the structured-error
+/// contract. The mapping is intentionally narrow at this layer: 401
+/// → NotAuthenticated, 403 → PermissionDenied, 5xx → Transport
+/// retriable=true, other 4xx → Transport retriable=false. The 4xx
+/// body is preserved verbatim in the `message` field so server-side
+/// validation context survives to wrappers without us having to parse
+/// the server's error shape here (that's a follow-up if/when the
+/// server starts returning a stable structured error body).
+///
+/// Status mapping:
+/// - 401 → NotAuthenticated (token absent / rejected)
+/// - 403 → PermissionDenied (domain = "events" today; the wire layer
+///   only touches `/v1/events` so we don't need to discriminate further
+///   until a second domain lands)
+/// - 5xx → Transport { retriable: true } (transient; the retry budget
+///   has been exhausted by the time this maps)
+/// - other 4xx → Transport { retriable: false } (terminal, caller
+///   should not retry; the body is preserved in the message so server
+///   validation context survives verbatim to wrappers)
+fn map_transport_error(e: TransportError) -> NtError {
+    match e {
+        TransportError::Config(msg) => NtError::Usage {
+            message: format!("client configuration error: {msg}"),
+        },
+        TransportError::Network(err) => NtError::Transport {
+            message: err.to_string(),
+            retriable: true,
+        },
+        TransportError::HttpStatus { status, body } => match status {
+            401 => NtError::NotAuthenticated {
+                message: if body.is_empty() {
+                    "server rejected the bearer token (401)".to_string()
+                } else {
+                    format!("server rejected the bearer token (401): {body}")
+                },
+            },
+            403 => NtError::PermissionDenied {
+                domain: "events".to_string(),
+            },
+            s if s >= 500 => NtError::Transport {
+                message: if body.is_empty() {
+                    format!("server returned {s} after retries")
+                } else {
+                    format!("server returned {s} after retries: {body}")
+                },
+                retriable: true,
+            },
+            s => NtError::Transport {
+                message: if body.is_empty() {
+                    format!("server returned {s}")
+                } else {
+                    format!("server returned {s}: {body}")
+                },
+                retriable: false,
+            },
+        },
+    }
+}
 
 /// Stateless core: takes an injected `HttpClient`, the resolved + parsed
 /// inputs, sends the publish request, maps the result to an exit code.
@@ -25,29 +85,22 @@ pub(super) async fn publish_event<C: HttpClient, S: Sleeper>(
     type_id: &str,
     data: &Value,
     meta: EventMetadata<'_>,
-) -> i32 {
+) -> Result<(), NtError> {
     let body = vec![build_envelope(type_id, data, meta)];
     // serde_json::to_vec on `Vec<EventEnvelope>` cannot fail — every
     // field is a primitive Serialize impl over owned/borrowed data —
     // so .expect is appropriate here. A panic would indicate a bug
     // in serde, not a runtime condition.
     let body_bytes = serde_json::to_vec(&body).expect("envelope vec always serialises");
-    match post_json_with_retry(client, policy, sleeper, "/v1/events", &body_bytes).await {
-        Ok(response) => {
-            // Server response shape: `{ ingested, deduped, ids }`.
-            // serde_json::Value serialisation cannot fail for valid
-            // Value, so `.expect` is appropriate here.
-            println!(
-                "{}",
-                serde_json::to_string(&response).expect("serde_json::Value always serialises"),
-            );
-            0
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            1
-        }
-    }
+    let response = post_json_with_retry(client, policy, sleeper, "/v1/events", &body_bytes)
+        .await
+        .map_err(map_transport_error)?;
+    // Server response shape: `{ ingested, deduped, ids }`.
+    println!(
+        "{}",
+        serde_json::to_string(&response).expect("serde_json::Value always serialises"),
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -142,12 +195,12 @@ mod tests {
     // contract.
 
     #[tokio::test]
-    async fn publish_event_returns_zero_on_2xx_response() {
+    async fn publish_event_returns_ok_on_2xx_response() {
         let fake = FakeHttpClient::with_response(Ok(json!({
             "ingested": 1, "deduped": 0, "ids": ["evt_1"],
         })));
         let data = json!({ "taskId": "t-1" });
-        let code = publish_event(
+        let result = publish_event(
             &fake,
             &no_retry(),
             &NoopSleeper,
@@ -156,7 +209,7 @@ mod tests {
             bare_meta("demo"),
         )
         .await;
-        assert_eq!(code, 0, "2xx must map to exit code 0");
+        assert!(result.is_ok(), "2xx must map to Ok, got: {result:?}");
     }
 
     #[tokio::test]
@@ -217,12 +270,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_event_returns_one_on_http_401_response() {
+    async fn publish_event_maps_http_401_to_not_authenticated() {
         let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
             status: 401,
             body: r#"{"error":"unauthorized"}"#.to_string(),
         }));
-        let code = publish_event(
+        let result = publish_event(
             &fake,
             &no_retry(),
             &NoopSleeper,
@@ -231,16 +284,47 @@ mod tests {
             bare_meta("demo"),
         )
         .await;
-        assert_eq!(code, 1, "401 must map to exit code 1");
+        assert!(
+            matches!(result, Err(NtError::NotAuthenticated { .. })),
+            "401 must map to NtError::NotAuthenticated, got: {result:?}"
+        );
     }
 
     #[tokio::test]
-    async fn publish_event_returns_one_on_http_422_response() {
+    async fn publish_event_maps_http_403_to_permission_denied() {
+        let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
+            status: 403,
+            body: r#"{"error":"forbidden"}"#.to_string(),
+        }));
+        let result = publish_event(
+            &fake,
+            &no_retry(),
+            &NoopSleeper,
+            "x.y.v1",
+            &json!({}),
+            bare_meta("demo"),
+        )
+        .await;
+        match result {
+            Err(NtError::PermissionDenied { domain }) => {
+                assert_eq!(
+                    domain, "events",
+                    "403 from /v1/events must carry domain=events"
+                );
+            }
+            other => panic!("403 must map to PermissionDenied, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_event_maps_http_422_to_transport_non_retriable() {
+        // Body forwarded verbatim so server-side validation context
+        // survives to the wrapper for surfacing to the user.
         let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
             status: 422,
-            body: r#"{"error":"validation_error"}"#.to_string(),
+            body: r#"{"error":"validation_error","issue":"x"}"#.to_string(),
         }));
-        let code = publish_event(
+        let result = publish_event(
             &fake,
             &no_retry(),
             &NoopSleeper,
@@ -249,16 +333,29 @@ mod tests {
             bare_meta("demo"),
         )
         .await;
-        assert_eq!(code, 1, "422 must map to exit code 1");
+        match result {
+            Err(NtError::Transport { message, retriable }) => {
+                assert!(!retriable, "4xx must surface as retriable=false");
+                assert!(
+                    message.contains("422"),
+                    "message must name status: {message}"
+                );
+                assert!(
+                    message.contains("validation_error"),
+                    "server body must be preserved: {message}"
+                );
+            }
+            other => panic!("422 must map to Transport, got: {other:?}"),
+        }
     }
 
     #[tokio::test]
-    async fn publish_event_returns_one_on_http_5xx_response() {
+    async fn publish_event_maps_http_5xx_to_transport_retriable() {
         let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
             status: 503,
             body: String::new(),
         }));
-        let code = publish_event(
+        let result = publish_event(
             &fake,
             &no_retry(),
             &NoopSleeper,
@@ -267,15 +364,25 @@ mod tests {
             bare_meta("demo"),
         )
         .await;
-        assert_eq!(code, 1, "5xx must map to exit code 1");
+        match result {
+            Err(NtError::Transport { message, retriable }) => {
+                assert!(retriable, "5xx must surface as retriable=true");
+                assert!(message.contains("503"), "got: {message}");
+                assert!(
+                    message.contains("after retries"),
+                    "5xx after retry budget must name that, got: {message}"
+                );
+            }
+            other => panic!("5xx must map to Transport, got: {other:?}"),
+        }
     }
 
     #[tokio::test]
-    async fn publish_event_returns_one_on_config_error() {
+    async fn publish_event_maps_config_to_usage() {
         let fake = FakeHttpClient::with_response(Err(TransportError::Config(
             "invalid path \"/v1/events\"".to_string(),
         )));
-        let code = publish_event(
+        let result = publish_event(
             &fake,
             &no_retry(),
             &NoopSleeper,
@@ -284,6 +391,9 @@ mod tests {
             bare_meta("demo"),
         )
         .await;
-        assert_eq!(code, 1, "Config error must map to exit code 1");
+        assert!(
+            matches!(result, Err(NtError::Usage { .. })),
+            "Config must map to Usage, got: {result:?}"
+        );
     }
 }

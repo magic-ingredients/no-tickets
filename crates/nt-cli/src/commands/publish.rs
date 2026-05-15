@@ -13,8 +13,9 @@ mod post;
 
 use serde_json::Value;
 
-use crate::auth::{emit_host_mismatch_warning, resolve_auth, AuthOutcome, NOT_AUTH_MSG};
+use crate::auth::{resolve_auth, AuthOutcome, NOT_AUTH_MSG};
 use crate::env::Env;
+use crate::error::NtError;
 use crate::source_detect::machine_hash_attribute;
 use crate::transport::{Client, RetryPolicy, TokioSleeper};
 use crate::urls::resolve_urls;
@@ -64,7 +65,7 @@ pub struct PublishArgs<'a> {
     pub dedupe_key: Option<&'a str>,
 }
 
-pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
+pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
     // Compute the optional machine-hash attribute first so its String
     // borrow has a stable run-local lifetime that `build_metadata` can
     // weave into the attributes BTreeMap alongside flag-derived
@@ -76,21 +77,12 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
     // resolution — so a bad flag combo doesn't leak credentials state
     // or surface a confusing "not authenticated" message when the real
     // fault is a malformed argv.
-    let meta = match build_metadata(&args, machine_hash_owned.as_deref()) {
-        Ok(m) => m,
-        Err(msg) => {
-            eprintln!("{msg}");
-            return 1;
-        }
-    };
+    let meta = build_metadata(&args, machine_hash_owned.as_deref())
+        .map_err(|message| NtError::Usage { message })?;
 
-    let urls = match resolve_urls(env) {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("{}", e.user_message());
-            return 1;
-        }
-    };
+    let urls = resolve_urls(env).map_err(|e| NtError::Usage {
+        message: e.user_message(),
+    })?;
 
     let auth = match resolve_auth(env, &urls.api_url) {
         AuthOutcome::Resolved(a) => a,
@@ -98,33 +90,40 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> i32 {
             stored_host,
             current_host,
         } => {
-            emit_host_mismatch_warning(&stored_host, &current_host);
-            eprintln!("{NOT_AUTH_MSG}");
-            return 1;
+            // The host-mismatch context is folded into the
+            // `NotAuthenticated` message so wrappers see exactly one
+            // structured line on stderr (not a free-text warning
+            // followed by a JSON error). The diagnostic value is
+            // preserved — humans see which hosts disagreed; wrappers
+            // get a single parseable line.
+            return Err(NtError::NotAuthenticated {
+                message: format!(
+                    "{NOT_AUTH_MSG} (stored session host {stored_host:?} \
+                     does not match current host {current_host:?})"
+                ),
+            });
         }
         AuthOutcome::None => {
-            eprintln!("{NOT_AUTH_MSG}");
-            return 1;
+            return Err(NtError::NotAuthenticated {
+                message: NOT_AUTH_MSG.to_string(),
+            });
         }
     };
 
-    // --data must be valid JSON. Parsing inside run() means the i32
-    // exit-code contract owns the full input-handling path.
-    let parsed_data: Value = match serde_json::from_str(args.data) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("--data must be valid JSON: {e}");
-            return 1;
-        }
-    };
+    // --data must be valid JSON. Parsing inside run() means the contract
+    // owns the full input-handling path. Local *schema* validation is
+    // intentionally NOT done here — that's the dedicated `nt validate`
+    // command's job; `nt publish` ships to the server and surfaces the
+    // server's verdict via the transport-error mapping. Adding local
+    // pre-flight here would silently expand publish's contract beyond
+    // what Task 26 is scoped to do.
+    let parsed_data: Value = serde_json::from_str(args.data).map_err(|e| NtError::Usage {
+        message: format!("--data must be valid JSON: {e}"),
+    })?;
 
-    let client = match Client::new(urls.api_url, auth.token) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{e}");
-            return 1;
-        }
-    };
+    let client = Client::new(urls.api_url, auth.token).map_err(|e| NtError::Usage {
+        message: e.to_string(),
+    })?;
 
     // Edge done. Delegate to the testable core.
     let policy = RetryPolicy::default_publish();

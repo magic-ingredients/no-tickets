@@ -62,6 +62,9 @@ fn validate_valid_payload_exits_zero_and_prints_valid_true() {
 
 #[test]
 fn validate_unknown_event_type_exits_two_and_names_type_on_stderr() {
+    // Task 26: stderr is now structured JSON (piped → JSON shape).
+    // Assert the exit code + that the type id appears in the payload;
+    // exact shape pinned in tests/structured_errors/validate.rs.
     let temp = tempfile::tempdir().unwrap();
     isolate(&mut nt(), temp.path())
         .args([
@@ -74,13 +77,16 @@ fn validate_unknown_event_type_exits_two_and_names_type_on_stderr() {
         .assert()
         .code(2)
         .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("Unknown event type"))
+        .stderr(predicate::str::contains("\"unknown_event_type\""))
         .stderr(predicate::str::contains("definitely.not.a.real.type.v999"));
 }
 
 #[test]
 fn validate_invalid_payload_exits_one_and_lists_issues_on_stderr() {
     // Empty object is missing every required field for ai.task.completed.v1.
+    // Task 26: stderr is structured JSON when piped. Parse it and pin:
+    // (1) class = validation_error, (2) typeId, (3) issues array length
+    // matches the schema's required-field count.
     let temp = tempfile::tempdir().unwrap();
     let output = isolate(&mut nt(), temp.path())
         .args(["validate", "--type", "ai.task.completed.v1", "--data", "{}"])
@@ -92,36 +98,19 @@ fn validate_invalid_payload_exits_one_and_lists_issues_on_stderr() {
         "stdout must stay empty on failure"
     );
     let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
-
-    // Header pins the type id AND a non-zero error count — a regression
-    // emitting `0 local validation error(s):` would slip past a plain
-    // substring check. Pin format: `<type>: <N> local validation error(s):`.
-    let header = stderr
-        .lines()
-        .find(|line| {
-            line.starts_with("ai.task.completed.v1: ")
-                && line.ends_with(" local validation error(s):")
-        })
-        .unwrap_or_else(|| panic!("missing header line; stderr=\n{stderr}"));
-    let count: usize = header
-        .trim_start_matches("ai.task.completed.v1: ")
-        .trim_end_matches(" local validation error(s):")
-        .parse()
-        .unwrap_or_else(|e| panic!("header count must be numeric; {e}; header={header:?}"));
+    let payload: serde_json::Value =
+        serde_json::from_str(stderr.trim_end()).expect("stderr must be a single-line JSON object");
+    assert_eq!(payload["error"], "validation_error");
+    assert_eq!(payload["typeId"], "ai.task.completed.v1");
+    let issues = payload["issues"].as_array().expect("issues array").clone();
     assert!(
-        count > 0,
-        "header must claim at least one issue; got {header:?}"
+        !issues.is_empty(),
+        "must report at least one issue; got: {payload:?}"
     );
-
-    // …and at least that many indented issue lines (`  <path>: <message>`).
-    let issue_lines = stderr
-        .lines()
-        .filter(|line| line.starts_with("  ") && line.contains(": "))
-        .count();
-    assert!(
-        issue_lines >= count,
-        "expected ≥{count} indented issue lines; got {issue_lines}; stderr=\n{stderr}",
-    );
+    for issue in &issues {
+        assert!(issue["path"].is_string(), "issue.path must be string");
+        assert!(issue["message"].is_string(), "issue.message must be string");
+    }
 }
 
 #[test]
@@ -148,7 +137,10 @@ fn validate_missing_required_field_surfaces_field_path_on_stderr() {
 }
 
 #[test]
-fn validate_bad_json_in_data_exits_one_and_names_parse_failure() {
+fn validate_bad_json_in_data_exits_seven_and_names_parse_failure() {
+    // Task 26: bad input flags / values now exit 7 (usage class) instead
+    // of the generic exit 1. The structured payload still names what
+    // went wrong so wrappers + humans see the same context.
     let temp = tempfile::tempdir().unwrap();
     isolate(&mut nt(), temp.path())
         .args([
@@ -159,8 +151,9 @@ fn validate_bad_json_in_data_exits_one_and_names_parse_failure() {
             "{not valid json",
         ])
         .assert()
-        .code(1)
+        .code(7)
         .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("\"usage\""))
         .stderr(predicate::str::contains("--data"))
         .stderr(predicate::str::contains("JSON"));
 }

@@ -10,9 +10,12 @@ mod source_detect;
 mod transport;
 mod urls;
 
+use std::io::IsTerminal;
+
 use clap::{Parser, Subcommand};
 
 use crate::env::SystemEnv;
+use crate::error::emit_and_exit_code;
 
 #[derive(Parser)]
 #[command(
@@ -152,6 +155,7 @@ async fn main() {
             trace,
             dedupe_key,
         } => {
+            let is_tty = std::io::stderr().is_terminal();
             if let Some(batch_path) = file.as_deref() {
                 // Per-event metadata flags (--subject-*, --parent,
                 // --trace, --dedupe-key) are single-event-only: each
@@ -165,12 +169,17 @@ async fn main() {
                     || trace.is_some()
                     || dedupe_key.is_some()
                 {
-                    eprintln!(
-                        "--file is incompatible with --subject-type/--subject-id/--parent/--trace/--dedupe-key. \
-                         Per-event metadata in batch mode lives in each JSONL line."
-                    );
-                    1
+                    let err = error::NtError::Usage {
+                        message: "--file is incompatible with --subject-type/--subject-id/\
+                                  --parent/--trace/--dedupe-key. \
+                                  Per-event metadata in batch mode lives in each JSONL line."
+                            .to_string(),
+                    };
+                    emit_and_exit_code(Err(err), &mut std::io::stderr().lock(), is_tty)
                 } else {
+                    // Batch flow still emits errors via eprintln; full
+                    // migration to NtError tracked as a follow-up
+                    // cleanup ticket per Task 26's scope.
                     commands::publish_batch::run(
                         commands::publish_batch::PublishBatchArgs {
                             batch_path,
@@ -187,7 +196,7 @@ async fn main() {
                 // both --type and --data are Some when --file is None.
                 let r#type = r#type.expect("clap required_unless_present");
                 let data = data.expect("clap required_unless_present");
-                commands::publish::run(
+                let result = commands::publish::run(
                     commands::publish::PublishArgs {
                         type_id: &r#type,
                         data: &data,
@@ -202,7 +211,8 @@ async fn main() {
                     },
                     &env,
                 )
-                .await
+                .await;
+                emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)
             }
         }
         Commands::Token { action } => match action {
@@ -215,7 +225,11 @@ async fn main() {
             TokenAction::List => commands::token_list::run(&env),
             TokenAction::Remove { project } => commands::token_remove::run(&env, &project),
         },
-        Commands::Validate { r#type, data } => commands::validate::run(&r#type, &data),
+        Commands::Validate { r#type, data } => {
+            let is_tty = std::io::stderr().is_terminal();
+            let result = commands::validate::run(&r#type, &data);
+            emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)
+        }
         Commands::SelfUpdate => commands::self_update::run().await,
     };
     std::process::exit(exit);

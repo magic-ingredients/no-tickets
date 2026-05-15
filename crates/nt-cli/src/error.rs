@@ -13,14 +13,10 @@
 //! codes (≥ 8) and new fields get added, but existing variant names,
 //! exit codes, and field names never change or disappear.
 
-// RED phase: the methods below are exercised only by in-file unit
-// tests; the public surface isn't yet wired through `main.rs` →
-// command-level migration. GREEN-phase code drops this allow when
-// `commands::publish` / `commands::validate` start returning
-// `Result<(), NtError>` and main.rs calls `emit_and_exit_code`.
-#![allow(dead_code, unused_variables)]
+use std::io::Write;
 
 use nt_schemas::ValidationIssue;
+use serde_json::{json, Value};
 use thiserror::Error;
 
 /// Typed failure modes for `nt` commands.
@@ -64,6 +60,14 @@ pub enum NtError {
     /// `--project <name>` referenced a project that's not in the local
     /// config registry. `known_projects` carries the locally-registered
     /// project names so wrappers can prompt or auto-complete.
+    ///
+    /// `#[allow(dead_code)]`: the variant + its on-the-wire shape are
+    /// part of the public contract per `docs/binary-error-contract.md`
+    /// and tested by `error::tests::*`, but the *production* code path
+    /// that constructs it lives behind a project-registry resolver
+    /// (Task 19's territory) that isn't wired through `publish` /
+    /// `validate` yet. Variant stays load-bearing for wrappers.
+    #[allow(dead_code)]
     #[error("project not registered: {project}")]
     ProjectNotRegistered {
         project: String,
@@ -79,25 +83,156 @@ pub enum NtError {
 impl NtError {
     /// Documented exit code per `docs/binary-error-contract.md`.
     pub fn exit_code(&self) -> i32 {
-        unimplemented!("exit_code: GREEN phase pending")
+        match self {
+            NtError::Validation { .. } => 1,
+            NtError::UnknownEventType { .. } => 2,
+            NtError::PermissionDenied { .. } => 3,
+            NtError::Transport { .. } => 4,
+            NtError::NotAuthenticated { .. } => 5,
+            NtError::ProjectNotRegistered { .. } => 6,
+            NtError::Usage { .. } => 7,
+        }
     }
 
     /// Stable `"error": "<class>"` discriminator. Pinned by tests so a
     /// future rename can't silently break wrapper parsers.
     pub fn class(&self) -> &'static str {
-        unimplemented!("class: GREEN phase pending")
+        match self {
+            NtError::Validation { .. } => "validation_error",
+            NtError::UnknownEventType { .. } => "unknown_event_type",
+            NtError::PermissionDenied { .. } => "permission_denied",
+            NtError::Transport { .. } => "transport_error",
+            NtError::NotAuthenticated { .. } => "not_authenticated",
+            NtError::ProjectNotRegistered { .. } => "project_not_registered",
+            NtError::Usage { .. } => "usage",
+        }
     }
 
     /// JSON object for stderr-on-pipe. The shape per variant is
     /// documented in the binary error contract; tests pin every field.
-    pub fn to_json(&self) -> serde_json::Value {
-        unimplemented!("to_json: GREEN phase pending")
+    pub fn to_json(&self) -> Value {
+        let class = self.class();
+        match self {
+            NtError::Validation {
+                type_id,
+                batch_index,
+                issues,
+            } => {
+                let issues_json: Vec<Value> = issues
+                    .iter()
+                    .map(|i| json!({ "path": i.path, "message": i.message }))
+                    .collect();
+                let mut obj = json!({
+                    "error": class,
+                    "typeId": type_id,
+                    "issues": issues_json,
+                });
+                if let Some(idx) = batch_index {
+                    obj["batchIndex"] = json!(idx);
+                }
+                obj
+            }
+            NtError::UnknownEventType {
+                type_id,
+                suggestions,
+            } => json!({
+                "error": class,
+                "typeId": type_id,
+                "suggestions": suggestions,
+            }),
+            NtError::PermissionDenied { domain } => json!({
+                "error": class,
+                "domain": domain,
+            }),
+            NtError::Transport { message, retriable } => json!({
+                "error": class,
+                "message": message,
+                "retriable": retriable,
+            }),
+            NtError::NotAuthenticated { message } => json!({
+                "error": class,
+                "message": message,
+            }),
+            NtError::ProjectNotRegistered {
+                project,
+                known_projects,
+            } => json!({
+                "error": class,
+                "project": project,
+                "knownProjects": known_projects,
+            }),
+            NtError::Usage { message } => json!({
+                "error": class,
+                "message": message,
+            }),
+        }
     }
 
     /// Human-readable line for stderr-on-TTY. No JSON braces, no field
     /// names — just the most useful single message the user can act on.
     pub fn to_human(&self) -> String {
-        unimplemented!("to_human: GREEN phase pending")
+        match self {
+            NtError::Validation {
+                type_id,
+                batch_index,
+                issues,
+            } => {
+                let n = issues.len();
+                let prefix = match batch_index {
+                    Some(i) => format!("line {i}: {n} validation error(s) for {type_id}"),
+                    None => format!("{type_id}: {n} validation error(s)"),
+                };
+                let mut out = prefix;
+                for issue in issues {
+                    out.push_str(&format!("\n  {}: {}", issue.path, issue.message));
+                }
+                out
+            }
+            NtError::UnknownEventType {
+                type_id,
+                suggestions,
+            } => {
+                if suggestions.is_empty() {
+                    format!("unknown event type: {type_id}")
+                } else {
+                    format!(
+                        "unknown event type: {type_id} — did you mean: {}",
+                        suggestions.join(", ")
+                    )
+                }
+            }
+            NtError::PermissionDenied { domain } => {
+                format!("permission denied for {domain}")
+            }
+            NtError::Transport { message, retriable } => {
+                if *retriable {
+                    format!("transport error (retriable): {message}")
+                } else {
+                    format!("transport error: {message}")
+                }
+            }
+            NtError::NotAuthenticated { message } => {
+                format!("not authenticated: {message}")
+            }
+            NtError::ProjectNotRegistered {
+                project,
+                known_projects,
+            } => {
+                if known_projects.is_empty() {
+                    format!(
+                        "project {project} is not registered locally. \
+                         Run `nt token add <project> <token>` to register."
+                    )
+                } else {
+                    format!(
+                        "project {project} is not registered locally. \
+                         Known projects: {}",
+                        known_projects.join(", ")
+                    )
+                }
+            }
+            NtError::Usage { message } => message.clone(),
+        }
     }
 }
 
@@ -109,19 +244,40 @@ impl NtError {
 /// TTY-detection path in test mode, and matches the spec's
 /// additive-only contract by serialising via `to_json` / `to_human`.
 pub fn format_for(is_tty: bool, err: &NtError) -> String {
-    unimplemented!("format_for: GREEN phase pending")
+    if is_tty {
+        err.to_human()
+    } else {
+        // Single-line JSON — line-based wrapper parsers split stderr by
+        // newline and parse each line as JSON. `serde_json::to_string`
+        // produces compact (no pretty-print) output by default.
+        serde_json::to_string(&err.to_json())
+            .expect("NtError::to_json always produces a serialisable Value")
+    }
 }
 
 /// Map a `Result<(), NtError>` from a command's `run()` to a process
 /// exit code, emitting the error (if any) to `stderr_writer` first.
 /// `is_tty` controls format; production wires
 /// `std::io::stderr().is_terminal()`.
-pub fn emit_and_exit_code<W: std::io::Write>(
+///
+/// Newline-terminates the error line so line-based readers (every
+/// wrapper) can split stderr by `\n` and parse each line as JSON.
+/// Write errors are swallowed — the process is exiting anyway and
+/// surfacing a write failure on top of the original error would just
+/// be noise.
+pub fn emit_and_exit_code<W: Write>(
     result: Result<(), NtError>,
     stderr_writer: &mut W,
     is_tty: bool,
 ) -> i32 {
-    unimplemented!("emit_and_exit_code: GREEN phase pending")
+    match result {
+        Ok(()) => 0,
+        Err(err) => {
+            let line = format_for(is_tty, &err);
+            let _ = writeln!(stderr_writer, "{line}");
+            err.exit_code()
+        }
+    }
 }
 
 #[cfg(test)]

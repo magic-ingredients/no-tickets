@@ -103,7 +103,7 @@ async fn validate_success_exits_zero_with_no_stderr() {
             "--type",
             "ai.task.completed.v1",
             "--data",
-            r#"{"taskId":"t-1","sessionId":"s-1"}"#,
+            r#"{"taskId":"task-1","sessionId":"session-1","startedAt":"2026-05-01T00:00:00.000Z","completedAt":"2026-05-01T00:00:01.000Z","durationMs":1000,"outcome":"success","callCount":1}"#,
         ],
     )
     .await;

@@ -7,10 +7,6 @@ repository.workspace = true
 homepage.workspace = true
 description = "no-tickets MCP server — Rust port (Phase 2/3 of cross-platform-cli-binary fix)"
 
-[[bin]]
-name = "nt-mcp"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1"
 nt-core = { path = "../nt-core" }

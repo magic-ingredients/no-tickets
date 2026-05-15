@@ -121,7 +121,14 @@ async fn list_event_types_issues_get_against_registry_with_bearer_and_returns_ro
         .and(path("/v1/registry/event-types"))
         .and(header("authorization", "Bearer nt_test_token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(list_body(&[
-            ("ai.task.completed.v1", "ai", "task", "completed", "v1", None),
+            (
+                "ai.task.completed.v1",
+                "ai",
+                "task",
+                "completed",
+                "v1",
+                None,
+            ),
             (
                 "billing.invoice.issued.v2",
                 "billing",
@@ -251,7 +258,14 @@ async fn list_event_types_filters_by_domain() {
     Mock::given(method("GET"))
         .and(path("/v1/registry/event-types"))
         .respond_with(ResponseTemplate::new(200).set_body_json(list_body(&[
-            ("ai.task.completed.v1", "ai", "task", "completed", "v1", None),
+            (
+                "ai.task.completed.v1",
+                "ai",
+                "task",
+                "completed",
+                "v1",
+                None,
+            ),
             (
                 "billing.invoice.issued.v2",
                 "billing",
@@ -260,7 +274,14 @@ async fn list_event_types_filters_by_domain() {
                 "v2",
                 None,
             ),
-            ("auth.session.created.v1", "auth", "session", "created", "v1", None),
+            (
+                "auth.session.created.v1",
+                "auth",
+                "session",
+                "created",
+                "v1",
+                None,
+            ),
         ])))
         .mount(&server)
         .await;
@@ -327,14 +348,7 @@ async fn list_event_types_filters_by_deprecated_flag() {
     Mock::given(method("GET"))
         .and(path("/v1/registry/event-types"))
         .respond_with(ResponseTemplate::new(200).set_body_json(list_body(&[
-            (
-                KNOWN_ACTIVE,
-                "billing",
-                "invoice",
-                "issued",
-                "v2",
-                None,
-            ),
+            (KNOWN_ACTIVE, "billing", "invoice", "issued", "v2", None),
             (
                 KNOWN_DEPRECATED,
                 "billing",
@@ -719,7 +733,12 @@ async fn list_event_types_async_refresh_eventually_writes_cache() {
     Mock::given(method("GET"))
         .and(path("/v1/registry/event-types"))
         .respond_with(ResponseTemplate::new(200).set_body_json(list_body(&[(
-            "first.id.v1", "first", "id", "v", "v1", None,
+            "first.id.v1",
+            "first",
+            "id",
+            "v",
+            "v1",
+            None,
         )])))
         .up_to_n_times(1)
         .mount(&server)
@@ -779,9 +798,7 @@ async fn list_event_types_async_refresh_eventually_writes_cache() {
             break;
         }
         if Instant::now() >= deadline {
-            panic!(
-                "async refresh never wrote the cache; final payload={payload}",
-            );
+            panic!("async refresh never wrote the cache; final payload={payload}",);
         }
         sleep(Duration::from_millis(20)).await;
     }

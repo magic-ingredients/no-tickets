@@ -450,6 +450,39 @@ This is what per-language wrappers use to keep the binary alive across many publ
 - Per-event overhead measured at <2 ms median on the wrapper side
 - Crash recovery: if the binary panics mid-stream, in-flight responses surface as `ok: false, transport_aborted`; wrapper can re-spawn cleanly
 
+### 28. Consolidate nt-cli and nt-mcp into a single shippable cargo package
+status: not_started
+depends_on: [6]
+
+The Task 6 scaffold (commits da19515, 76bc57e) configured cargo-dist but `dist plan` produces TWO releases because `nt-cli` and `nt-mcp` are separate cargo packages each declaring a `[[bin]]`. Two installers (`nt-cli-installer.sh`, `nt-mcp-installer.sh`), two homebrew formulae (`nt-cli.rb`, `nt-mcp.rb`), two tarballs per target. Bad UX: a user installing "no-tickets" has to know there's a CLI and a separate MCP server packaged independently and run two installers.
+
+Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires both binaries to ship in ONE release under the formula name `nt`. This task does the package restructure that enables that.
+
+**Approach:**
+- Package name stays `nt-cli` for this task. The `nt` name is taken on crates.io (NetworkTables crate); `no-tickets` is available and matches the product name, but choosing the user-facing install name (`cargo install <X>`, `brew install .../<X>`) is its own decision that ripples through Task 13 (docs) — out of scope here. Fix doc's `brew install .../nt` acceptance is downgraded to `brew install .../nt-cli` for v0.1.0, revisitable when Task 8 / Task 13 land.
+- Convert `nt-mcp` to lib-only:
+  - Create `crates/nt-mcp/src/lib.rs` re-exporting modules and a `pub async fn run() -> anyhow::Result<()>` containing the current `main()` body (tokio runtime stays in the consumer)
+  - Delete `crates/nt-mcp/src/main.rs`
+  - Remove `[[bin]]` from `crates/nt-mcp/Cargo.toml`
+- Add the `nt-mcp` binary as a second `[[bin]]` of the `nt` package:
+  - `crates/nt-cli/src/bin/nt-mcp.rs` — thin entry: `#[tokio::main(current_thread)] async fn main() -> anyhow::Result<()> { nt_mcp::run().await }`
+  - `nt-cli/Cargo.toml` gains `nt-mcp = { path = "../nt-mcp" }` plus `anyhow` (if not already present) and a matching `[[bin]]` entry
+- Move `crates/nt-mcp/tests/mcp{,.rs,/*.rs}` to `crates/nt-cli/tests/mcp{,.rs,/*.rs}` — they use `env!("CARGO_BIN_EXE_nt-mcp")` which only resolves in the same package as the binary
+
+**Files to modify/create:**
+- `crates/nt-cli/Cargo.toml` — add `nt-mcp` + `anyhow` deps, add `[[bin]] nt-mcp`
+- `crates/nt-cli/src/bin/nt-mcp.rs` (new) — thin entry calling `nt_mcp::run()`
+- `crates/nt-mcp/Cargo.toml` — drop `[[bin]]`
+- `crates/nt-mcp/src/lib.rs` (new) — module re-exports + `pub async fn run()`
+- `crates/nt-mcp/src/main.rs` (delete)
+- `crates/nt-mcp/tests/**` → `crates/nt-cli/tests/mcp{,.rs,/*.rs}` (move)
+
+**Acceptance:**
+- `cargo check --workspace` and `cargo test --workspace` pass — no behavioural regression
+- `dist plan` announces ONE release (the `nt-cli` package) containing both `nt` and `nt-mcp` binaries across the five targets
+- Generated formula is `nt-cli.rb`, installer is `nt-cli-installer.sh`, tarball is `nt-cli-{target}.{tar.xz,zip}` — naming reconsideration tracked separately
+- `cargo run -p nt-cli --bin nt` and `cargo run -p nt-cli --bin nt-mcp` both work (dev workflow preserved)
+
 ### 5. Full MCP server surface port
 status: in_progress
 

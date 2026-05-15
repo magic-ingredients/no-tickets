@@ -596,7 +596,12 @@ async fn describe_event_type_omits_optional_fields_when_absent_from_spec() {
         )
         .await;
     let payload = extract_tool_result_payload(&resp);
-    for absent in ["dedupe_strategy", "retention_days", "ui_hints", "deprecated_at"] {
+    for absent in [
+        "dedupe_strategy",
+        "retention_days",
+        "ui_hints",
+        "deprecated_at",
+    ] {
         assert!(
             payload.get(absent).is_none(),
             "{absent} must be omitted when the spec doesn't carry it; got payload={payload}",
@@ -705,8 +710,7 @@ async fn describe_event_type_non_json_body_surfaces_parse_error() {
         .await;
     let msg = collect_error_text(&resp);
     assert!(
-        msg.to_lowercase().contains("invalid")
-            && msg.to_lowercase().contains("json"),
+        msg.to_lowercase().contains("invalid") && msg.to_lowercase().contains("json"),
         "non-JSON body must surface as a JSON parse error; got {msg:?}",
     );
     c.shutdown().await;
@@ -745,8 +749,7 @@ async fn describe_event_type_null_event_type_wrapper_surfaces_contract_violation
     let msg = collect_error_text(&resp);
     assert!(
         msg.to_lowercase().contains("eventtype")
-            && (msg.to_lowercase().contains("missing")
-                || msg.to_lowercase().contains("contract")),
+            && (msg.to_lowercase().contains("missing") || msg.to_lowercase().contains("contract")),
         "eventType=null must surface as a server-contract violation; got {msg:?}",
     );
     c.shutdown().await;

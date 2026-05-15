@@ -94,6 +94,11 @@ fn handle_one(
     mut stream: TcpStream,
     expected_state: &str,
 ) -> Result<CallbackResult, AuthServerError> {
+    // macOS inherits O_NONBLOCK from the listener onto accepted streams
+    // (POSIX-conformant; Linux deviates). Without this, stream.read can
+    // race the client's write and surface WouldBlock instead of blocking
+    // for data. Force blocking before the read+write_timeout dance.
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 

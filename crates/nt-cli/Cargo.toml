@@ -11,10 +11,16 @@ description = "no-tickets CLI — Rust port (Phase 2/3 of cross-platform-cli-bin
 name = "nt"
 path = "src/main.rs"
 
+[[bin]]
+name = "nt-mcp"
+path = "src/bin/nt-mcp.rs"
+
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 directories = "5"
 hostname = "0.4"
+nt-mcp = { path = "../nt-mcp" }
 nt-schemas = { path = "../nt-schemas" }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }

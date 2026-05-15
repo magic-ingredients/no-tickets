@@ -456,7 +456,7 @@ Port all tools and discovery flow to the Rust MCP server. Match the TS server's 
 
 **Scope clarification (2026-05-14):** the TS `create-server.ts` wires only `validate` (legacy `.notickets/` directory checker) and `status` into the actually-exposed MCP surface. The richer toolset (`list_event_types`, `describe_event_type`, `publish_event`, `run_interaction`, `create_subject`) lives in `src/mcp/tools/handlers.ts` but was never registered. The fix doc explicitly names list/describe/publish as in-scope, so the Rust port targets the planned-but-unwired TS surface, not the vestigial validate/status pair.
 
-**Scope revision (2026-05-15):** `run_interaction` superseded (see Task 21). Workflows in no-tickets are modelled as event sequences sharing a run_id, with autonomous workers emitting their own events; a synchronous server-side orchestration tool would impose a competing pattern. MCP surface narrowed to `list_event_types`, `describe_event_type`, `publish_event`, `create_subject`.
+**Scope revision (2026-05-15):** `run_interaction` AND `create_subject` superseded (see Tasks 21 and 22). Workflows in no-tickets are modelled as event sequences sharing a run_id, with autonomous workers emitting their own events; subjects exist as inert wire-envelope storage but no production subject types are registered server-side. MCP surface narrowed to **three tools**: `list_event_types`, `describe_event_type`, `publish_event`. The `subject: { type, id }` field on the event envelope is retained on `publish_event` as a forward-compat slot matching the server envelope.
 
 This task is split into sub-tasks 19–24 below (integer suffixes match the Task 4 → 14-18 split convention recognised by the task-sync tool); the Task 5 top-level closes once 19–24 all complete. `list_event_types` against local fixtures already exists from the Task 2 spike (commit 676ea22).
 
@@ -557,9 +557,40 @@ escape hatch, it should be designed afresh — not resurrected from
 this task.
 
 ### 22. `create_subject` MCP tool
-status: not_started
+status: superseded
+commitSha: null
 
-Server-call passthrough. POST `/v1/subjects` with the subject body, return `{ type, id }`.
+**Superseded 2026-05-15.** Dropped from the MCP surface. Audit of the
+sister `no-tickets-service` repo on 2026-05-15 confirmed:
+
+  - Zero production calls to `registerSubjectType(...)` — the function
+    is only used in `.test.ts` files. The server-side infrastructure
+    (registry, reducer, replay, route handlers, db tables) exists as
+    scaffolding but no production subject types are registered.
+  - The reducer pipeline (`server/subjects/apply-reducer.ts`) short-
+    circuits on missing registrations: `const spec = getSubjectType
+    (event.subjectType); if (!spec) return;`. DB columns get filled,
+    no state is materialised.
+  - `POST /v1/subjects` is unusable in practice: it dispatches to
+    `getSubjectType` and returns nothing meaningful without
+    registered types.
+
+The current model is **projects + event-types-per-domain** (11 event
+types live in `byTypeId`: 3 `ai.*` + 8 `product.*`). Subjects are a
+planned-but-unwired concept on the server side too — not just in the
+TS MCP surface that was never registered in `create-server.ts`.
+
+The `subject: { type, id }` field on the event envelope is retained
+on `publish_event` (Task 19) as a forward-compat slot — the server's
+`eventEnvelopeSchema` still accepts it and `envelopeToRawEvent`
+stores it in `subjectType` / `subjectId` columns. Today it's inert
+denormalised storage; if subject types are ever registered, the
+field is wired. Stripping the field would diverge from the live
+server envelope for no benefit.
+
+If a `create_subject`-shaped tool is ever needed, it should be
+designed against an actually-registered subject type, not
+resurrected from this task.
 
 ### 23. Real-server `list_event_types` (replace fixtures)
 status: not_started

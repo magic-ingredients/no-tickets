@@ -1,11 +1,12 @@
 //! `nt-mcp` server: rmcp tool routing + ServerHandler impl.
 //!
 //! Tool bodies live in `crates/nt-mcp/src/tools/<name>.rs` so the
-//! impl block stays a thin dispatch layer as Task 5 adds the rest of
-//! the surface (publish_event ✅, describe_event_type ✅, and the
-//! pending create_subject; run_interaction was dropped — workflows
-//! are modelled as event sequences sharing a run_id, not as a
-//! synchronous server-side tool).
+//! impl block stays a thin dispatch layer for the three-tool surface:
+//! `list_event_types`, `describe_event_type`, `publish_event`.
+//! `run_interaction` and `create_subject` were dropped (Tasks 21 + 22
+//! superseded on 2026-05-15) — workflows are event sequences with a
+//! shared run_id, and no production subject types are registered
+//! server-side.
 
 use std::time::Duration;
 

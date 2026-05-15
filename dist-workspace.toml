@@ -9,11 +9,20 @@ cargo-dist-version = "0.31.0"
 ci = "github"
 # The installers to generate for each app
 installers = ["shell", "powershell", "homebrew"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
-# Path that installers should place binaries in
-install-path = "CARGO_HOME"
+# Target platforms to build apps for (Rust target-triple syntax).
+# musl-only on Linux matches the fix doc: musl is the default static target;
+# glibc is a future opt-in artifact, not a shipped-by-default duplicate.
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Path that installers should place binaries in. ~/.local/bin works for
+# non-Rust users (XDG-standard, on most modern shells' PATH); CARGO_HOME
+# would only exist on machines that already have Rust installed.
+install-path = "~/.local/bin"
 # Where to host releases
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
+# PRs only run `dist plan` (cheap config validation) — never the build matrix.
+pr-run-mode = "plan"
+# CI workflow is hand-hardened beyond what `dist generate` produces (SHA-pinned
+# actions, cargo-install bootstrap, PR path filter). Allow the dirty diff.
+allow-dirty = ["ci"]

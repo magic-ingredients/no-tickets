@@ -6,9 +6,11 @@ resolver = "2"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/magic-ingredients/no-tickets"
-homepage = "https://no-tickets.com"
+homepage = "https://github.com/magic-ingredients/no-tickets"
 
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
+strip = true
+codegen-units = 1

@@ -114,7 +114,7 @@ pub(super) fn bare_meta(project: &str) -> EventMetadata<'_> {
     attributes.insert("project", project);
     EventMetadata {
         subject: None,
-        source_name: "nt-cli",
+        source_name: "no-tickets",
         attributes,
         parent: None,
         trace: None,
@@ -181,7 +181,7 @@ mod tests {
     fn build_envelope_source_name_is_nt_cli() {
         let body = serialise_with_neutral_data("demo");
         assert!(
-            body.contains(r#""name":"nt-cli""#),
+            body.contains(r#""name":"no-tickets""#),
             "source.name must be \"nt-cli\"; got {body}",
         );
     }

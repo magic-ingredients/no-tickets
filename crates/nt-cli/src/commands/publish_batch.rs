@@ -34,7 +34,7 @@ pub struct PublishBatchArgs<'a> {
     /// Project name; appears in `source.attributes.project` on every
     /// envelope in the batch (matches single-event behaviour).
     pub project: &'a str,
-    /// Override the default `source.name` ("nt-cli") on the CLI base
+    /// Override the default `source.name` ("no-tickets") on the CLI base
     /// source. JSONL lines may override per-line via their own
     /// `source.name`.
     pub source_name: Option<&'a str>,

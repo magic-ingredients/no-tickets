@@ -124,8 +124,7 @@ mod tests {
 
     #[test]
     fn merge_source_returns_cli_source_unchanged_when_no_jsonl_override() {
-        let cli =
-            json!({ "name": "nt-cli", "sdkVersion": "1.0", "attributes": { "project": "demo" } });
+        let cli = json!({ "name": "no-tickets", "sdkVersion": "1.0", "attributes": { "project": "demo" } });
         let merged = merge_source(&cli, None);
         assert_eq!(merged, cli);
     }
@@ -133,14 +132,14 @@ mod tests {
     #[test]
     fn merge_source_returns_cli_source_unchanged_when_jsonl_source_is_non_object() {
         // Malformed per-line source is silently ignored — matches TS.
-        let cli = json!({ "name": "nt-cli", "sdkVersion": "1.0" });
+        let cli = json!({ "name": "no-tickets", "sdkVersion": "1.0" });
         let merged = merge_source(&cli, Some(&json!("a string, not an object")));
         assert_eq!(merged, cli);
     }
 
     #[test]
     fn merge_source_jsonl_top_level_fields_override_cli() {
-        let cli = json!({ "name": "nt-cli", "sdkVersion": "1.0" });
+        let cli = json!({ "name": "no-tickets", "sdkVersion": "1.0" });
         let jsonl = json!({ "name": "custom-publisher" });
         let merged = merge_source(&cli, Some(&jsonl));
         assert_eq!(merged["name"], "custom-publisher");
@@ -153,7 +152,7 @@ mod tests {
     #[test]
     fn merge_source_attributes_are_key_merged_with_jsonl_on_top() {
         let cli = json!({
-            "name": "nt-cli",
+            "name": "no-tickets",
             "attributes": { "project": "demo", "ci": "github-actions" }
         });
         let jsonl = json!({
@@ -170,7 +169,7 @@ mod tests {
     fn merge_source_attributes_jsonl_alone_become_the_merged_attributes() {
         // CLI source has no attributes; JSONL provides them. Result
         // carries the JSONL attributes verbatim.
-        let cli = json!({ "name": "nt-cli" });
+        let cli = json!({ "name": "no-tickets" });
         let jsonl = json!({ "attributes": { "k": "v" } });
         let merged = merge_source(&cli, Some(&jsonl));
         assert_eq!(merged["attributes"]["k"], "v");
@@ -178,7 +177,7 @@ mod tests {
 
     #[test]
     fn merge_source_omits_attributes_when_neither_side_provides_any() {
-        let cli = json!({ "name": "nt-cli", "sdkVersion": "1.0" });
+        let cli = json!({ "name": "no-tickets", "sdkVersion": "1.0" });
         let jsonl = json!({ "name": "override" });
         let merged = merge_source(&cli, Some(&jsonl));
         assert!(
@@ -196,7 +195,7 @@ mod tests {
         // the resulting source must carry the CLI's project + ci, and
         // the `attributes` key must NOT be removed.
         let cli = json!({
-            "name": "nt-cli",
+            "name": "no-tickets",
             "attributes": { "project": "demo", "ci": "github-actions" }
         });
         let jsonl = json!({ "name": "custom-runner" });
@@ -213,7 +212,7 @@ mod tests {
         // returns None if the value is non-object (string, number, etc.).
         // Pin that this drops CLI attrs entirely rather than panicking
         // or somehow merging a non-object into the result.
-        let cli = json!({ "name": "nt-cli", "attributes": "not an object" });
+        let cli = json!({ "name": "no-tickets", "attributes": "not an object" });
         let jsonl = json!({ "attributes": { "k": "v" } });
         let merged = merge_source(&cli, Some(&jsonl));
         // Only the JSONL attribute survives; the bogus CLI value is dropped.
@@ -229,7 +228,7 @@ mod tests {
         // Symmetric to the above: non-object JSONL `attributes` is
         // silently ignored. CLI attrs survive verbatim.
         let cli = json!({
-            "name": "nt-cli",
+            "name": "no-tickets",
             "attributes": { "project": "demo" }
         });
         let jsonl = json!({ "attributes": 42 });
@@ -242,7 +241,7 @@ mod tests {
     #[test]
     fn build_cli_base_source_minimal_inputs_yields_name_and_project() {
         let result = build_cli_base_source(None, "demo", &[], None).expect("valid");
-        assert_eq!(result["name"], "nt-cli");
+        assert_eq!(result["name"], "no-tickets");
         assert_eq!(result["attributes"]["project"], "demo");
     }
 

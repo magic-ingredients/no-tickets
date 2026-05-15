@@ -57,7 +57,7 @@ async fn publish_request_body_is_single_element_array_with_event_envelope() {
     let body_partial = json!([{
         "type": "ai.task.completed.v1",
         "source": {
-            "name": "nt-cli",
+            "name": "no-tickets",
             "sdkVersion": env!("CARGO_PKG_VERSION"),
             "attributes": { "project": "demo" }
         }
@@ -131,7 +131,7 @@ async fn publish_wire_body_field_order_is_type_data_source() {
     };
     let t = p(r#""type":"ai.task.completed.v1""#);
     let d = p(r#""data":{"#);
-    let s = p(r#""source":{"name":"nt-cli""#);
+    let s = p(r#""source":{"name":"no-tickets""#);
     assert!(
         t < d && d < s,
         "wire field order must be type, data, source — got {body}",

@@ -430,7 +430,7 @@ async fn publish_event_wire_body_has_source_name_nt_mcp() {
     // cannot override `source` via tool args (schema test above pins
     // the absence of a `source` property), AND the server fills
     // source.name with the fixed identity `"nt-mcp"`. A regression
-    // that copied `nt-cli`'s default (`"nt-cli"`) would land here.
+    // that copied the CLI's default (`"no-tickets"`) would land here.
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
     let uri = server.uri();

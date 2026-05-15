@@ -38,7 +38,7 @@ pub(super) fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> 
 /// with `publish_batch` to keep single-event and batch paths in lockstep
 /// — a drift here would silently re-attribute every event from one
 /// surface but not the other.
-pub(super) const DEFAULT_SOURCE_NAME: &str = "nt-cli";
+pub(super) const DEFAULT_SOURCE_NAME: &str = "no-tickets";
 
 /// SDK version stamped into every envelope's `source.sdkVersion`. Bound
 /// to the binary's own crate version at compile time so a binary

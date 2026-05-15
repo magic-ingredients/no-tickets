@@ -70,7 +70,7 @@ mod tests {
         // tests — concrete shape doesn't matter beyond being an object;
         // these tests pin per-line validation, not merge behaviour.
         serde_json::json!({
-            "name": "nt-cli",
+            "name": "no-tickets",
             "attributes": { "project": "demo" }
         })
     }

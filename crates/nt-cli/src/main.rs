@@ -70,7 +70,7 @@ enum Commands {
         /// Subject id (paired with `--subject-type`).
         #[arg(long)]
         subject_id: Option<String>,
-        /// Override the default `source.name` ("nt-cli").
+        /// Override the default `source.name` ("no-tickets").
         #[arg(long)]
         source_name: Option<String>,
         /// Add an attribute to `source.attributes` as `KEY=VALUE`. May be

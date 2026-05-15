@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::common::{run_nt_publish, tempdir, SequencedResponder};
+use super::common::{base_args_with_data, run_nt_publish, tempdir, SequencedResponder};
 
 /// Persistent 5xx exhausts the retry budget. Server is hit `max_attempts`
 /// times (3 per the production default); final exit is non-zero with the
@@ -36,14 +36,7 @@ async fn publish_persistent_5xx_retries_then_gives_up_with_last_status() {
         &server.uri(),
         Some("nt_push_demo"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(out.code, 0, "persistent 5xx must produce non-zero exit");
@@ -84,14 +77,7 @@ async fn publish_retries_5xx_then_succeeds_on_200() {
         &server.uri(),
         Some("nt_push_demo"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_eq!(
@@ -125,14 +111,7 @@ async fn publish_persistent_4xx_does_not_retry() {
         &server.uri(),
         Some("nt_push_demo"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(out.code, 0, "4xx must produce non-zero exit");

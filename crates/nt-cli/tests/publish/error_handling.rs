@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::common::{run_nt_publish, tempdir};
+use super::common::{base_args_with_data, run_nt_publish, tempdir};
 
 // ─── Missing token short-circuits BEFORE any request ─────────────────────
 
@@ -25,14 +25,7 @@ async fn publish_with_no_token_fails_before_request() {
         &server.uri(),
         None, // no token
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(
@@ -67,14 +60,7 @@ async fn publish_401_response_surfaces_auth_failure_on_stderr() {
         &server.uri(),
         Some("nt_push_bad"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(out.code, 0, "401 must produce non-zero exit");
@@ -105,14 +91,7 @@ async fn publish_403_response_surfaces_permission_denied_on_stderr() {
         &server.uri(),
         Some("nt_push_demo"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(out.code, 0);
@@ -142,14 +121,7 @@ async fn publish_4xx_validation_error_surfaces_server_message() {
         &server.uri(),
         Some("nt_push_demo"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(out.code, 0, "422 must produce non-zero exit");
@@ -189,14 +161,7 @@ async fn publish_response_passes_through_unknown_fields() {
         &server.uri(),
         Some("nt_push_token"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_eq!(out.code, 0, "expected success; stderr={:?}", out.stderr);
@@ -216,14 +181,7 @@ async fn publish_connection_refused_maps_to_transport_error() {
         "http://127.0.0.1:1", // port 1 is reserved + closed
         Some("nt_push_token"),
         home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            "{}",
-            "--project",
-            "demo",
-        ],
+        &base_args_with_data("{}"),
     )
     .await;
     assert_ne!(

@@ -1,13 +1,11 @@
 //! Happy-path wire-shape pins: POST `/v1/events` with Bearer header,
 //! single-element JSON array body, `type, data, source` field order.
 
-use std::sync::{Arc, Mutex};
-
 use serde_json::{json, Value};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::common::{run_nt_publish, tempdir};
+use super::common::{capture_publish_body, run_nt_publish, tempdir};
 
 #[tokio::test]
 async fn publish_sends_post_to_v1_events_with_bearer_header_and_prints_response() {
@@ -95,28 +93,10 @@ async fn publish_request_body_is_single_element_array_with_event_envelope() {
 /// Inspects the raw request body bytes and asserts `type`, `data`,
 /// `source` appear in that declaration order. Same monotonic-byte-
 /// position approach as the nt status and list_event_types tests.
-/// Capture is synchronous inside the responder closure (no spawn +
-/// sleep race) using a std::sync::Mutex.
 #[tokio::test]
 async fn publish_wire_body_field_order_is_type_data_source() {
-    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let captured_for_responder = captured.clone();
-
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/events"))
-        .respond_with(move |req: &wiremock::Request| {
-            // wiremock invokes this closure synchronously per request.
-            // Take the body inline; no spawn, no race.
-            let body = String::from_utf8(req.body.clone()).expect("body utf8");
-            *captured_for_responder.lock().unwrap() = Some(body);
-            ResponseTemplate::new(200).set_body_json(json!({
-                "ingested": 1, "deduped": 0, "ids": ["x"],
-            }))
-        })
-        .expect(1)
-        .mount(&server)
-        .await;
+    let captured = capture_publish_body(&server).await;
 
     let home = tempdir();
     let out = run_nt_publish(

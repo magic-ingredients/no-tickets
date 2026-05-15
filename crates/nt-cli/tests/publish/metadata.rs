@@ -7,14 +7,11 @@
 //! string), and the on-wire order is `type, data, subject?, source,
 //! parentEventId?, traceId?, dedupeKey?`.
 
-use std::sync::{Arc, Mutex};
-
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::common::{
     base_args, capture_publish_body, envelope, run_nt_publish, run_nt_publish_with_env, tempdir,
-    HAPPY_RESPONSE,
 };
 
 #[tokio::test]
@@ -325,19 +322,8 @@ async fn publish_wire_field_order_with_all_optionals_set() {
     // ADR-2-aligned wire order: type, data, subject?, source,
     // parentEventId?, traceId?, dedupeKey?. With every optional field
     // set, the byte-position assertions cover the full envelope shape.
-    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let captured_for_responder = captured.clone();
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/events"))
-        .respond_with(move |req: &wiremock::Request| {
-            let body = String::from_utf8(req.body.clone()).expect("body utf8");
-            *captured_for_responder.lock().unwrap() = Some(body);
-            ResponseTemplate::new(200).set_body_raw(HAPPY_RESPONSE.as_bytes(), "application/json")
-        })
-        .expect(1)
-        .mount(&server)
-        .await;
+    let captured = capture_publish_body(&server).await;
 
     let home = tempdir();
     let mut args = base_args();

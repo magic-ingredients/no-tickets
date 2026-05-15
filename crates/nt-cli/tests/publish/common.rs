@@ -164,14 +164,17 @@ pub(crate) const BASE_TYPE: &str = "ai.task.completed.v1";
 pub(crate) const BASE_DATA: &str = r#"{"taskId":"t-1","sessionId":"s-1"}"#;
 
 pub(crate) fn base_args() -> Vec<&'static str> {
-    vec![
-        "--type",
-        BASE_TYPE,
-        "--data",
-        BASE_DATA,
-        "--project",
-        "demo",
-    ]
+    base_args_with_data(BASE_DATA)
+}
+
+/// Same shape as `base_args` but with caller-supplied `--data`. Used by
+/// the error-handling and retry suites, which need an empty `{}` data
+/// payload (the wire-shape pin in `metadata` requires real fields, so
+/// it stays on `base_args`). Centralising the four other args keeps a
+/// future "rename --project" / "add a required global flag" refactor
+/// from being a sweep across nine call sites.
+pub(crate) fn base_args_with_data(data: &'static str) -> Vec<&'static str> {
+    vec!["--type", BASE_TYPE, "--data", data, "--project", "demo"]
 }
 
 /// Parse the captured wire body (a JSON array containing exactly one

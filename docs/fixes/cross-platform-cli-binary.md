@@ -541,7 +541,8 @@ The existing fix docs, AGENTS.md, and `.tiny-brain/` material are already public
 - GitHub repo page shows the "Report a vulnerability" button under the Security tab
 
 ### 32. Widen pre-commit fmt scope to whole workspace
-status: not_started
+status: completed
+commitSha: 8c04c4d
 
 Root cause of the recurring fmt drift that's been showing up as "incidental rustfmt cleanup" in Task 28-era commits. `package.json` scripts run `cargo fmt --check -p no-tickets` which only touches the main package; the other crates (`nt-mcp`, `nt-core`, `nt-schemas`) drift silently.
 

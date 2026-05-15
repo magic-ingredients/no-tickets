@@ -1,7 +1,7 @@
 {
   "name": "@magic-ingredients/no-tickets",
   "version": "2.0.5",
-  "description": "CLI, MCP server, and SDK for no-tickets — ticketless project management for AI teams",
+  "description": "SDK for no-tickets — ticketless project management for AI teams",
   "type": "module",
   "main": "dist/core/index.js",
   "types": "dist/core/index.d.ts",
@@ -25,13 +25,9 @@
   },
   "files": [
     "dist",
-    "bin",
     "templates",
     "wrappers"
   ],
-  "bin": {
-    "no-tickets": "bin/no-tickets.js"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc --watch",
@@ -41,7 +37,6 @@
     "test:coverage": "vitest run --coverage",
     "test:mutate": "npx stryker run",
     "typecheck": "tsc --noEmit",
-    "prepack": "chmod +x bin/no-tickets.js",
     "rust:check": "cargo check -p nt-cli --tests",
     "rust:clippy": "cargo clippy -p nt-cli --all-targets -- -D warnings",
     "rust:fmt": "cargo fmt --check -p nt-cli",
@@ -52,7 +47,6 @@
   },
   "dependencies": {
     "@magic-ingredients/no-tickets-schemas": "^0.2.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "gray-matter": "^4.0.3",
     "zod": "^3.25.0"
   },
@@ -78,8 +72,7 @@
     "no-tickets",
     "project-management",
     "ai",
-    "mcp",
-    "cli",
+    "sdk",
     "ticketless"
   ]
 }

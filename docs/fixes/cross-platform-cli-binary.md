@@ -633,7 +633,27 @@ This is bookkeeping — no behaviour change. Pinned by every existing test suite
 
 ### 6. Distribution pipeline via `cargo-dist`
 status: not_started
-depends_on: [24, 25]
+depends_on: [24, 25, 11]
+
+**Why Task 11 (self-update) is a hard prerequisite, not a follow-up:**
+the moment we publish v0.1.0 to install.sh / GH Releases, every
+direct-download user is pinned to whatever version they downloaded.
+Without `nt self-update` in v0.1.0, they have no in-binary path to
+v0.1.1 — they have to remember the curl command, re-run it, and
+trust that the new install.sh URL hasn't moved. Cutting v0.1.0
+without self-update means v0.1.0 users are effectively forked: an
+unknown subset stays stuck on the inaugural release and we have no
+mechanism to migrate them.
+
+Self-update has to ship in the *first* binary we publish, not the
+second. So Task 11 precedes Task 6 in the dependency graph even
+though it sounds like an enhancement.
+
+(Package-manager installs — Homebrew, Scoop, cargo, apt/yum — are
+exempt: those users update via their manager. Task 11 detects the
+install path and redirects appropriately. The blocker only applies
+to the install.sh / direct-download cohort, but they're the
+biggest cohort by design.)
 
 Single config block in `Cargo.toml` drives the full distribution surface: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula publish-and-update, Scoop manifest publish-and-update. Replaces what would otherwise be four separate hand-rolled workflows.
 

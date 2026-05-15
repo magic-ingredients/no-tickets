@@ -826,7 +826,8 @@ Subdomain pick follows the existing `*.no-tickets.com` convention (`api.`, `app.
 - Caching headers: short TTL (≤5 min) so a new release's installer ships quickly
 
 ### 11. `nt self-update` subcommand
-status: not_started
+status: completed
+commitSha: aec8657
 
 Add a `nt self-update` command using the `self_update` crate. Scoped specifically to install.sh / direct-download users — package-manager installs (Homebrew, Scoop, cargo, apt/yum) update via their package manager and don't go through this path.
 

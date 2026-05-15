@@ -1,10 +1,10 @@
 <!-- agents:tiny-brain:start -->
-<!-- content-hash:ad98a24503007978 -->
+<!-- content-hash:277f4a39920ae799 -->
 # @magic-ingredients/no-tickets
 
-CLI, MCP server, and SDK for no-tickets — ticketless project management for AI teams
+SDK for no-tickets — ticketless project management for AI teams
 
-Ticketless project management for AI teams. CLI, MCP server, and SDK in one package.
+Ticketless project management for AI teams — TypeScript SDK.
 
 ## Environment Setup
 
@@ -25,7 +25,7 @@ tsc --watch
 
 **Build:**
 ```bash
-tsc
+tsc -p tsconfig.build.json
 ```
 
 ## Testing

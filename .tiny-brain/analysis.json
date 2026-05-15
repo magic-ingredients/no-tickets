@@ -1,11 +1,12 @@
 {
   "version": "1.0",
-  "detectedAt": "2026-04-16T11:04:54.968Z",
-  "analysisHash": "d8769ebc4629c9110b3c592c1b47876dcf8ec0441b3a0b670eab6cac80773891",
+  "detectedAt": "2026-05-15T12:46:02.819Z",
+  "analysisHash": "f7509fc9fd37290f2cb941e23a5957918547a86df80a6af30b81fb792c12029d",
   "stack": {
     "languages": [
+      "javascript",
       "typescript",
-      "javascript"
+      "rust"
     ],
     "frameworks": [],
     "testing": [
@@ -15,12 +16,12 @@
   },
   "analysis": {
     "hasTests": true,
-    "testFileCount": 17,
+    "testFileCount": 32,
     "testPatterns": [
       ".test.ts"
     ],
     "isPolyglot": true,
-    "primaryLanguage": "typescript",
+    "primaryLanguage": "javascript",
     "documentationPattern": "mixed",
     "documentationLocations": [
       "README.md",
@@ -39,7 +40,7 @@
       "tool": "eslint"
     },
     "build": {
-      "command": "tsc",
+      "command": "tsc -p tsconfig.build.json",
       "tool": "typescript"
     },
     "dev": {
@@ -67,7 +68,7 @@
       ],
       "commands": {
         "quality": "npx tsc --noEmit -p /Users/andyrichardson/work/repos/no-tickets/no-tickets/tsconfig.json",
-        "pipeline": "if [ -n \"$(git diff --name-only --cached --diff-filter=ACM | grep -vE '^(crates/|Cargo\\.(toml|lock)$|\\.tiny-brain/|docs/)')\" ]; then npx tsc --noEmit -p {config}; fi"
+        "pipeline": null
       },
       "categories": [
         "Reliability",
@@ -127,6 +128,23 @@
       ],
       "emoji": "📈",
       "color": "#4caf50"
+    },
+    {
+      "id": "mutation-testing",
+      "name": "Mutation Testing",
+      "variant": null,
+      "configPaths": [
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/stryker.config.mjs"
+      ],
+      "commands": {
+        "quality": "npx stryker run --reporters json,clear-text",
+        "pipeline": "npx stryker run --reporters json,clear-text --mutate \"{changed}\""
+      },
+      "categories": [
+        "Testing"
+      ],
+      "emoji": "🧟",
+      "color": "#8bc34a"
     }
   ]
 }

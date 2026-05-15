@@ -163,4 +163,23 @@ describe('package.json exports field', () => {
     expect(keys).not.toContain('./push');
     expect(keys).not.toContain('./push-schemas');
   });
+
+  it('does not declare a `bin` field (CLI retired in favour of native nt binary)', async () => {
+    const pkg = await import('../../package.json', { with: { type: 'json' } });
+    expect(pkg.default).not.toHaveProperty('bin');
+  });
+
+  it('does not depend on the MCP SDK (MCP retired in favour of nt-mcp Rust binary)', async () => {
+    const pkg = await import('../../package.json', { with: { type: 'json' } });
+    const deps = (pkg.default.dependencies ?? {}) as Record<string, string>;
+    const devDeps = (pkg.default.devDependencies ?? {}) as Record<string, string>;
+    expect(deps).not.toHaveProperty('@modelcontextprotocol/sdk');
+    expect(devDeps).not.toHaveProperty('@modelcontextprotocol/sdk');
+  });
+
+  it('does not ship a bin/ directory via the files allowlist', async () => {
+    const pkg = await import('../../package.json', { with: { type: 'json' } });
+    const files = (pkg.default.files ?? []) as readonly string[];
+    expect(files).not.toContain('bin');
+  });
 });

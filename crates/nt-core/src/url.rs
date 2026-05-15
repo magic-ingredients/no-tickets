@@ -31,22 +31,34 @@ mod tests {
 
     #[test]
     fn joins_with_single_slash() {
-        assert_eq!(api_url("https://api.example", "/v1/events"), "https://api.example/v1/events");
+        assert_eq!(
+            api_url("https://api.example", "/v1/events"),
+            "https://api.example/v1/events"
+        );
     }
 
     #[test]
     fn strips_trailing_slash_from_base() {
-        assert_eq!(api_url("https://api.example/", "/v1/events"), "https://api.example/v1/events");
+        assert_eq!(
+            api_url("https://api.example/", "/v1/events"),
+            "https://api.example/v1/events"
+        );
     }
 
     #[test]
     fn accepts_path_without_leading_slash() {
-        assert_eq!(api_url("https://api.example", "v1/events"), "https://api.example/v1/events");
+        assert_eq!(
+            api_url("https://api.example", "v1/events"),
+            "https://api.example/v1/events"
+        );
     }
 
     #[test]
     fn handles_both_sides_naked() {
-        assert_eq!(api_url("https://api.example", "v1"), "https://api.example/v1");
+        assert_eq!(
+            api_url("https://api.example", "v1"),
+            "https://api.example/v1"
+        );
     }
 
     #[test]
@@ -54,7 +66,10 @@ mod tests {
         // Defensive: a `base = "...//"` (env var bug) shouldn't
         // produce `host///v1/...`. `trim_end_matches('/')` strips
         // them all.
-        assert_eq!(api_url("https://api.example///", "/v1/events"), "https://api.example/v1/events");
+        assert_eq!(
+            api_url("https://api.example///", "/v1/events"),
+            "https://api.example/v1/events"
+        );
     }
 
     // Adversarial review #6: pin behaviour on degenerate inputs.

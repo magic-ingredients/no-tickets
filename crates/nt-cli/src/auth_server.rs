@@ -67,7 +67,6 @@ pub fn accept_callback(
     expected_state: &str,
     timeout: Duration,
 ) -> Result<CallbackResult, AuthServerError> {
-    listener.set_nonblocking(false)?;
     // accept() doesn't natively take a timeout. Set per-connection
     // read/write timeouts and emulate accept-timeout by polling with
     // set_nonblocking + sleep loop — simpler than rolling poll/epoll.
@@ -76,7 +75,10 @@ pub fn accept_callback(
     loop {
         match listener.accept() {
             Ok((stream, _addr)) => {
-                listener.set_nonblocking(false)?;
+                // Listener is dropped after this return; the new stream is
+                // what handle_one operates on, and handle_one re-clears its
+                // own non-blocking flag (macOS inherits O_NONBLOCK from
+                // the listener onto accepted streams).
                 return handle_one(stream, expected_state);
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -333,5 +335,60 @@ mod tests {
         let err =
             accept_callback(listener, "any", Duration::from_millis(150)).expect_err("times out");
         assert!(matches!(err, AuthServerError::Timeout), "got {err:?}");
+    }
+
+    // Deterministic regression for the macOS O_NONBLOCK-inherit race.
+    // accept_callback's poll loop runs with the listener in non-blocking
+    // mode; accepted streams inherit that flag on macOS, and a `read`
+    // before the client writes returns WouldBlock instead of blocking.
+    // handle_one must explicitly `set_nonblocking(false)` on the stream.
+    //
+    // To force the race: client connects, server accepts, then a
+    // small delay before client writes. Without the fix, handle_one's
+    // read sees an empty kernel buffer on the non-blocking socket and
+    // bails with WouldBlock. With the fix, it blocks until data arrives.
+    #[test]
+    fn handle_one_forces_blocking_on_inherited_nonblocking_stream() {
+        use std::sync::mpsc;
+
+        let (listener, port) = bind().expect("bind");
+        listener
+            .set_nonblocking(true)
+            .expect("nonblocking listener");
+
+        let (server_accepted_tx, server_accepted_rx) = mpsc::channel::<()>();
+        let server = std::thread::spawn(move || {
+            let stream = loop {
+                match listener.accept() {
+                    Ok((s, _)) => break s,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(e) => panic!("accept: {e}"),
+                }
+            };
+            server_accepted_tx.send(()).expect("notify accept");
+            handle_one(stream, "s")
+        });
+
+        let mut client =
+            std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("client connect");
+        server_accepted_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("server accepts");
+        // Give handle_one time to enter its read. Without the fix, it
+        // returns WouldBlock immediately; with the fix, it blocks here.
+        std::thread::sleep(Duration::from_millis(50));
+        let req = "GET /callback?token=t&email=e&state=s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+        client.write_all(req.as_bytes()).expect("client write");
+        let _ = client.read_to_end(&mut Vec::new());
+
+        let result = server.join().expect("server joined");
+        if let Err(AuthServerError::Io(io)) = &result {
+            panic!("handle_one regressed (non-blocking inherit): {io:?}");
+        }
+        let ok = result.expect("handle_one ok");
+        assert_eq!(ok.token, "t");
+        assert_eq!(ok.email, "e");
     }
 }

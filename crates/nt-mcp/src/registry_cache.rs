@@ -235,8 +235,9 @@ async fn fetch(
         _ => {}
     }
 
-    let parsed: ListResponse = serde_json::from_str(&response.body)
-        .map_err(|e| McpError::internal_error(format!("invalid server JSON response: {e}"), None))?;
+    let parsed: ListResponse = serde_json::from_str(&response.body).map_err(|e| {
+        McpError::internal_error(format!("invalid server JSON response: {e}"), None)
+    })?;
     Ok(parsed.event_types)
 }
 

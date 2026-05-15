@@ -54,9 +54,7 @@ fn main() {
             "-p",
             &sha_name,
             "-D",
-            out_dir
-                .to_str()
-                .expect("OUT_DIR path is valid UTF-8"),
+            out_dir.to_str().expect("OUT_DIR path is valid UTF-8"),
             "--clobber",
         ])
         .status()
@@ -81,8 +79,8 @@ fn main() {
         .expect("sha256 sidecar has a leading hex digest")
         .to_ascii_lowercase();
 
-    let gz_bytes = fs::read(&gz_path)
-        .unwrap_or_else(|e| panic!("read downloaded {gz_path:?}: {e}"));
+    let gz_bytes =
+        fs::read(&gz_path).unwrap_or_else(|e| panic!("read downloaded {gz_path:?}: {e}"));
     let mut hasher = Sha256::new();
     hasher.update(&gz_bytes);
     let actual_hex: String = hasher

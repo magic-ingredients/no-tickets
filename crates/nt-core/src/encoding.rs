@@ -63,10 +63,7 @@ mod tests {
         // Defence against double-decoding: a pre-encoded `%20` from
         // the caller becomes `%2520` on the wire so the server's
         // decoder doesn't collapse it to a literal space.
-        assert_eq!(
-            encode_path_segment("foo%20bar").to_string(),
-            "foo%2520bar",
-        );
+        assert_eq!(encode_path_segment("foo%20bar").to_string(), "foo%2520bar",);
     }
 
     #[test]

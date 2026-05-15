@@ -71,10 +71,7 @@ pub async fn handle(
     //    they hit the URL.
     let url = api_url(
         &config.api_url,
-        &format!(
-            "/v1/registry/event-types/{}",
-            encode_path_segment(&args.id)
-        ),
+        &format!("/v1/registry/event-types/{}", encode_path_segment(&args.id)),
     );
     let response = get_raw(http_client, &url, &config.token)
         .await

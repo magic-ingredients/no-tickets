@@ -206,10 +206,7 @@ mod tests {
 
     #[test]
     fn object_without_properties_yields_empty_object() {
-        assert_eq!(
-            synthesise_example(&json!({ "type": "object" })),
-            json!({}),
-        );
+        assert_eq!(synthesise_example(&json!({ "type": "object" })), json!({}),);
     }
 
     #[test]
@@ -273,10 +270,7 @@ mod tests {
 
     #[test]
     fn array_without_items_yields_empty_array() {
-        assert_eq!(
-            synthesise_example(&json!({ "type": "array" })),
-            json!([]),
-        );
+        assert_eq!(synthesise_example(&json!({ "type": "array" })), json!([]),);
     }
 
     // ── Trust-boundary fallbacks ──────────────────────────────────

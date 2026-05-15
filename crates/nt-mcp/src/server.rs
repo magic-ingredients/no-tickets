@@ -62,7 +62,11 @@ pub struct NtServer {
 const DEFAULT_REGISTRY_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 fn registry_refresh_interval() -> Duration {
-    parse_registry_refresh_interval(std::env::var("NT_REGISTRY_REFRESH_INTERVAL_MS").ok().as_deref())
+    parse_registry_refresh_interval(
+        std::env::var("NT_REGISTRY_REFRESH_INTERVAL_MS")
+            .ok()
+            .as_deref(),
+    )
 }
 
 /// Pure parser for `NT_REGISTRY_REFRESH_INTERVAL_MS`. Extracted so the

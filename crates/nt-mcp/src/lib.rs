@@ -1,9 +1,9 @@
-pub mod config;
-pub mod error_map;
-pub mod example_synth;
-pub mod registry_cache;
-pub mod server;
-pub mod tools;
+mod config;
+mod error_map;
+mod example_synth;
+mod registry_cache;
+mod server;
+mod tools;
 
 use rmcp::{transport::stdio, ServiceExt};
 use server::NtServer;
@@ -15,6 +15,9 @@ use tracing_subscriber::EnvFilter;
 /// MCP JSON-RPC stream and causes Claude Code to silently disconnect.
 /// The stdout-purity integration test pins this.
 pub async fn run() -> anyhow::Result<()> {
+    // `try_init` (not `init`) so a re-entrant subscriber install — e.g.
+    // an embedded-future test path that already installed one — is a
+    // no-op rather than a panic.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),

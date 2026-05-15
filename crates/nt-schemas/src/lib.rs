@@ -28,8 +28,7 @@ pub struct ValidationIssue {
     pub message: String,
 }
 
-const BUNDLE_JSON: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/event-types.bundle.json"));
+const BUNDLE_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/event-types.bundle.json"));
 
 #[derive(Debug, Deserialize)]
 struct BundleFile {
@@ -56,8 +55,7 @@ struct CompiledBundle {
 fn bundle() -> &'static CompiledBundle {
     static CELL: OnceLock<CompiledBundle> = OnceLock::new();
     CELL.get_or_init(|| {
-        let parsed: BundleFile =
-            serde_json::from_str(BUNDLE_JSON).expect("bundle JSON parses");
+        let parsed: BundleFile = serde_json::from_str(BUNDLE_JSON).expect("bundle JSON parses");
         let entries: Vec<(String, Validator)> = parsed
             .schemas
             .into_iter()
@@ -71,9 +69,7 @@ fn bundle() -> &'static CompiledBundle {
                 let validator = jsonschema::draft202012::options()
                     .should_validate_formats(true)
                     .build(&schema)
-                    .unwrap_or_else(|e| {
-                        panic!("schema for {type_id:?} failed to compile: {e}")
-                    });
+                    .unwrap_or_else(|e| panic!("schema for {type_id:?} failed to compile: {e}"));
                 (type_id, validator)
             })
             .collect();

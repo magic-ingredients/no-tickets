@@ -451,7 +451,8 @@ This is what per-language wrappers use to keep the binary alive across many publ
 - Crash recovery: if the binary panics mid-stream, in-flight responses surface as `ok: false, transport_aborted`; wrapper can re-spawn cleanly
 
 ### 28. Consolidate nt-cli and nt-mcp into a single shippable cargo package
-status: not_started
+status: completed
+commitSha: 241025c
 depends_on: [6]
 
 The Task 6 scaffold (commits da19515, 76bc57e) configured cargo-dist but `dist plan` produces TWO releases because `nt-cli` and `nt-mcp` are separate cargo packages each declaring a `[[bin]]`. Two installers (`nt-cli-installer.sh`, `nt-mcp-installer.sh`), two homebrew formulae (`nt-cli.rb`, `nt-mcp.rb`), two tarballs per target. Bad UX: a user installing "no-tickets" has to know there's a CLI and a separate MCP server packaged independently and run two installers.
@@ -483,6 +484,98 @@ Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires b
 - `dist plan` announces ONE release (the `nt-cli` package) containing both `nt` and `nt-mcp` binaries across the five targets
 - Generated formula is `no-tickets.rb`, installer is `no-tickets-installer.sh`, tarball is `no-tickets-{target}.{tar.xz,zip}` — single product-name shape across every channel; binaries inside are `nt` and `nt-mcp`
 - `cargo run -p nt-cli --bin nt` and `cargo run -p nt-cli --bin nt-mcp` both work (dev workflow preserved)
+
+### 29. Smoke-test release pipeline with a prerelease tag
+status: not_started
+depends_on: [6, 10, 28]
+
+End-to-end validation of the assembled distribution pipeline before committing to `v0.1.0`. Push `v0.0.1-prerelease.1` (cargo-dist gates `publish-homebrew-formula` on `!is_prerelease`, so the tap stays untouched on smoke tests — exactly what we want).
+
+**Steps:**
+1. `git tag v0.0.1-prerelease.1 && git push origin v0.0.1-prerelease.1`
+2. Watch Actions tab; expect five `build-local-artifacts` matrix jobs + `host` + `announce` green, and `publish-homebrew-formula` skipped (not failed).
+3. Verify `curl -fsSL https://get.no-tickets.com | sh` returns the install script (validates Task 10's worker + Task 6's installer naming end-to-end).
+4. Run the install command; expect `nt --version` to print `0.0.1-prerelease.1` and `nt-mcp` to exist alongside.
+5. If anything's wrong, delete the tag locally + remotely + delete the GH Release, fix, retry.
+
+**Acceptance:**
+- GitHub Release for the prerelease tag contains 5 tarballs + shell + powershell installer + sha256 checksums
+- `curl -fsSL https://get.no-tickets.com | sh` installs working `nt` and `nt-mcp` to `~/.local/bin/`
+- `publish-homebrew-formula` job shows "skipped" status (not failed) — proves cargo-dist's prerelease gating works as expected
+
+### 30. Rename source.name wire identifier `"nt-cli"` → `"no-tickets"`
+status: not_started
+
+Every event the CLI publishes carries `"source": { "name": "nt-cli" }` — a vestige of the original package name. Memory `[[project_no_v1_backcompat]]` permits wire-format changes; renaming to `"no-tickets"` aligns with the cargo package + product name. Binary name `nt` stays the daily-use identifier; source.name is the product-facing wire identifier.
+
+**Files to modify:**
+- `crates/nt-cli/src/commands/publish.rs` — `DEFAULT_SOURCE_NAME` constant
+- `crates/nt-cli/src/commands/publish/envelope.rs` — literals + test assertions
+- `crates/nt-cli/src/commands/publish/post.rs` — test assertion
+- `crates/nt-cli/src/commands/publish_batch/source.rs` — many literals + tests
+- `crates/nt-cli/src/commands/publish_batch.rs` — doc comment
+- `crates/nt-cli/src/main.rs` — clap help text for `--source-name` override
+- `crates/nt-cli/tests/publish/happy_path.rs` — assertions
+- `crates/nt-cli/tests/publish/batch.rs` — assertions + comment
+- `crates/nt-cli/tests/mcp/publish_event.rs` — comments mentioning the default
+- `crates/nt-mcp/src/server.rs` — comment reference
+
+**Acceptance:**
+- Every emitter and assertion uses `"no-tickets"`
+- `cargo test --workspace` clean
+
+### 31. Public-repo polish files
+status: not_started
+
+Repo is going public. Add the GitHub-recognized OSS files so the repo page surfaces the right buttons.
+
+**Files to create:**
+- `SECURITY.md` — vulnerability reporting policy (e.g. `security@no-tickets.com` or "open a private security advisory on GitHub")
+- `CONTRIBUTING.md` — optional; only if external PRs are wanted
+
+The existing fix docs, AGENTS.md, and `.tiny-brain/` material are already public-safe; this task is only the missing OSS conventions, not a broader audit.
+
+**Acceptance:**
+- `SECURITY.md` present in repo root
+- GitHub repo page shows the "Report a vulnerability" button under the Security tab
+
+### 32. Widen pre-commit fmt scope to whole workspace
+status: not_started
+
+Root cause of the recurring fmt drift that's been showing up as "incidental rustfmt cleanup" in Task 28-era commits. `package.json` scripts run `cargo fmt --check -p no-tickets` which only touches the main package; the other crates (`nt-mcp`, `nt-core`, `nt-schemas`) drift silently.
+
+**Files to modify:**
+- `package.json` — `rust:fmt`, `rust:fmt:fix`, possibly `rust:clippy` / `rust:check` drop the `-p no-tickets` scope so the whole workspace is checked
+
+**Acceptance:**
+- A deliberately misformatted file in `crates/nt-core/` is caught by the pre-commit hook
+- No drift-by-accumulation across crates in subsequent commits
+
+### 33. Decide TS-SDK Phase 4 survival
+status: not_started
+
+Parked architectural question. Phase 4 (per-language wrappers) currently lists TS alongside Python and Go: a ~50–80 LOC wrapper that spawns `nt` (potentially in `--stream` mode for warm reuse). Open question: does the npm package come back, or is the Rust binary the only client surface forever and TS users go through `execFile('nt', ...)` themselves?
+
+Decision blocks nothing in Phase 3 but sets the Phase 4 scope and tells Task 13 (docs) whether to mention `npm install @magic-ingredients/no-tickets` at all.
+
+**Acceptance:**
+- A short ADR or a paragraph in `docs/rust-spike-notes.md` captures the decision and its rationale, so future Phase 4 work doesn't have to re-litigate it.
+
+### 34. Scoop manifest support (Windows)
+status: not_started
+depends_on: [6]
+
+cargo-dist 0.31.0's installer set is shell/powershell/npm/homebrew/msi — no scoop. Hand-rolled scoop manifest publish required, mirroring the homebrew-tap approach: separate `magic-ingredients/scoop-bucket` repo + manifest committed by a CI step after each release.
+
+The PowerShell installer covers Windows users on day one; this task is the conventional package-manager experience on top of that.
+
+**Files to modify/create:**
+- `magic-ingredients/scoop-bucket` repo (new, external — empty repo with README; CI populates `bucket/no-tickets.json`)
+- A new GH Actions job that runs after `host`, generates the scoop manifest from release artifact URLs + sha256, and commits to the bucket repo (token: `SCOOP_BUCKET_TOKEN`, parallel to `HOMEBREW_TAP_TOKEN`)
+- Probably `infra/scoop-publisher/` if it grows beyond a few lines of YAML
+
+**Acceptance:**
+- After tag push, `scoop bucket add magic-ingredients https://github.com/magic-ingredients/scoop-bucket && scoop install no-tickets` works on Windows
 
 ### 5. Full MCP server surface port
 status: in_progress
@@ -813,9 +906,10 @@ Out of `cargo-dist`'s scope (handled in separate tasks): deb/rpm packaging (Task
 
 **Acceptance:**
 - Tag push produces GH Release with five-target artifacts + checksums
-- `brew install magic-ingredients/tap/nt` works on macOS + Linux
-- `scoop install nt` works on Windows
-- `curl -fsSL <generated-install.sh-url> | sh` produces a working `nt` on Linux/macOS
+- `brew install magic-ingredients/tap/no-tickets` works on macOS + Linux
+- `curl -fsSL https://get.no-tickets.com | sh` produces a working `nt` on Linux/macOS
+
+Scoop is out of cargo-dist 0.31.0's installer set (shell/powershell/npm/homebrew/msi only) and lands as its own task (Task 34).
 
 ### 7. npm wrapper package (migration path for current users)
 status: superseded
@@ -845,20 +939,12 @@ Apt and yum repositories for Linux server installs. Hosted on GitHub Pages or a 
 - repo manifest files
 
 ### 10. get.no-tickets.com hosting + install.sh redirect
-status: not_started
+status: completed
+commitSha: cd5d25b
 
-`cargo-dist` generates the `install.sh` content; this task handles the `get.no-tickets.com` DNS + hosting setup so `curl -fsSL https://get.no-tickets.com | sh` resolves to the cargo-dist-generated install script for the latest release.
+Picked Cloudflare Worker. Provisioned via the dashboard, then captured as IaC in `infra/get-no-tickets/` (wrangler.toml + src/index.js + README). Worker proxies `github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-installer.sh`, returns it with `Content-Type: text/x-shellscript` and a 5-min edge cache. Custom domain `get.no-tickets.com` bound via `custom_domain = true` in wrangler — DNS + cert auto-managed.
 
-Subdomain pick follows the existing `*.no-tickets.com` convention (`api.`, `app.`, `api-staging.`) and the industry pattern (`get.k8s.io`, `get.pnpm.io`, `get.k3s.io`). Avoids the cost + management of a separate vanity domain (`nt.sh` was an earlier proposal).
-
-**Files to modify/create:**
-- DNS: add `get` CNAME / A record to the `no-tickets.com` zone pointing at the chosen hosting target
-- Hosting target options (pick one):
-  - **Cloudflare Worker** that serves the installer.sh content inline (cheapest, edge-cached, sub-50 ms)
-  - **GitHub Pages** on a docs/landing repo with a `/install` page and a 200-response root that serves installer.sh
-  - **S3 + CloudFront** static-hosting the installer.sh
-- Redirect / response rule so a bare `curl -fsSL https://get.no-tickets.com` (no path) returns the installer script with `Content-Type: text/x-shellscript`
-- Caching headers: short TTL (≤5 min) so a new release's installer ships quickly
+End-to-end verification (`curl -fsSL https://get.no-tickets.com | sh` actually installs working binaries) happens once a tag is pushed and the upstream installer exists — captured in Task 29.
 
 ### 11. `nt self-update` subcommand
 status: completed
@@ -897,19 +983,20 @@ Once the Rust binary covers the full surface and self-update is in place (Task 1
 - `bin/no-tickets.js` (delete — no replacement shim)
 - `package.json` — retire the npm package or strip to a placeholder, depending on the chosen Phase 4 path
 
-### 13. Documentation: install paths + migration note
+### 13. Documentation: install paths
 status: not_started
 
 README + docs covering:
-- Each install channel (`brew install`, `scoop install`, `cargo install`, `curl install.sh`)
+- Each install channel actually shipping in v0.1.0: `brew install magic-ingredients/tap/no-tickets`, `cargo install no-tickets --locked`, `curl -fsSL https://get.no-tickets.com | sh`, PowerShell installer for Windows, direct tarball download per target
 - "Why a binary now?" — performance, no-Node CI, multi-channel distribution
-- **Migration note for existing npm users** — the rewrite drops backcompat; install via one of the new channels. Existing `npx no-tickets ...` workflows stop working and must be replaced with `nt ...`. (Phase 4 will reintroduce a TS programmatic wrapper for in-code use; CLI users move to the binary directly.)
 - `nt self-update` — when to use it (install.sh / direct-download), when not to (every package-manager channel)
+- Note that scoop is a future-channel (Task 34) so Windows users currently use the PowerShell installer
+
+No TS-migration doc — the rewrite explicitly drops npm backcompat per `project_no_v1_backcompat`, and there's no migration path to write up that wouldn't simply repeat "install via one of the new channels."
 
 **Files to modify/create:**
 - `README.md`
 - `docs/install.md` (new)
-- `docs/migration-from-ts-cli.md` (new)
 
 ### 14. Publish spike — single event to staging end-to-end
 status: completed

@@ -598,11 +598,36 @@ status: not_started
 Switch `list_event_types` from local fixtures (Task 2 spike) to a real `GET /v1/registry/event-types` call with an in-memory cache + async refresh. Matches TS `RegistryClient` behaviour. Closes out the spike.
 
 ### 24. Extract `nt-core` shared crate
-status: not_started
+status: completed
+commitSha: 0410215
 
 Once Task 19's duplication has a second consumer (Task 20 or Task 21), extract the shared HTTP/auth/urls code into a `crates/nt-core/` workspace member. Both `nt-cli` and `nt-mcp` depend on it. Eliminates the drift risk introduced by Task 19's deliberate duplication.
 
 This sub-task is bookkeeping — no new functionality, just code motion + import updates. Pinned by the existing test suites of both consumers continuing to pass.
+
+**Completed 2026-05-15.** `nt-core` extracted with four modules:
+`encoding` (PATH_SEGMENT + helper), `url` (api_url join/trim),
+`http` (get_raw / post_json), `error` (Transport / Body /
+InvalidJson / HttpStatus). nt-mcp's `publish_event` and
+`describe_event_type` now delegate URL composition, percent-
+encoding, and HTTP plumbing to nt-core; a small adapter
+`nt-mcp::error_map::transport_to_mcp` bridges the generic
+`nt_core::Error` to `McpError`. Status-code semantic mapping
+(404 / 401 / 403 / non-2xx → tool-specific McpError wording)
+stays inline at each tool handler because the wording is per-
+resource.
+
+nt-cli stays on its own `transport.rs` for now — its
+`TransportError::Network(reqwest::Error)` keeps the typed
+reqwest error for `is_timeout()` / `is_connect()` introspection,
+which an nt-core migration would lose. Task 25's split of
+`transport.rs` is the right time to revisit.
+
+Test surface after refactor:
+- nt-core: 25 unit + 1 doctest (encoding, url, http, error)
+- nt-mcp: 54/54 unchanged at the integration layer
+- cargo-mutants on nt-core: 5/5 caught (3 unviable, 0 surviving)
+- Workspace clippy `-D warnings` clean
 
 ### 25. File granularity — split files > 500 LOC
 status: not_started

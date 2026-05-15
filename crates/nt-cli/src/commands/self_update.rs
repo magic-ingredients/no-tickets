@@ -187,22 +187,22 @@ pub(crate) fn detect_install_kind(exe_path: &Path) -> InstallKind {
 pub(crate) fn redirect_message(manager: Manager) -> String {
     match manager {
         Manager::Homebrew => {
-            "nt was installed via Homebrew. Run `brew upgrade nt` to update.".to_string()
+            "nt was installed via Homebrew. Run `brew upgrade no-tickets` to update.".to_string()
         }
-        Manager::Cargo => {
-            "nt was installed via Cargo. Run `cargo install --force nt` to update.".to_string()
-        }
+        Manager::Cargo => "nt was installed via Cargo. \
+             Run `cargo install --force no-tickets` to update."
+            .to_string(),
         Manager::Scoop => {
-            "nt was installed via Scoop. Run `scoop update nt` to update.".to_string()
+            "nt was installed via Scoop. Run `scoop update no-tickets` to update.".to_string()
         }
         Manager::Asdf => "nt was installed via asdf. \
-             Update via your asdf plugin (e.g. `asdf install nt latest && asdf reshim`)."
+             Update via your asdf plugin (e.g. `asdf install no-tickets latest && asdf reshim`)."
             .to_string(),
         Manager::Mise => "nt was installed via mise. \
-             Update via `mise install nt@latest` (or your mise tools manifest)."
+             Update via `mise install no-tickets@latest` (or your mise tools manifest)."
             .to_string(),
         Manager::Volta => "nt was installed via Volta. \
-             Update via `volta install nt@latest`."
+             Update via `volta install no-tickets@latest`."
             .to_string(),
     }
 }
@@ -653,7 +653,7 @@ mod tests {
         // `brew upgardex` or a swap to another command would fail here.
         let msg = redirect_message(Manager::Homebrew);
         assert!(
-            msg.contains("`brew upgrade nt`"),
+            msg.contains("`brew upgrade no-tickets`"),
             "Homebrew message must quote the exact command, got: {msg}"
         );
     }
@@ -662,7 +662,7 @@ mod tests {
     fn redirect_message_cargo_names_exact_cargo_install_force_command() {
         let msg = redirect_message(Manager::Cargo);
         assert!(
-            msg.contains("`cargo install --force nt`"),
+            msg.contains("`cargo install --force no-tickets`"),
             "Cargo message must quote the exact command, got: {msg}"
         );
     }
@@ -671,7 +671,7 @@ mod tests {
     fn redirect_message_scoop_names_exact_scoop_update_command() {
         let msg = redirect_message(Manager::Scoop);
         assert!(
-            msg.contains("`scoop update nt`"),
+            msg.contains("`scoop update no-tickets`"),
             "Scoop message must quote the exact command, got: {msg}"
         );
     }
@@ -689,7 +689,7 @@ mod tests {
     fn redirect_message_mise_names_exact_mise_install_command() {
         let msg = redirect_message(Manager::Mise);
         assert!(
-            msg.contains("`mise install nt@latest`"),
+            msg.contains("`mise install no-tickets@latest`"),
             "mise message must quote the exact command, got: {msg}"
         );
     }
@@ -698,7 +698,7 @@ mod tests {
     fn redirect_message_volta_names_exact_volta_install_command() {
         let msg = redirect_message(Manager::Volta);
         assert!(
-            msg.contains("`volta install nt@latest`"),
+            msg.contains("`volta install no-tickets@latest`"),
             "Volta message must quote the exact command, got: {msg}"
         );
     }

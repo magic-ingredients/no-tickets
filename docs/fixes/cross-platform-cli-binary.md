@@ -459,8 +459,8 @@ The Task 6 scaffold (commits da19515, 76bc57e) configured cargo-dist but `dist p
 Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires both binaries to ship in ONE release under the formula name `nt`. This task does the package restructure that enables that.
 
 **Approach:**
-- Package name stays `nt-cli` for this task. The `nt` name is taken on crates.io (NetworkTables crate); `no-tickets` is available and matches the product name, but choosing the user-facing install name (`cargo install <X>`) is its own decision that ripples through Task 13 (docs) — out of scope here.
-- Homebrew formula is independently namespaced, so `[package.metadata.dist] formula = "nt"` keeps `brew install .../nt` working as the fix doc's Task 6 acceptance requires, even with the cargo package still named `nt-cli`. Installer scripts and tarballs still inherit the cargo package name (`nt-cli-installer.sh`, `nt-cli-{target}.tar.xz`) — addressable separately if it matters, but most users see only the `brew install` / `curl … | sh` command, not the underlying artifact names.
+- Cargo package was renamed `nt-cli` → `no-tickets` (matches the product name and the GitHub repo / homepage / domain — every other channel already says `no-tickets`). The daily-use binary stays `nt` (short, type-friendly). Single product name across all install channels avoids a "wait, is it nt or no-tickets?" moment in the docs (`cargo install no-tickets`, `brew install .../no-tickets`, `curl … no-tickets-installer.sh`, tarballs `no-tickets-{target}.tar.xz`, formula `no-tickets.rb`).
+- The `nt` name on crates.io is taken by an unrelated NetworkTables crate, which forced the cargo-side decision; we chose to align everything rather than diverge only on crates.io.
 - Convert `nt-mcp` to lib-only:
   - Create `crates/nt-mcp/src/lib.rs` re-exporting modules and a `pub async fn run() -> anyhow::Result<()>` containing the current `main()` body (tokio runtime stays in the consumer)
   - Delete `crates/nt-mcp/src/main.rs`
@@ -481,7 +481,7 @@ Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires b
 **Acceptance:**
 - `cargo check --workspace` and `cargo test --workspace` pass — no behavioural regression
 - `dist plan` announces ONE release (the `nt-cli` package) containing both `nt` and `nt-mcp` binaries across the five targets
-- Generated formula is `nt.rb`, installer is `nt-installer.sh`, tarball is `nt-{target}.{tar.xz,zip}` (workspace package renamed `nt-cli` → `nt` to drive consistent artifact naming)
+- Generated formula is `no-tickets.rb`, installer is `no-tickets-installer.sh`, tarball is `no-tickets-{target}.{tar.xz,zip}` — single product-name shape across every channel; binaries inside are `nt` and `nt-mcp`
 - `cargo run -p nt-cli --bin nt` and `cargo run -p nt-cli --bin nt-mcp` both work (dev workflow preserved)
 
 ### 5. Full MCP server surface port

@@ -1,0 +1,24 @@
+# Cloudflare Worker that serves the latest no-tickets install.sh content
+# at https://get.no-tickets.com. Backs the documented
+# `curl -fsSL https://get.no-tickets.com | sh` install path.
+#
+# Deploy with: `wrangler deploy` from this directory.
+# The Worker was originally created via the Cloudflare dashboard; subsequent
+# changes are managed here. Wrangler is idempotent on existing workers as
+# long as `name` matches the dashboard-created worker's name.
+
+name = "get-no-tickets"
+main = "src/index.js"
+compatibility_date = "2025-12-01"
+
+# Bind https://get.no-tickets.com directly to this worker.
+# `custom_domain = true` tells Cloudflare to manage the DNS record + cert
+# (no manual zone-side DNS dance needed).
+routes = [
+  { pattern = "get.no-tickets.com", zone_name = "no-tickets.com", custom_domain = true }
+]
+
+# Cap observability spend — `wrangler tail` and Workers Logs still work; this
+# just controls the always-on log retention price tier.
+[observability]
+enabled = true

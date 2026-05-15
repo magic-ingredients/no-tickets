@@ -13,3 +13,6 @@ package-lock.json
 /target/
 mutants.out/
 mutants.out.old/
+
+# Cloudflare Workers (wrangler local cache / dev state)
+.wrangler/

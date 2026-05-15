@@ -18,6 +18,7 @@ use crate::fixtures::{all_event_types, EventTypeRow};
 use crate::tools::describe_event_type::{self, DescribeEventTypeArgs};
 use crate::tools::list_event_types::{self, ListEventTypesArgs};
 use crate::tools::publish_event::{self, PublishEventArgs};
+use crate::tools::run_interaction::{self, RunInteractionArgs};
 
 /// Per-request timeout for outbound HTTP calls. Matches `nt-cli`'s
 /// `DEFAULT_TIMEOUT`. A hung upstream must not block the JSON-RPC
@@ -118,6 +119,26 @@ impl NtServer {
     ) -> Result<CallToolResult, McpError> {
         let config = EnvConfig::from_env().map_err(|msg| McpError::invalid_params(msg, None))?;
         describe_event_type::handle(&args, &config, &self.http_client).await
+    }
+
+    // Description literal must stay byte-for-byte in sync with the
+    // TS reference at `src/mcp/tools/run-interaction.ts`. rmcp's
+    // `#[tool]` macro requires a string literal so the test in
+    // `mcp.rs` holds its own byte-for-byte copy as the drift sentinel
+    // (same pattern as `describe_event_type`).
+    //
+    // Env resolution is lazy, matching the other auth-required
+    // tools — a missing NO_TICKETS_TOKEN / NO_TICKETS_API_URL
+    // surfaces per-call rather than failing the server at boot.
+    #[tool(
+        description = "Run a server-defined interaction by id with the given input. Returns the events it emitted. Use for compound actions where the server orchestrates multiple events."
+    )]
+    async fn run_interaction(
+        &self,
+        Parameters(args): Parameters<RunInteractionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let config = EnvConfig::from_env().map_err(|msg| McpError::invalid_params(msg, None))?;
+        run_interaction::handle(&args, &config, &self.http_client).await
     }
 }
 

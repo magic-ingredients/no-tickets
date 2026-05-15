@@ -525,7 +525,7 @@ GET `/v1/registry/event-types/{id}` and return the JSON Schema plus a synthesise
 - Example synthesis port (port `src/lib/example-synth.ts` to Rust)
 
 ### 21. `run_interaction` MCP tool
-status: not_started
+status: in_progress
 
 Server-call passthrough. POST `/v1/interactions/{id}` with `{ input, subject? }`, return the event list from the response.
 

@@ -2411,3 +2411,679 @@ async fn describe_event_type_call_does_not_corrupt_stdout_jsonrpc_stream() {
             .unwrap_or_else(|e| panic!("stdout polluted by non-JSON line {trimmed:?}: {e}"));
     }
 }
+
+// ─── run_interaction tool (Task 21) ────────────────────────────────────────
+
+/// Byte-for-byte TS-parity description from
+/// `src/mcp/tools/run-interaction.ts`. Pinned here as a string
+/// literal (the binary isn't a library, so the test can't see a
+/// module-side constant — and the describe_event_type review pinned
+/// that we don't keep module-side anchors anyway).
+const RUN_INTERACTION_TS_PARITY_DESCRIPTION: &str = "Run a server-defined interaction by id with the given input. Returns the events it emitted. Use for compound actions where the server orchestrates multiple events.";
+
+/// Canonical interaction response body — the wire shape the server
+/// returns for `POST /v1/interactions/{id}`. Matches the TS
+/// `interactionResponseSchema` in `src/core/interaction.ts`: a
+/// top-level `events` array of `{ id, type }` refs.
+fn interaction_response_body() -> Value {
+    json!({
+        "events": [
+            { "id": "evt_one", "type": "ai.task.completed.v1" },
+            { "id": "evt_two", "type": "ai.followup.scheduled.v1" }
+        ]
+    })
+}
+
+/// Body capturer for the run_interaction POST. Returns the captured
+/// request body as a UTF-8 string for shape assertions.
+async fn capture_interaction_body(
+    server: &MockServer,
+    interaction_id: &str,
+) -> Arc<Mutex<Option<String>>> {
+    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let cap_for_responder = captured.clone();
+    Mock::given(method("POST"))
+        .and(wm_path(format!("/v1/interactions/{interaction_id}")))
+        .respond_with(move |req: &wiremock::Request| {
+            let body = String::from_utf8(req.body.clone()).expect("request body utf8");
+            *cap_for_responder.lock().unwrap() = Some(body);
+            ResponseTemplate::new(200).set_body_json(interaction_response_body())
+        })
+        .expect(1)
+        .mount(server)
+        .await;
+    captured
+}
+
+// ─── Discovery: tool is registered with the right shape ──────────────────
+
+#[tokio::test]
+async fn tools_list_includes_run_interaction_with_ts_parity_description() {
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let tools = resp["result"]["tools"].as_array().expect("tools array");
+    let entry = tools
+        .iter()
+        .find(|t| t["name"] == "run_interaction")
+        .expect("run_interaction tool registered");
+    assert_eq!(
+        entry["description"].as_str(),
+        Some(RUN_INTERACTION_TS_PARITY_DESCRIPTION),
+        "run_interaction description must byte-match TS reference",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_input_schema_declares_required_and_optional_fields() {
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let entry = resp["result"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|t| t["name"] == "run_interaction")
+        .expect("run_interaction tool registered")
+        .clone();
+    let schema = &entry["inputSchema"];
+    let props = &schema["properties"];
+    // Required: id + input (server can't run an interaction without
+    // either).
+    let required = schema["required"]
+        .as_array()
+        .expect("required array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for needed in ["id", "input"] {
+        assert!(
+            required.iter().any(|r| r == needed),
+            "schema must require `{needed}`; required={required:?}",
+        );
+    }
+    // Optional: subject — declared as a property but not required.
+    assert!(
+        props["subject"].is_object(),
+        "schema must declare optional `subject` property; got props={props}",
+    );
+    assert!(
+        !required.iter().any(|r| r == "subject"),
+        "subject must NOT be required; required={required:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Behavior: happy path POSTs to /v1/interactions/{id} ─────────────────
+
+#[tokio::test]
+async fn run_interaction_happy_path_posts_and_returns_event_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .and(header("authorization", "Bearer nt_test_token"))
+        .and(header("content-type", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(interaction_response_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test_token"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": { "email": "ada@example.com" }
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    let events = payload["events"].as_array().expect("events array");
+    assert_eq!(events.len(), 2, "result must surface every server event");
+    assert_eq!(
+        events[0]["id"], "evt_one",
+        "event 0 must be surfaced verbatim; got {payload}",
+    );
+    assert_eq!(
+        events[0]["type"], "ai.task.completed.v1",
+        "event 0 type must be surfaced verbatim; got {payload}",
+    );
+    assert_eq!(
+        events[1]["id"], "evt_two",
+        "event 1 must be surfaced verbatim; got {payload}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Wire body: input passthrough + optional subject ─────────────────────
+
+#[tokio::test]
+async fn run_interaction_wire_body_carries_input_verbatim() {
+    // The TS handler passes `input` straight through with no
+    // transformation. Pin that the Rust port doesn't add envelope
+    // keys, lowercase property names, or wrap the input in another
+    // layer.
+    let server = MockServer::start().await;
+    let captured = capture_interaction_body(&server, "onboard.user").await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": { "email": "ada@example.com", "plan": "pro" }
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let parsed: Value = serde_json::from_str(&body).expect("body is JSON");
+    assert_eq!(
+        parsed["input"]["email"], "ada@example.com",
+        "input must be forwarded verbatim; got body={body}",
+    );
+    assert_eq!(
+        parsed["input"]["plan"], "pro",
+        "input must be forwarded verbatim; got body={body}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_wire_body_omits_subject_when_args_absent() {
+    // Mirrors the TS handler's conditional spread: when subject is
+    // absent from args, it MUST NOT appear on the wire (no JSON null,
+    // no empty object).
+    let server = MockServer::start().await;
+    let captured = capture_interaction_body(&server, "onboard.user").await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": { "email": "ada@example.com" }
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let parsed: Value = serde_json::from_str(&body).expect("body is JSON");
+    assert!(
+        parsed.get("subject").is_none(),
+        "subject must be omitted when args.subject is absent; got body={body}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_wire_body_includes_subject_when_args_present() {
+    let server = MockServer::start().await;
+    let captured = capture_interaction_body(&server, "onboard.user").await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": { "email": "ada@example.com" },
+                    "subject": { "type": "user", "id": "user_42" }
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let parsed: Value = serde_json::from_str(&body).expect("body is JSON");
+    assert_eq!(
+        parsed["subject"]["type"], "user",
+        "subject.type must land on the wire; got body={body}",
+    );
+    assert_eq!(
+        parsed["subject"]["id"], "user_42",
+        "subject.id must land on the wire; got body={body}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Failure modes ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn run_interaction_missing_token_surfaces_auth_error_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        // NO_TICKETS_TOKEN deliberately absent
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_TOKEN"),
+        "missing-token error must name the env var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_missing_api_url_surfaces_config_error_before_http() {
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        // NO_TICKETS_API_URL deliberately absent
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("NO_TICKETS_API_URL"),
+        "missing-api-url error must name the env var; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_404_surfaces_not_found_error_naming_the_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/ghost.interaction"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "ghost.interaction",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("ghost.interaction"),
+        "404 must name the missing id verbatim; got {msg:?}",
+    );
+    assert!(
+        msg.to_lowercase().contains("not found"),
+        "404 must read as not-found; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_401_surfaces_auth_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("auth"),
+        "401 must surface as an auth-specific diagnostic; got {msg:?}",
+    );
+    assert!(
+        msg.contains("NO_TICKETS_TOKEN"),
+        "401 diagnostic must name the env var to refresh; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_5xx_response_surfaces_transport_error_with_status_and_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(502).set_body_string("upstream interaction broker down"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("502"),
+        "5xx must include the upstream status; got {msg:?}",
+    );
+    assert!(
+        msg.contains("upstream interaction broker down"),
+        "5xx must surface the upstream body for diagnostics; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_non_json_response_surfaces_parse_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not-json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("invalid")
+            && msg.to_lowercase().contains("json"),
+        "non-JSON response must surface as a parse error; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_missing_events_field_surfaces_contract_violation() {
+    // A 2xx that doesn't include `events` is a server-contract
+    // violation — surface loudly rather than rendering an empty event
+    // list, mirroring the describe_event_type missing-schema guard.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("events"),
+        "missing-events error must mention the field; got {msg:?}",
+    );
+    assert!(
+        msg.to_lowercase().contains("contract") || msg.to_lowercase().contains("missing"),
+        "missing-events error must call out the server-contract issue; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── URL path-segment encoding ───────────────────────────────────────────
+
+#[tokio::test]
+async fn run_interaction_canonical_id_passes_through_url_unchanged() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(interaction_response_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert!(payload["events"].is_array());
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_unsafe_chars_in_id_are_percent_encoded() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/weird%2Fid%3Fwith%23chars"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "weird/id?with#chars",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    // `.expect(1)` above is the actual assertion — the mock matched
+    // the encoded path. The 404 surface is incidental.
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_trailing_slash_api_url_routes_to_endpoint_unchanged() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(interaction_response_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri_with_slash = format!("{}/", server.uri());
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri_with_slash.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&resp);
+    assert!(payload["events"].is_array());
+    c.shutdown().await;
+}
+
+// ─── Stdout-purity coverage for run_interaction ──────────────────────────
+
+#[tokio::test]
+async fn run_interaction_call_does_not_corrupt_stdout_jsonrpc_stream() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(interaction_response_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let (captured, _stderr) = c.shutdown().await;
+    for line in &captured {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        serde_json::from_str::<Value>(trimmed)
+            .unwrap_or_else(|e| panic!("stdout polluted by non-JSON line {trimmed:?}: {e}"));
+    }
+}

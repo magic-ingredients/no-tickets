@@ -98,6 +98,10 @@ enum Commands {
         #[arg(long)]
         data: String,
     },
+    /// Upgrade the running binary in-place (install.sh / direct-download
+    /// users only — package-manager installs are detected and redirected
+    /// to the user's package manager).
+    SelfUpdate,
 }
 
 #[derive(Subcommand)]
@@ -211,6 +215,7 @@ async fn main() {
             TokenAction::Remove { project } => commands::token_remove::run(&env, &project),
         },
         Commands::Validate { r#type, data } => commands::validate::run(&r#type, &data),
+        Commands::SelfUpdate => commands::self_update::run().await,
     };
     std::process::exit(exit);
 }

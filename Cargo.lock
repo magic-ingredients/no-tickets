@@ -1224,12 +1224,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "nt-core"
+version = "0.1.0"
+dependencies = [
+ "percent-encoding",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "nt-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "nt-core",
  "nt-schemas",
- "percent-encoding",
  "reqwest",
  "rmcp",
  "schemars",

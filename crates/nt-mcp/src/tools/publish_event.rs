@@ -31,12 +31,15 @@
 
 use std::collections::BTreeMap;
 
+use nt_core::http::post_json;
+use nt_core::url::api_url;
 use nt_schemas::validate;
 use rmcp::{model::*, ErrorData as McpError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 
 use crate::config::EnvConfig;
+use crate::error_map::transport_to_mcp;
 
 /// Exact TS-parity description from `src/mcp/tools/publish-event.ts`.
 /// Pinned here as a constant so the integration test asserts on byte-
@@ -157,26 +160,26 @@ pub async fn handle(
     let envelope = build_envelope(args);
 
     // 3. POST /v1/events with Bearer auth. Single attempt — retry is
-    //    deferred per the Task 19 scope note. A 5xx after one try
-    //    surfaces as a transport error; the agent / MCP client can
-    //    retry the tool call itself if it wants.
-    let url = format!("{}/v1/events", config.api_url.trim_end_matches('/'));
-    let response = http_client
-        .post(&url)
-        .bearer_auth(&config.token)
-        .header("content-type", "application/json")
-        .json(&vec![envelope])
-        .send()
-        .await
-        .map_err(|e| McpError::internal_error(format!("transport error: {e}"), None))?;
+    //    deferred per the Task 19 scope note. A non-2xx after one
+    //    try surfaces as a transport error; the agent / MCP client
+    //    can retry the tool call itself if it wants.
+    //
+    //    URL composition (trailing-slash trim) and bearer auth live
+    //    in nt-core. publish_event has no path-segment to encode
+    //    (the endpoint is the fixed `/v1/events`).
+    let url = api_url(&config.api_url, "/v1/events");
+    let response = post_json(
+        http_client,
+        &url,
+        &config.token,
+        &serde_json::json!([envelope]),
+    )
+    .await
+    .map_err(transport_to_mcp)?;
 
-    let status = response.status();
-    let body_text = response.text().await.map_err(|e| {
-        McpError::internal_error(format!("transport error reading body: {e}"), None)
-    })?;
-    if !status.is_success() {
+    if !response.is_success() {
         return Err(McpError::internal_error(
-            format!("server returned {}: {}", status.as_u16(), body_text),
+            format!("server returned {}: {}", response.status, response.body),
             None,
         ));
     }
@@ -185,7 +188,7 @@ pub async fn handle(
     //    TS handler's `{ id, deduped }` shape. `deduped: true` only
     //    when the server reports the event went through dedupe rather
     //    than fresh ingestion.
-    let parsed: Value = serde_json::from_str(&body_text).map_err(|e| {
+    let parsed: Value = serde_json::from_str(&response.body).map_err(|e| {
         McpError::internal_error(format!("invalid server JSON response: {e}"), None)
     })?;
     let id = parsed["ids"][0].as_str().ok_or_else(|| {

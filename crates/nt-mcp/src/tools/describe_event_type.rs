@@ -10,12 +10,15 @@
 //! every invocation is a fresh GET. Cache lives at the
 //! list/describe-registry layer once Task 23 lands.
 
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use nt_core::encoding::encode_path_segment;
+use nt_core::http::get_raw;
+use nt_core::url::api_url;
 use rmcp::{model::*, ErrorData as McpError};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::config::EnvConfig;
+use crate::error_map::transport_to_mcp;
 use crate::example_synth::synthesise_example;
 
 // Note on TS parity: unlike `list_event_types` and `publish_event`,
@@ -26,24 +29,6 @@ use crate::example_synth::synthesise_example;
 // a third unverified copy of the same string. Drift between the
 // `#[tool]` attribute and the TS reference is caught by the
 // integration test (adversarial review #6).
-
-/// Path-segment encode set — RFC 3986 pchar minus the percent itself.
-/// Encodes `/`, `?`, `#`, and anything else that would change the URL
-/// structure if a pathological id leaked through. Canonical type ids
-/// (`domain.entity.action.vN`, all unreserved chars) pass through
-/// unchanged; the test pair pins both branches.
-const PATH_SEGMENT: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'"')
-    .add(b'#')
-    .add(b'<')
-    .add(b'>')
-    .add(b'?')
-    .add(b'`')
-    .add(b'{')
-    .add(b'}')
-    .add(b'/')
-    .add(b'%');
 
 /// camelCase → snake_case rename table for the optional fields on the
 /// describe result envelope. Sourced verbatim from the TS handler's
@@ -78,33 +63,32 @@ pub async fn handle(
     config: &EnvConfig,
     http_client: &reqwest::Client,
 ) -> Result<CallToolResult, McpError> {
-    // 1. GET the detail endpoint. The id segment is percent-encoded
-    //    via the RFC 3986 pchar-minus-percent set; canonical ids pass
-    //    through unchanged but pathological inputs (slash, question
-    //    mark, hash) can't break URL structure or smuggle a path
-    //    traversal.
-    let encoded_id = utf8_percent_encode(&args.id, PATH_SEGMENT);
-    let url = format!(
-        "{}/v1/registry/event-types/{}",
-        config.api_url.trim_end_matches('/'),
-        encoded_id,
+    // 1. GET the detail endpoint via the nt-core primitive. URL
+    //    composition (trailing-slash trim) and path-segment encoding
+    //    (RFC 3986 pchar-minus-percent) live in nt-core; the
+    //    canonical `domain.entity.action.vN` ids pass through
+    //    unchanged, pathological inputs get percent-escaped before
+    //    they hit the URL.
+    let url = api_url(
+        &config.api_url,
+        &format!(
+            "/v1/registry/event-types/{}",
+            encode_path_segment(&args.id)
+        ),
     );
-    let response = http_client
-        .get(&url)
-        .bearer_auth(&config.token)
-        .send()
+    let response = get_raw(http_client, &url, &config.token)
         .await
-        .map_err(|e| McpError::internal_error(format!("transport error: {e}"), None))?;
+        .map_err(transport_to_mcp)?;
 
-    // 2. Map status codes to typed errors before reading the body.
-    //    404 → named not-found so the agent can correct the id.
-    //    401/403 → auth-specific so the agent / MCP client knows to
-    //              re-resolve NO_TICKETS_TOKEN rather than retrying.
-    //    other non-2xx → transport error with upstream body for
-    //                    diagnostics. No retry — matches the PRD's
-    //                    async-non-blocking refresh framing.
-    let status = response.status();
-    match status.as_u16() {
+    // 2. Map status codes to typed errors. 404 → named not-found
+    //    (the agent can correct the id). 401/403 → auth-specific so
+    //    the MCP client knows to re-resolve NO_TICKETS_TOKEN.
+    //    Other non-2xx → transport error with the upstream body.
+    //    No retry — matches the PRD's async-non-blocking refresh
+    //    framing. Mapping stays inline because the wording is
+    //    tool-specific ("event type X not found" vs "interaction X
+    //    not found" in the broader nt-mcp surface).
+    match response.status {
         404 => {
             return Err(McpError::invalid_params(
                 format!("event type \"{}\" not found", args.id),
@@ -114,27 +98,22 @@ pub async fn handle(
         401 | 403 => {
             // Auth failures are not param errors — map to
             // `internal_error` (-32603) so JSON-RPC codes distinguish
-            // auth/infra failures from bad-input (404). Aligned with
-            // run_interaction (adversarial review #3 on Task 21,
-            // applied here for consistency across the HTTP tools).
-            let code = status.as_u16();
+            // auth/infra failures from bad-input (404).
             return Err(McpError::internal_error(
                 format!(
-                    "authentication failed ({code}) — check NO_TICKETS_TOKEN; the server rejected the bearer credential"
+                    "authentication failed ({}) — check NO_TICKETS_TOKEN; the server rejected the bearer credential",
+                    response.status,
                 ),
                 None,
             ));
         }
+        s if !(200..300).contains(&s) => {
+            return Err(McpError::internal_error(
+                format!("server returned {}: {}", response.status, response.body),
+                None,
+            ));
+        }
         _ => {}
-    }
-    let body_text = response.text().await.map_err(|e| {
-        McpError::internal_error(format!("transport error reading body: {e}"), None)
-    })?;
-    if !status.is_success() {
-        return Err(McpError::internal_error(
-            format!("server returned {}: {}", status.as_u16(), body_text),
-            None,
-        ));
     }
 
     // 3. Parse `{ eventType: {...} }`. A 2xx without the envelope,
@@ -142,7 +121,7 @@ pub async fn handle(
     //    field is a server-contract violation — surface loudly rather
     //    than rendering an empty example, matching the TS handler's
     //    explicit guard.
-    let parsed: Value = serde_json::from_str(&body_text).map_err(|e| {
+    let parsed: Value = serde_json::from_str(&response.body).map_err(|e| {
         McpError::internal_error(format!("invalid server JSON response: {e}"), None)
     })?;
     let Some(spec) = parsed.get("eventType").and_then(Value::as_object) else {

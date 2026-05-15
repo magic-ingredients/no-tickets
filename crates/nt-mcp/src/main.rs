@@ -1,4 +1,5 @@
 mod config;
+mod error_map;
 mod example_synth;
 mod fixtures;
 mod server;

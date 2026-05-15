@@ -659,7 +659,7 @@ This is bookkeeping — no behaviour change. Pinned by every existing test suite
 
 ### 6. Distribution pipeline via `cargo-dist`
 status: not_started
-depends_on: [24, 25, 11, 12]
+depends_on: [23, 24, 25, 11, 12]
 
 **Why Task 11 (self-update) is a hard prerequisite, not a follow-up:**
 the moment we publish v0.1.0 to install.sh / GH Releases, every
@@ -704,6 +704,35 @@ Task 12 retires `src/cli/`, `src/cli.ts`, `src/mcp/`,
 `bin/no-tickets.js`, and either strips the npm package to a redirect
 placeholder or retires it entirely. It must land before Task 6 so
 v0.1.0 ships a clean repo with a single canonical surface.
+
+**Why Task 23 (real-server `list_event_types`) is also a hard
+prerequisite:** the Task 2 spike implemented `list_event_types`
+against `crates/nt-mcp/src/fixtures.rs` — a hand-rolled list of
+example event types baked into the binary at build time. That was
+the right shortcut for the spike, but it means the tool as it
+stands today returns the binary author's idea of what event types
+exist, NOT what the caller's project actually has registered. Two
+concrete failure modes if we ship it as-is in v0.1.0:
+
+1. **Wrong answers in production.** A new user installs the binary,
+   calls `list_event_types`, sees `billing.invoice.issued.v1` /
+   `ai.task.completed.v1` etc. — the fixture set — and tries to
+   `publish_event` against them. Their project doesn't have those
+   registered, so the server rejects. The tool's documentation says
+   "type ids this caller can publish" — fixtures aren't that.
+2. **Fixtures drift the moment we publish.** Every server-side
+   registry change leaves the binary's fixture list stale, and
+   binaries can't be hot-updated. Task 11's self-update helps the
+   *binary* stay current; it does nothing for the *data* the binary
+   advertises.
+
+Task 23 switches `list_event_types` to a real `GET /v1/registry/
+event-types` call (in-memory cache + async refresh, mirroring TS
+`RegistryClient`). After that lands, the tool reflects the caller's
+project, not the build's fixtures. It MUST land before Task 6 — the
+TS reference's whole reason for the tool existing is "tell me what
+I can publish in this project," and fixtures don't answer that
+question for real users.
 
 Single config block in `Cargo.toml` drives the full distribution surface: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula publish-and-update, Scoop manifest publish-and-update. Replaces what would otherwise be four separate hand-rolled workflows.
 

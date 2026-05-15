@@ -80,17 +80,24 @@ pub struct PublishEventArgs {
 }
 
 /// Allowed value types for `source.attributes`. Mirrors the server
-/// Zod union `z.union([z.string(), z.number(), z.boolean()])`. Using
-/// `serde_json::Number` (not `f64`) so an integer label round-trips
-/// as the integer it was sent as, rather than gaining a `.0` suffix
-/// through float coercion.
+/// Zod union `z.union([z.string(), z.number(), z.boolean()])`. The
+/// `Num` variant uses `serde_json::Number` (not `f64`) so an integer
+/// label round-trips as the integer it was sent — at runtime
+/// `Number` preserves the int/float discriminant across
+/// deserialise → serialise, where `f64` would coerce `14` to `14.0`.
+///
+/// The `#[schemars(with = "f64")]` annotation is JSON-Schema-side
+/// metadata only — it tells schemars to advertise this variant as
+/// JSON Schema `{"type": "number"}` (which accepts both `14` and
+/// `14.0`). It does NOT cause runtime float coercion; the actual
+/// deserialise target is still `serde_json::Number`. Schemars
+/// doesn't ship a default `JsonSchema` impl for `Number` itself, so
+/// the `with` annotation is how we get a sensible schema emitted
+/// without defining a manual impl.
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum AttributeValue {
     Str(String),
-    /// `serde_json::Number` preserves int/float distinction across
-    /// round-trips; schemars sees it as a generic JSON number for
-    /// tool-schema purposes.
     Num(#[schemars(with = "f64")] Number),
     Bool(bool),
 }
@@ -243,11 +250,20 @@ fn build_source(args: &PublishEventArgs) -> Value {
     );
     if let Some(attrs) = &args.attributes {
         if !attrs.is_empty() {
-            src.insert(
-                "attributes".to_string(),
-                serde_json::to_value(attrs)
-                    .expect("AttributeValue map always serialises (only scalar variants)"),
-            );
+            // Adversarial review #8: direct match per variant rather
+            // than `serde_json::to_value(...).expect(...)` — the
+            // variant set is closed (Str/Num/Bool), every arm
+            // returns a `Value` infallibly, no panic path.
+            let mut wire = Map::new();
+            for (key, value) in attrs {
+                let v = match value {
+                    AttributeValue::Str(s) => Value::String(s.clone()),
+                    AttributeValue::Num(n) => Value::Number(n.clone()),
+                    AttributeValue::Bool(b) => Value::Bool(*b),
+                };
+                wire.insert(key.clone(), v);
+            }
+            src.insert("attributes".to_string(), Value::Object(wire));
         }
     }
     Value::Object(src)

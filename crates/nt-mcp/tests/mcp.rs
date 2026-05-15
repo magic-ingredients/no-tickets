@@ -1046,14 +1046,15 @@ async fn publish_event_wire_body_has_source_name_nt_mcp() {
 }
 
 #[tokio::test]
-async fn publish_event_wire_body_omits_source_attributes_block() {
-    // 2026-05-15: dropped the client-supplied `project` from
-    // `source.attributes`. Project tenancy is server-resolved from
-    // the push token (`pushToken.projectId` in
-    // notickets-service/.../routes/events.ts), so emitting a client
-    // label would be advisory-only dead weight. Pin that the
-    // `attributes` block is OMITTED from the wire (no empty object,
-    // no JSON null) so a regression re-adding it is caught.
+async fn publish_event_wire_body_omits_source_attributes_block_when_absent() {
+    // Default-omit invariant: when the agent doesn't pass an
+    // `attributes` arg, the source block carries only name +
+    // sdkVersion. Pin the absence so a regression that always
+    // emits an empty `attributes: {}` (or hardcodes some "default"
+    // tag like the old advisory `project` label, removed 1ea230d)
+    // fails this check. See the sibling
+    // `…_carries_attributes_when_supplied` test for the present-
+    // when-supplied path.
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
     let uri = server.uri();
@@ -1120,6 +1121,7 @@ async fn publish_event_wire_body_carries_attributes_when_supplied() {
                         "ticketUrl": "https://linear.app/foo/bar",
                         "submittedBy": "ada",
                         "trialDays": 14,
+                        "costUSD": 1.99,
                         "isCanary": true
                     }
                 }
@@ -1143,6 +1145,16 @@ async fn publish_event_wire_body_carries_attributes_when_supplied() {
     assert_eq!(
         attrs["trialDays"], 14,
         "integer attribute must round-trip as integer (not 14.0); got attrs={attrs}",
+    );
+    // Adversarial review #7: float round-trip — non-integer JSON
+    // numbers must survive as floats with their precision intact.
+    // Pinning a representative decimal (1.99) ensures the Num
+    // variant handles both integral and fractional values, not just
+    // the integer path the prior test covered.
+    let cost = attrs["costUSD"].as_f64().expect("costUSD is a number");
+    assert!(
+        (cost - 1.99).abs() < f64::EPSILON,
+        "float attribute must round-trip with precision; got costUSD={cost}",
     );
     assert_eq!(
         attrs["isCanary"], true,
@@ -1185,6 +1197,18 @@ async fn publish_event_wire_body_omits_attributes_when_supplied_empty() {
     assert!(
         src.get("attributes").is_none(),
         "empty attributes map must drop the block from the wire; got src={src}",
+    );
+    // Adversarial review #5: pin that the rest of the source block
+    // is intact. A regression that destroyed the whole source object
+    // when attributes was empty would also pass the absence check
+    // above — sibling assertions stop that.
+    assert_eq!(
+        src["name"], "nt-mcp",
+        "source.name must survive empty-attributes; got src={src}",
+    );
+    assert!(
+        src["sdkVersion"].is_string(),
+        "source.sdkVersion must survive empty-attributes; got src={src}",
     );
     c.shutdown().await;
 }
@@ -1233,6 +1257,17 @@ async fn publish_event_rejects_nested_object_as_attribute_value() {
     assert!(
         has_error || has_is_error_true,
         "nested attribute value must be rejected (deserialise layer or handler); got {resp}",
+    );
+    // Adversarial review #2: pin which layer rejected. An unrelated
+    // error (e.g. token resolution failing) shouldn't satisfy this
+    // test — the error text must name the offending field or the
+    // AttributeValue type so the agent knows it was the attributes
+    // arg that broke.
+    let msg = collect_error_text(&resp);
+    let m = msg.to_lowercase();
+    assert!(
+        m.contains("attributes") || m.contains("attributevalue"),
+        "rejection must name the attributes arg / AttributeValue type so the agent can locate the bad input; got {msg:?}",
     );
     c.shutdown().await;
 }
@@ -1284,20 +1319,28 @@ async fn publish_event_input_schema_declares_attributes_as_optional_scalar_map()
         ref_path.ends_with("AttributeValue"),
         "additionalProperties ref must target AttributeValue; got {ref_path}",
     );
-    // Resolve the def from the schema's $defs.
+    // Resolve the def from the schema's $defs. Adversarial review
+    // #3: parse the union variants directly rather than substring-
+    // matching, so a regression that renames a variant or smuggles
+    // an "object" inside a description string can't pass.
     let attr_value_def = &schema["$defs"]["AttributeValue"];
-    let def_json = serde_json::to_string(attr_value_def).expect("re-serialise def");
-    assert!(
-        def_json.contains("\"string\"")
-            && def_json.contains("\"number\"")
-            && def_json.contains("\"boolean\""),
-        "AttributeValue must be the scalar union (string|number|boolean); got {def_json}",
-    );
-    // Negative check: no object/array variants — scalar-only is the
-    // whole point.
-    assert!(
-        !def_json.contains("\"object\"") && !def_json.contains("\"array\""),
-        "AttributeValue must NOT include object or array variants; got {def_json}",
+    let variants = attr_value_def["oneOf"]
+        .as_array()
+        .or_else(|| attr_value_def["anyOf"].as_array())
+        .unwrap_or_else(|| {
+            panic!("AttributeValue def must be a oneOf/anyOf union; got {attr_value_def}")
+        });
+    let variant_types: std::collections::BTreeSet<String> = variants
+        .iter()
+        .filter_map(|v| v["type"].as_str().map(str::to_string))
+        .collect();
+    let expected: std::collections::BTreeSet<String> = ["boolean", "number", "string"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        variant_types, expected,
+        "AttributeValue must be exactly the scalar union (string|number|boolean); got {attr_value_def}",
     );
     c.shutdown().await;
 }
@@ -1677,8 +1720,17 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
     // behaviour silently ignores unknown fields. If an agent (or a
     // future schema change with `#[serde(deny_unknown_fields)]`
     // dropped) passes `source: {...}` in args, it MUST NOT reach the
-    // wire — `build_source` ignores tool args entirely and uses the
-    // fixed `nt-mcp` identity.
+    // wire — `build_source` only reads the `attributes` arg (the
+    // legitimate passthrough slot) and otherwise uses the fixed
+    // `nt-mcp` identity.
+    //
+    // Adversarial review #1 (399d44f follow-up): this test used to
+    // assert "no attributes block at all" — but `attributes` is now
+    // a legitimate slot, so that pin couldn't distinguish "spoofed
+    // attributes rejected" from "no attributes ever emitted". The
+    // sharper pin: send BOTH a legit top-level `attributes` AND a
+    // spoofed `source.attributes`. Assert legit keys survive, the
+    // spoof keys do not, and `source.name` stays `nt-mcp`.
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
     let uri = server.uri();
@@ -1696,7 +1748,12 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
                 "arguments": {
                     "type": "ai.task.completed.v1",
                     "data": valid_ai_task_data(),
-                    "source": { "name": "evil-agent", "sdkVersion": "0", "attributes": { "spoofed": "yes" } }
+                    "attributes": { "legitTag": "ok" },
+                    "source": {
+                        "name": "evil-agent",
+                        "sdkVersion": "0",
+                        "attributes": { "spoofedTag": "no" }
+                    }
                 }
             }),
         )
@@ -1708,12 +1765,13 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
         src["name"], "nt-mcp",
         "source.name must NOT be spoofable; got body={body}"
     );
-    // No `attributes` block at all on MCP-emitted events as of
-    // 2026-05-15. A spoofed nested `attributes.spoofed` therefore
-    // can't leak — the whole sub-tree is absent.
+    assert_eq!(
+        src["attributes"]["legitTag"], "ok",
+        "legitimate `attributes` arg must reach source.attributes; got src={src}",
+    );
     assert!(
-        src.get("attributes").is_none(),
-        "source.attributes must be absent (and therefore unspoofable); got src={src}",
+        src["attributes"].get("spoofedTag").is_none(),
+        "spoofed `source.attributes.spoofedTag` must NOT leak through; got src={src}",
     );
 }
 

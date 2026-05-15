@@ -21,8 +21,17 @@ install-path = "~/.local/bin"
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
+# Homebrew tap to publish the generated formula to. Empty repo created at
+# https://github.com/magic-ingredients/homebrew-tap; release workflow
+# commits Formula/no-tickets.rb on every tag push using HOMEBREW_TAP_TOKEN.
+publish-jobs = ["homebrew"]
+tap = "magic-ingredients/homebrew-tap"
 # PRs only run `dist plan` (cheap config validation) — never the build matrix.
 pr-run-mode = "plan"
 # CI workflow is hand-hardened beyond what `dist generate` produces (SHA-pinned
 # actions, cargo-install bootstrap, PR path filter). Allow the dirty diff.
+# NOTE: this also blocks `dist generate` from writing the CI file — to pick
+# up cargo-dist config changes that affect the workflow (new publish jobs,
+# target additions), temporarily comment this out, regenerate, re-apply the
+# hardening edits inline, then restore.
 allow-dirty = ["ci"]

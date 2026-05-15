@@ -6,13 +6,21 @@
 //! envelope to `/v1/events` with Bearer auth.
 //!
 //! Source identity (`source.name`) is fixed at `"nt-mcp"` and cannot
-//! be overridden by the agent — matches the TS reference, where the
-//! MCP server fills source server-side. No `source.attributes` block:
-//! project tenancy is server-resolved from the push token
-//! (`pushToken.projectId` in
-//! `notickets-service/src/server/routes/events.ts`), so a client-
-//! supplied `project` label would be advisory-only and never
-//! consulted for routing, authz, or counting.
+//! be overridden by the agent. Project tenancy is server-resolved
+//! from the push token (`pushToken.projectId` in
+//! `notickets-service/src/server/routes/events.ts`); there is no
+//! `project` arg.
+//!
+//! `source.attributes` is exposed as the **client passthrough slot**:
+//! flat `Record<string, string | number | boolean>` of user-supplied
+//! labels (`ticketUrl`, `submittedBy`, free-form tags). The server
+//! stores them verbatim in `events.source_metadata` JSONB and
+//! surfaces them in the UI; it does NOT interpret them for routing,
+//! authz, or counting. Scalar-only is deliberate — flat keys keep
+//! JSONB queries cheap, aggregate cleanly, and stop callers from
+//! smuggling typed payloads into an untyped slot. If you have
+//! nested structure, that data belongs in `data` under an event-type
+//! schema, not in attributes.
 //!
 //! Retry is intentionally OUT of scope for this slice. The Task 17
 //! retry policy is unlikely to fit MCP's "tool call returns
@@ -21,10 +29,12 @@
 //! callers can implement their own retry around the MCP tool call.
 //! See Task 24 for the eventual shared-retry extraction.
 
+use std::collections::BTreeMap;
+
 use nt_schemas::validate;
 use rmcp::{model::*, ErrorData as McpError};
-use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Number, Value};
 
 use crate::config::EnvConfig;
 
@@ -44,6 +54,14 @@ pub struct PublishEventArgs {
     pub type_id: String,
     /// Event payload matching the type schema.
     pub data: Value,
+    /// Optional client passthrough labels — flat
+    /// `{ string: string | number | boolean }` map. Land on
+    /// `source.attributes` on the wire. Server stores verbatim and
+    /// surfaces in the UI; scalar-only constraint is deliberate
+    /// (see module docs). `BTreeMap` for deterministic key ordering
+    /// across serialisations.
+    #[serde(default)]
+    pub attributes: Option<BTreeMap<String, AttributeValue>>,
     /// Optional subject reference.
     #[serde(default)]
     pub subject: Option<SubjectRef>,
@@ -59,6 +77,22 @@ pub struct PublishEventArgs {
     /// Optional idempotency key.
     #[serde(default, rename = "dedupe_key")]
     pub dedupe_key: Option<String>,
+}
+
+/// Allowed value types for `source.attributes`. Mirrors the server
+/// Zod union `z.union([z.string(), z.number(), z.boolean()])`. Using
+/// `serde_json::Number` (not `f64`) so an integer label round-trips
+/// as the integer it was sent as, rather than gaining a `.0` suffix
+/// through float coercion.
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum AttributeValue {
+    Str(String),
+    /// `serde_json::Number` preserves int/float distinction across
+    /// round-trips; schemars sees it as a generic JSON number for
+    /// tool-schema purposes.
+    Num(#[schemars(with = "f64")] Number),
+    Bool(bool),
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -109,9 +143,10 @@ pub async fn handle(
     }
 
     // 2. Build the envelope. Source identity is fixed: `source.name =
-    //    "nt-mcp"`, no `attributes`. The agent cannot override
-    //    `source` — the input schema doesn't expose it (pinned by the
-    //    discovery test).
+    //    "nt-mcp"`. The agent cannot override `source` — the input
+    //    schema doesn't expose it (pinned by the discovery test).
+    //    Client-supplied `attributes` (the deliberate passthrough
+    //    slot) lands on `source.attributes` via `build_source`.
     let envelope = build_envelope(args);
 
     // 3. POST /v1/events with Bearer auth. Single attempt — retry is
@@ -176,7 +211,7 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
             serde_json::json!({ "type": s.subject_type, "id": s.id }),
         );
     }
-    envelope.insert("source".to_string(), build_source());
+    envelope.insert("source".to_string(), build_source(args));
     if let Some(p) = &args.parent_event_id {
         envelope.insert("parentEventId".to_string(), Value::String(p.clone()));
     }
@@ -194,15 +229,26 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
 
 /// Build the source identity attached to every MCP-published event.
 /// `name = "nt-mcp"` is fixed — the agent cannot spoof its source via
-/// tool args. No `attributes` block: the project is server-resolved
-/// from the push token (`pushToken.projectId` in
-/// `notickets-service/src/server/routes/events.ts`), so a client-
-/// supplied label would be advisory-only and the wire-stored value
-/// would never be consulted for routing, authz, or counting. Keeping
-/// the slot empty avoids the lying-shaped field problem.
-fn build_source() -> Value {
-    serde_json::json!({
-        "name": "nt-mcp",
-        "sdkVersion": env!("CARGO_PKG_VERSION"),
-    })
+/// tool args. `attributes` is the client passthrough slot (flat
+/// scalar map): when supplied non-empty, it lands on
+/// `source.attributes` verbatim. When omitted OR empty, the
+/// `attributes` block is dropped from the wire so an empty `{}`
+/// doesn't bloat every envelope.
+fn build_source(args: &PublishEventArgs) -> Value {
+    let mut src = Map::new();
+    src.insert("name".to_string(), Value::String("nt-mcp".to_string()));
+    src.insert(
+        "sdkVersion".to_string(),
+        Value::String(env!("CARGO_PKG_VERSION").to_string()),
+    );
+    if let Some(attrs) = &args.attributes {
+        if !attrs.is_empty() {
+            src.insert(
+                "attributes".to_string(),
+                serde_json::to_value(attrs)
+                    .expect("AttributeValue map always serialises (only scalar variants)"),
+            );
+        }
+    }
+    Value::Object(src)
 }

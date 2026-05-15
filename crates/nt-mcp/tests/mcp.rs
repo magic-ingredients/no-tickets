@@ -1093,6 +1093,216 @@ async fn publish_event_wire_body_omits_source_attributes_block() {
 }
 
 #[tokio::test]
+async fn publish_event_wire_body_carries_attributes_when_supplied() {
+    // Re-add of the attributes slot 2026-05-15. The slot is the
+    // deliberate client-passthrough surface: flat scalar labels land
+    // on `source.attributes` verbatim, server stores in JSONB and
+    // surfaces in UI. Pin that supplied attributes round-trip with
+    // their value-types intact (string, integer, boolean).
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                    "attributes": {
+                        "ticketUrl": "https://linear.app/foo/bar",
+                        "submittedBy": "ada",
+                        "trialDays": 14,
+                        "isCanary": true
+                    }
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let envelope: Value = serde_json::from_str(&body).expect("body JSON");
+    let attrs = &envelope[0]["source"]["attributes"];
+    assert_eq!(
+        attrs["ticketUrl"], "https://linear.app/foo/bar",
+        "string attribute must round-trip; got attrs={attrs}",
+    );
+    assert_eq!(
+        attrs["submittedBy"], "ada",
+        "string attribute must round-trip; got attrs={attrs}",
+    );
+    // Integer round-trip — `serde_json::Number` preserves int vs
+    // float distinction across deserialize→serialize. A regression
+    // that coerced through f64 would surface `14.0` here.
+    assert_eq!(
+        attrs["trialDays"], 14,
+        "integer attribute must round-trip as integer (not 14.0); got attrs={attrs}",
+    );
+    assert_eq!(
+        attrs["isCanary"], true,
+        "boolean attribute must round-trip; got attrs={attrs}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_wire_body_omits_attributes_when_supplied_empty() {
+    // An empty `attributes: {}` is treated identically to "not
+    // supplied" — no `attributes` block on the wire. Avoids bloating
+    // every envelope with an empty object and means a regression
+    // that always emits an empty block fails this assertion.
+    let server = MockServer::start().await;
+    let captured = capture_publish_body(&server).await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let _ = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                    "attributes": {}
+                }
+            }),
+        )
+        .await;
+    let body = captured.lock().unwrap().clone().expect("body captured");
+    let envelope: Value = serde_json::from_str(&body).expect("body JSON");
+    let src = &envelope[0]["source"];
+    assert!(
+        src.get("attributes").is_none(),
+        "empty attributes map must drop the block from the wire; got src={src}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_rejects_nested_object_as_attribute_value() {
+    // Scalar-only is enforced at the deserialisation layer (the
+    // `AttributeValue` enum has only Str / Num / Bool variants). An
+    // agent that passes a nested object as a value fails to
+    // deserialise into `PublishEventArgs`, surfaces as a structured
+    // MCP error, and never reaches the wire. Pin the constraint
+    // here so a regression that widens the union (e.g. adds a
+    // `Map(Map)` variant) fails this check.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/events"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0) // deserialise failure → never reaches HTTP
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "publish_event",
+                "arguments": {
+                    "type": "ai.task.completed.v1",
+                    "data": valid_ai_task_data(),
+                    "attributes": { "nested": { "no": "good" } }
+                }
+            }),
+        )
+        .await;
+    // Either the MCP framework rejects at the args-deserialise
+    // layer (preferred) or the handler surfaces a structured error.
+    // Both manifest as a non-success response.
+    let has_error = !resp["error"].is_null();
+    let has_is_error_true = resp["result"]["isError"] == json!(true);
+    assert!(
+        has_error || has_is_error_true,
+        "nested attribute value must be rejected (deserialise layer or handler); got {resp}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn publish_event_input_schema_declares_attributes_as_optional_scalar_map() {
+    // Tool-discovery pin: the schemars-derived JSON Schema for the
+    // `attributes` arg must declare it as optional, of object shape,
+    // with `additionalProperties` accepting only the string / number
+    // / boolean union. Agents read this to know what shape to send.
+    let mut c = McpClient::spawn().await;
+    c.handshake().await;
+    let resp = c.request("tools/list", json!({})).await;
+    let entry = resp["result"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|t| t["name"] == "publish_event")
+        .expect("publish_event tool registered")
+        .clone();
+    let schema = &entry["inputSchema"];
+    let props = &schema["properties"];
+
+    // Optional — not in required.
+    let required = schema["required"]
+        .as_array()
+        .expect("required array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        !required.contains(&"attributes"),
+        "attributes must be optional; required={required:?}",
+    );
+
+    // Object-typed at the property level. `additionalProperties`
+    // points at a `$defs/AttributeValue` ref (schemars hoists enums
+    // into `$defs`); the contract that matters is "value type is the
+    // scalar union" — look up the def to verify.
+    let attrs_schema = &props["attributes"];
+    assert!(
+        attrs_schema.is_object(),
+        "attributes property must be declared; got props={props}",
+    );
+    let ref_path = attrs_schema["additionalProperties"]["$ref"]
+        .as_str()
+        .expect("additionalProperties must use a $ref to the AttributeValue def");
+    assert!(
+        ref_path.ends_with("AttributeValue"),
+        "additionalProperties ref must target AttributeValue; got {ref_path}",
+    );
+    // Resolve the def from the schema's $defs.
+    let attr_value_def = &schema["$defs"]["AttributeValue"];
+    let def_json = serde_json::to_string(attr_value_def).expect("re-serialise def");
+    assert!(
+        def_json.contains("\"string\"")
+            && def_json.contains("\"number\"")
+            && def_json.contains("\"boolean\""),
+        "AttributeValue must be the scalar union (string|number|boolean); got {def_json}",
+    );
+    // Negative check: no object/array variants — scalar-only is the
+    // whole point.
+    assert!(
+        !def_json.contains("\"object\"") && !def_json.contains("\"array\""),
+        "AttributeValue must NOT include object or array variants; got {def_json}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
 async fn publish_event_wire_body_omits_optional_fields_when_args_absent() {
     // Regression pin: optional envelope-level fields (subject,
     // parentEventId, traceId, dedupeKey, occurredAt) MUST NOT appear

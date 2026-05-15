@@ -604,8 +604,36 @@ Once Task 19's duplication has a second consumer (Task 20 or Task 21), extract t
 
 This sub-task is bookkeeping — no new functionality, just code motion + import updates. Pinned by the existing test suites of both consumers continuing to pass.
 
+### 25. File granularity — split files > 500 LOC
+status: not_started
+
+Diffs across the Rust crates are getting hard to read because several files have grown past 500 LOC during the per-task ratchet of Tasks 15–21. Before we cut a public release in Task 6, split them into smaller modules so per-task diffs stay scoped.
+
+Audit on 2026-05-15 (production + test files only; excludes node_modules / target / dist / coverage):
+
+| File | LOC | Plan |
+|---|---|---|
+| `crates/nt-mcp/tests/mcp.rs` | 2634 | Split into `tests/mcp/` submodules with a `common.rs` harness (McpClient, helpers) and one file per tool (`list_event_types.rs`, `publish_event.rs`, `describe_event_type.rs`). Each ~500–1500 LOC. |
+| `crates/nt-cli/tests/publish.rs` | 1739 | Same submodule pattern, split by feature surface (happy-path, batch, retry, source-detect, auth, output). |
+| `crates/nt-cli/src/commands/publish.rs` | 851 | Split by concern into `commands/publish/{mod,envelope,retry,source_resolve,output}.rs`. ~150–200 LOC each. |
+| `crates/nt-cli/src/commands/publish_batch.rs` | 846 | Same per-concern split as `publish.rs`. |
+
+Out of scope:
+- `crates/nt-cli/src/transport.rs` (767 LOC) — Task 24 extracts most of it into `nt-core`, so this shrinks naturally without a separate split.
+- `src/cli.ts` and the TS test files (`src/core/__tests__/parser-mutants.test.ts`, `src/cli/commands/publish/batch.test.ts`, `src/mcp/tools/handlers.test.ts`, `src/__tests__/init-cli-e2e.test.ts`) — all retired with Task 12.
+
+**Why this blocks Task 6:** once we publish a release, contributors arrive and start filing PRs. PRs against 2000-line test files are unreviewable in practice; the file structure ossifies under the weight of inbound changes. Split first, distribute second.
+
+This is bookkeeping — no behaviour change. Pinned by every existing test suite continuing to pass after the moves.
+
+**Files to modify/create:**
+- `crates/nt-mcp/tests/mcp.rs` → `crates/nt-mcp/tests/mcp/{common,list_event_types,publish_event,describe_event_type}.rs` + a thin top-level `mcp.rs` re-export
+- `crates/nt-cli/tests/publish.rs` → `crates/nt-cli/tests/publish/{...}.rs`
+- `crates/nt-cli/src/commands/publish.rs` + `publish_batch.rs` → per-concern submodules
+
 ### 6. Distribution pipeline via `cargo-dist`
 status: not_started
+depends_on: [24, 25]
 
 Single config block in `Cargo.toml` drives the full distribution surface: cross-compile CI matrix, GitHub Releases workflow, install script (`install.sh`), Homebrew formula publish-and-update, Scoop manifest publish-and-update. Replaces what would otherwise be four separate hand-rolled workflows.
 

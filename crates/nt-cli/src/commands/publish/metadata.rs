@@ -47,7 +47,7 @@ pub(super) fn build_metadata<'a>(
     })
 }
 
-pub(in crate::commands) fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> {
+pub(super) fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> {
     let Some(eq) = raw.find('=') else {
         return Err(format!(
             "--source-attribute \"{raw}\" is malformed (expected key=value)"

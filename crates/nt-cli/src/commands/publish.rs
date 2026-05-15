@@ -22,12 +22,16 @@ use crate::urls::resolve_urls;
 use metadata::build_metadata;
 use post::publish_event;
 
-// Re-exported for `publish_batch::build_cli_base_source`, which shares
-// the source-attribute parser + the default source.name + sdkVersion
-// stamp with the single-event path. Drift here would silently
-// re-attribute every batch event but not single events (or vice
-// versa).
-pub(super) use metadata::parse_source_attribute;
+/// Thin funnel for `publish_batch::build_cli_base_source`, which shares
+/// the `--source-attribute` parser with the single-event path. Drift
+/// here would silently re-attribute every batch event but not single
+/// events (or vice versa). Wrapping (rather than `pub(super) use`)
+/// keeps `metadata::parse_source_attribute` itself at `pub(super)` —
+/// visible only inside the `publish` module — and forces `publish_batch`
+/// to come in through the `publish` module's public surface.
+pub(super) fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> {
+    metadata::parse_source_attribute(raw)
+}
 
 /// Default `source.name` when no `--source-name` flag is supplied. Shared
 /// with `publish_batch` to keep single-event and batch paths in lockstep

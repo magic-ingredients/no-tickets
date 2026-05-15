@@ -50,7 +50,7 @@ pub(super) struct Source<'a> {
     /// `project` entry (canonical) plus any `--source-attribute`
     /// overrides. BTreeMap gives a deterministic key order — important
     /// for wire-shape stability and for `last-wins` semantics on
-    /// duplicate keys (driven by insert order in `merge_attributes`).
+    /// duplicate keys (driven by insert order in `build_metadata`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) attributes: Option<BTreeMap<&'a str, &'a str>>,
 }

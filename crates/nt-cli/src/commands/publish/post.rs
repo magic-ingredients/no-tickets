@@ -52,8 +52,8 @@ pub(super) async fn publish_event<C: HttpClient, S: Sleeper>(
 
 #[cfg(test)]
 mod tests {
-    use super::super::envelope::bare_meta;
     use super::*;
+    use crate::commands::publish::envelope::bare_meta;
     use crate::transport::TransportError;
     use serde_json::json;
     use std::num::NonZeroU32;

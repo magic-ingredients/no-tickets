@@ -630,7 +630,8 @@ Test surface after refactor:
 - Workspace clippy `-D warnings` clean
 
 ### 25. File granularity — split files > 500 LOC
-status: not_started
+status: completed
+commitSha: a975650
 
 Diffs across the Rust crates are getting hard to read because several files have grown past 500 LOC during the per-task ratchet of Tasks 15–21. Before we cut a public release in Task 6, split them into smaller modules so per-task diffs stay scoped.
 

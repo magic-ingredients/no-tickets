@@ -1,8 +1,9 @@
 //! `nt self-update` — direct-download binary upgrade path.
 //!
 //! Scoped to install.sh / direct-download installs. Package-manager
-//! installs (Homebrew, Cargo, Scoop, npm) detect on launch and redirect
-//! the user to their package manager instead of swapping the binary.
+//! installs (Homebrew, Cargo, Scoop) and version-manager shims (asdf,
+//! mise, Volta) detect on launch and redirect the user to their manager
+//! instead of swapping the binary.
 //!
 //! Structure:
 //! - `detect_install_kind` — pure path classification (no I/O)
@@ -29,7 +30,9 @@ pub enum Manager {
     Homebrew,
     Cargo,
     Scoop,
-    Npm,
+    Asdf,
+    Mise,
+    Volta,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -63,15 +66,35 @@ pub const DEFAULT_GH_API_BASE: &str = "https://api.github.com";
 const USER_AGENT: &str = "nt-self-update";
 
 pub fn detect_install_kind(exe_path: &Path) -> InstallKind {
-    // Normalise to lowercase forward slashes so a single substring check
-    // matches both POSIX and Windows path styles in one pass. The raw
-    // path's case can vary (macOS `/Users/…`, Linux `/home/…`,
-    // `C:\Users\…`), but our markers are all lowercase-stable.
+    // We classify by substring match on a normalised path string.
+    //
+    // Case-folding rationale: every marker below is intentionally
+    // lowercase, so we lowercase the candidate path once and skip
+    // per-comparison case-handling. This is safe across platforms
+    // because (a) Windows + macOS APFS/HFS+ are case-insensitive at
+    // the filesystem level — the user can't have a *different*
+    // directory named "Cargo" vs "cargo"; (b) Linux is case-sensitive
+    // but every tool we detect (homebrew, cargo, scoop, asdf, mise,
+    // volta) ships lowercase directory names. A Linux user with a
+    // deliberately mixed-case `~/.Cargo/bin/nt` would slip through,
+    // but that's a self-inflicted false-negative, not a correctness
+    // bug — we'd return Direct, which only refuses the user's own
+    // manual path.
+    //
+    // We also normalise `\` → `/` so the same marker strings work for
+    // Windows paths (`C:\Users\…\scoop\apps\…`) and POSIX in one pass.
+    //
+    // Important: we use `current_exe()` upstream, which resolves
+    // symlinks on Linux/macOS. That matters for Homebrew at a custom
+    // `HOMEBREW_PREFIX` — `<prefix>/bin/nt` is a symlink into
+    // `<prefix>/Cellar/nt/<version>/bin/nt`, and the resolved path
+    // hits the `/cellar/` marker even when the prefix isn't
+    // `/opt/homebrew` or `/usr/local`.
     let raw = exe_path.to_string_lossy();
     let lc = raw.to_lowercase().replace('\\', "/");
 
     if lc.contains("/opt/homebrew/")
-        || lc.contains("/usr/local/cellar/")
+        || lc.contains("/cellar/")
         || lc.contains("/.linuxbrew/")
         || lc.contains("/linuxbrew/.linuxbrew/")
     {
@@ -83,8 +106,14 @@ pub fn detect_install_kind(exe_path: &Path) -> InstallKind {
     if lc.contains("/scoop/apps/") {
         return InstallKind::Managed(Manager::Scoop);
     }
-    if lc.contains("/node_modules/.bin/") {
-        return InstallKind::Managed(Manager::Npm);
+    if lc.contains("/.asdf/shims/") || lc.contains("/.asdf/installs/") {
+        return InstallKind::Managed(Manager::Asdf);
+    }
+    if lc.contains("/mise/shims/") || lc.contains("/mise/installs/") {
+        return InstallKind::Managed(Manager::Mise);
+    }
+    if lc.contains("/.volta/bin/") || lc.contains("/.volta/tools/") {
+        return InstallKind::Managed(Manager::Volta);
     }
     InstallKind::Direct
 }
@@ -100,9 +129,14 @@ pub fn redirect_message(manager: Manager) -> String {
         Manager::Scoop => {
             "nt was installed via Scoop. Run `scoop update nt` to update.".to_string()
         }
-        Manager::Npm => "The npm distribution of no-tickets was retired. \
-             Reinstall via Homebrew (`brew install magic-ingredients/tap/nt`), \
-             Scoop, `cargo install nt-cli`, or the install.sh script."
+        Manager::Asdf => "nt was installed via asdf. \
+             Update via your asdf plugin (e.g. `asdf install nt latest && asdf reshim`)."
+            .to_string(),
+        Manager::Mise => "nt was installed via mise. \
+             Update via `mise install nt@latest` (or your mise tools manifest)."
+            .to_string(),
+        Manager::Volta => "nt was installed via Volta. \
+             Update via `volta install nt@latest`."
             .to_string(),
     }
 }
@@ -360,10 +394,85 @@ mod tests {
     }
 
     #[test]
-    fn detect_npm_node_modules_bin() {
+    fn detect_homebrew_custom_prefix_via_resolved_cellar_symlink() {
+        // `current_exe()` resolves symlinks, so a HOMEBREW_PREFIX install
+        // at `/opt/brew/bin/nt` is reached via its Cellar target:
+        // `/opt/brew/Cellar/nt/0.1.0/bin/nt`. The /cellar/ marker catches
+        // it regardless of prefix — that's the load-bearing
+        // generalisation here (the old /usr/local/cellar/-only check
+        // would have silently mis-classified custom prefixes as Direct
+        // and corrupted brew's package database on self-update).
+        assert_eq!(
+            detect_install_kind(&PathBuf::from("/opt/brew/Cellar/nt/0.1.0/bin/nt")),
+            InstallKind::Managed(Manager::Homebrew)
+        );
+    }
+
+    #[test]
+    fn detect_asdf_shim() {
+        assert_eq!(
+            detect_install_kind(&PathBuf::from("/Users/alice/.asdf/shims/nt")),
+            InstallKind::Managed(Manager::Asdf)
+        );
+    }
+
+    #[test]
+    fn detect_asdf_install() {
+        assert_eq!(
+            detect_install_kind(&PathBuf::from(
+                "/Users/alice/.asdf/installs/nt/0.1.0/bin/nt"
+            )),
+            InstallKind::Managed(Manager::Asdf)
+        );
+    }
+
+    #[test]
+    fn detect_mise_shim() {
+        assert_eq!(
+            detect_install_kind(&PathBuf::from("/Users/alice/.local/share/mise/shims/nt")),
+            InstallKind::Managed(Manager::Mise)
+        );
+    }
+
+    #[test]
+    fn detect_mise_install() {
+        assert_eq!(
+            detect_install_kind(&PathBuf::from(
+                "/Users/alice/.local/share/mise/installs/nt/0.1.0/bin/nt"
+            )),
+            InstallKind::Managed(Manager::Mise)
+        );
+    }
+
+    #[test]
+    fn detect_volta_bin() {
+        assert_eq!(
+            detect_install_kind(&PathBuf::from("/Users/alice/.volta/bin/nt")),
+            InstallKind::Managed(Manager::Volta)
+        );
+    }
+
+    #[test]
+    fn detect_volta_tools() {
+        assert_eq!(
+            detect_install_kind(&PathBuf::from(
+                "/Users/alice/.volta/tools/image/packages/nt/bin/nt"
+            )),
+            InstallKind::Managed(Manager::Volta)
+        );
+    }
+
+    #[test]
+    fn detect_node_modules_is_no_longer_managed_after_npm_retirement() {
+        // npm distribution was retired in Task 12. Anyone whose nt
+        // binary happens to live under (or be symlinked under) a
+        // project's node_modules/.bin/ is a direct-install user whose
+        // PATH lookup picked the wrong copy — not a managed install.
+        // Refusing self-update here was the prior bug; we now treat
+        // this as Direct so self-update proceeds normally.
         assert_eq!(
             detect_install_kind(&PathBuf::from("/Users/alice/project/node_modules/.bin/nt")),
-            InstallKind::Managed(Manager::Npm)
+            InstallKind::Direct
         );
     }
 
@@ -397,34 +506,85 @@ mod tests {
     // ---- redirect_message -----------------------------------------------
 
     #[test]
-    fn redirect_message_homebrew_names_brew_upgrade() {
+    fn redirect_message_homebrew_names_exact_brew_upgrade_command() {
+        // Backticks preserved — pin the exact incantation. A typo like
+        // `brew upgardex` or a swap to another command would fail here.
         let msg = redirect_message(Manager::Homebrew);
-        assert!(msg.contains("brew upgrade"), "got: {msg}");
-    }
-
-    #[test]
-    fn redirect_message_cargo_names_cargo_install() {
-        let msg = redirect_message(Manager::Cargo);
-        assert!(msg.contains("cargo install"), "got: {msg}");
-    }
-
-    #[test]
-    fn redirect_message_scoop_names_scoop_update() {
-        let msg = redirect_message(Manager::Scoop);
-        assert!(msg.contains("scoop update"), "got: {msg}");
-    }
-
-    #[test]
-    fn redirect_message_npm_explains_npm_retired() {
-        // npm distribution retired in Task 12 — if someone still has an
-        // old install on their PATH the message must steer them to the
-        // new channels, not pretend npm is still supported.
-        let msg = redirect_message(Manager::Npm);
-        let lc = msg.to_lowercase();
         assert!(
-            lc.contains("retired") || lc.contains("brew") || lc.contains("install.sh"),
-            "npm redirect must steer to new channels, got: {msg}"
+            msg.contains("`brew upgrade nt`"),
+            "Homebrew message must quote the exact command, got: {msg}"
         );
+    }
+
+    #[test]
+    fn redirect_message_cargo_names_exact_cargo_install_force_command() {
+        let msg = redirect_message(Manager::Cargo);
+        assert!(
+            msg.contains("`cargo install --force nt-cli`"),
+            "Cargo message must quote the exact command, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn redirect_message_scoop_names_exact_scoop_update_command() {
+        let msg = redirect_message(Manager::Scoop);
+        assert!(
+            msg.contains("`scoop update nt`"),
+            "Scoop message must quote the exact command, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn redirect_message_asdf_names_asdf_install_and_reshim() {
+        let msg = redirect_message(Manager::Asdf);
+        assert!(
+            msg.contains("asdf install") && msg.contains("asdf reshim"),
+            "asdf message must name both install + reshim, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn redirect_message_mise_names_exact_mise_install_command() {
+        let msg = redirect_message(Manager::Mise);
+        assert!(
+            msg.contains("`mise install nt@latest`"),
+            "mise message must quote the exact command, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn redirect_message_volta_names_exact_volta_install_command() {
+        let msg = redirect_message(Manager::Volta);
+        assert!(
+            msg.contains("`volta install nt@latest`"),
+            "Volta message must quote the exact command, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn redirect_messages_are_all_distinct_and_non_empty() {
+        // Defends against an accidental copy-paste that leaves two
+        // manager branches with identical text (eg if someone adds a
+        // new variant by duplicating Homebrew and forgets to edit the
+        // message). Also pins that every variant is wired.
+        let all = [
+            Manager::Homebrew,
+            Manager::Cargo,
+            Manager::Scoop,
+            Manager::Asdf,
+            Manager::Mise,
+            Manager::Volta,
+        ];
+        let mut seen: Vec<String> = Vec::new();
+        for m in all {
+            let msg = redirect_message(m);
+            assert!(!msg.is_empty(), "{m:?} produced an empty redirect message");
+            assert!(
+                !seen.contains(&msg),
+                "{m:?} produced a duplicate redirect message: {msg}"
+            );
+            seen.push(msg);
+        }
     }
 
     // ---- is_downgrade / is_update_available -----------------------------

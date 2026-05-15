@@ -22,7 +22,7 @@ use crate::urls::resolve_urls;
 use metadata::build_metadata;
 use post::publish_event;
 
-/// Thin funnel for `publish_batch::build_cli_base_source`, which shares
+/// Thin funnel for `publish_batch::source::build_cli_base_source`, which shares
 /// the `--source-attribute` parser with the single-event path. Drift
 /// here would silently re-attribute every batch event but not single
 /// events (or vice versa). Wrapping (rather than `pub(super) use`)

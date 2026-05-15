@@ -147,12 +147,12 @@ impl RegistryCache {
                 .last_refresh_at
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match *last {
-                Some(prev) if now.duration_since(prev) < self.min_refresh_interval => false,
-                _ => {
-                    *last = Some(now);
-                    true
-                }
+            let elapsed = (*last).map(|prev| now.duration_since(prev));
+            if past_throttle_window(elapsed, self.min_refresh_interval) {
+                *last = Some(now);
+                true
+            } else {
+                false
             }
         };
         if !should_spawn {
@@ -180,6 +180,23 @@ impl RegistryCache {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = Some(rows);
+    }
+}
+
+/// Pure predicate for the throttle check, extracted so the boundary
+/// semantics are testable without depending on `Instant::now()`
+/// resolution between two sequential calls.
+///
+/// `elapsed = None` means "no prior refresh recorded" — always past
+/// the window. `Some(d)` means "d elapsed since the last refresh"
+/// — past the window iff `d >= interval`. The `>=` (rather than `>`)
+/// makes the boundary inclusive: exactly-at-interval is treated as
+/// past-the-window so the throttle releases on time, not one tick
+/// later.
+fn past_throttle_window(elapsed: Option<Duration>, interval: Duration) -> bool {
+    match elapsed {
+        None => true,
+        Some(d) => d >= interval,
     }
 }
 
@@ -265,6 +282,41 @@ mod tests {
             second,
             "second call past zero-duration window must also spawn",
         );
+    }
+
+    // ─── past_throttle_window: boundary semantics ─────────────────────────
+
+    #[test]
+    fn past_throttle_window_when_no_prior_refresh_is_always_past() {
+        assert!(past_throttle_window(None, Duration::from_secs(60)));
+        assert!(past_throttle_window(None, Duration::ZERO));
+    }
+
+    #[test]
+    fn past_throttle_window_strictly_inside_window_is_throttled() {
+        assert!(!past_throttle_window(
+            Some(Duration::from_secs(1)),
+            Duration::from_secs(5),
+        ));
+    }
+
+    #[test]
+    fn past_throttle_window_at_exactly_interval_is_past() {
+        // Inclusive boundary: exactly-at-window must release the
+        // throttle on time, not one tick later. Kills the `< → <=`
+        // boundary mutant on the underlying comparison.
+        assert!(past_throttle_window(
+            Some(Duration::from_secs(5)),
+            Duration::from_secs(5),
+        ));
+    }
+
+    #[test]
+    fn past_throttle_window_strictly_past_interval_is_past() {
+        assert!(past_throttle_window(
+            Some(Duration::from_secs(10)),
+            Duration::from_secs(5),
+        ));
     }
 
     /// `is_deprecated` predicate direction. A regression that flipped

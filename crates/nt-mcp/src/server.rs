@@ -62,9 +62,14 @@ pub struct NtServer {
 const DEFAULT_REGISTRY_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 fn registry_refresh_interval() -> Duration {
-    std::env::var("NT_REGISTRY_REFRESH_INTERVAL_MS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
+    parse_registry_refresh_interval(std::env::var("NT_REGISTRY_REFRESH_INTERVAL_MS").ok().as_deref())
+}
+
+/// Pure parser for `NT_REGISTRY_REFRESH_INTERVAL_MS`. Extracted so the
+/// env-var contract (default, parse failure, valid override) is unit-
+/// testable without touching the global env.
+fn parse_registry_refresh_interval(raw: Option<&str>) -> Duration {
+    raw.and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_millis)
         .unwrap_or(DEFAULT_REGISTRY_REFRESH_INTERVAL)
 }
@@ -153,10 +158,69 @@ impl ServerHandler for NtServer {
         // `Implementation` is `#[non_exhaustive]`, so direct struct
         // construction is disallowed. Start from the build-env default
         // (carries crate version, sensible defaults) and override name
-        // + version to the TS parity values.
+        // + version to the pinned values.
         let mut info = Implementation::from_build_env();
         info.name = SERVER_NAME.to_string();
         info.version = env!("CARGO_PKG_VERSION").to_string();
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(info)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_registry_refresh_interval_uses_default_when_env_absent() {
+        assert_eq!(
+            parse_registry_refresh_interval(None),
+            DEFAULT_REGISTRY_REFRESH_INTERVAL,
+        );
+    }
+
+    #[test]
+    fn parse_registry_refresh_interval_uses_default_when_env_unparseable() {
+        // Garbage values fall back to the default — a malformed env
+        // var must NOT silently turn into a zero throttle and re-
+        // enable per-call refresh.
+        assert_eq!(
+            parse_registry_refresh_interval(Some("not-a-number")),
+            DEFAULT_REGISTRY_REFRESH_INTERVAL,
+        );
+    }
+
+    #[test]
+    fn parse_registry_refresh_interval_parses_zero_for_test_override() {
+        // Integration tests rely on this exact contract: setting the
+        // env to "0" must produce Duration::ZERO so refresh-observing
+        // tests can fire the spawn on every call.
+        assert_eq!(parse_registry_refresh_interval(Some("0")), Duration::ZERO);
+    }
+
+    #[test]
+    fn parse_registry_refresh_interval_parses_valid_milliseconds() {
+        assert_eq!(
+            parse_registry_refresh_interval(Some("1234")),
+            Duration::from_millis(1234),
+        );
+    }
+
+    /// Integration of the env-reader + parser: with the env unset
+    /// in this process (cargo test inherits a clean env unless a
+    /// caller exports the var), the function must return the
+    /// non-zero default. Pins that the wrapper actually delegates
+    /// to the parser rather than collapsing to `Duration::default()`.
+    #[test]
+    fn registry_refresh_interval_returns_default_when_env_unset() {
+        // No in-process std::env::set_var anywhere in this crate's
+        // tests — the integration tests pass NT_REGISTRY_REFRESH_
+        // INTERVAL_MS through the spawned child's env, not via the
+        // parent test process. So this read is deterministic.
+        let got = registry_refresh_interval();
+        assert!(
+            got > Duration::ZERO,
+            "registry_refresh_interval must return the non-zero default when env is unset; got {got:?}",
+        );
+        assert_eq!(got, DEFAULT_REGISTRY_REFRESH_INTERVAL);
     }
 }

@@ -16,17 +16,18 @@
 //!   `UpdateOutcome` the caller maps to exit code + user output
 
 use std::path::Path;
+use std::time::Duration;
 
 use semver::Version;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum InstallKind {
+pub(crate) enum InstallKind {
     Direct,
     Managed(Manager),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Manager {
+pub(crate) enum Manager {
     Homebrew,
     Cargo,
     Scoop,
@@ -36,36 +37,101 @@ pub enum Manager {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum UpdateOutcome {
+pub(crate) enum UpdateOutcome {
     NoUpdate,
-    Updated { from: String, to: String },
+    Updated {
+        from: String,
+        to: String,
+    },
     ManagedRedirect(Manager),
-    DowngradeRefused { current: String, latest: String },
+    DowngradeRefused {
+        current: String,
+        latest: String,
+    },
+    /// The GitHub tag couldn't be parsed as semver (e.g. a release pipeline
+    /// switched to calver tags like `2026-05-15`). Surfacing this
+    /// explicitly avoids the silent "no update available" footgun where
+    /// users on every prior version see `already the latest` forever.
+    VersionParseError {
+        latest: String,
+    },
     FetchFailed(String),
-    SwapFailed { target: String, reason: String },
+    SwapFailed {
+        target: String,
+        reason: String,
+    },
 }
 
+/// Structured failure modes for the GitHub Releases pre-flight. Mapped
+/// to a user-facing string at the `run()` boundary; in-module callers
+/// can match on the variant if they need to discriminate (e.g. the
+/// rate-limit case from a transport error).
 #[derive(Debug)]
-pub struct LatestRelease {
-    pub tag_name: String,
+pub(crate) enum FetchError {
+    /// Generic non-2xx other than rate-limit.
+    HttpStatus(reqwest::StatusCode),
+    /// GitHub returned 403 with `X-RateLimit-Remaining: 0`. The optional
+    /// reset epoch (`X-RateLimit-Reset`) is included when present so
+    /// the user-facing message can name a wait time.
+    RateLimited { reset_epoch: Option<u64> },
+    /// Connection / DNS / timeout / TLS handshake failure.
+    Network(String),
+    /// Body was not valid JSON.
+    ParseJson(String),
+    /// JSON parsed but `tag_name` was missing, non-string, or empty.
+    /// Empty-string tag_name is folded here rather than passed through
+    /// — a release with no tag is observably broken upstream and
+    /// shouldn't be reported as "no update available".
+    InvalidTagName,
 }
 
-pub trait LatestFetcher {
+impl FetchError {
+    fn user_message(&self) -> String {
+        match self {
+            Self::HttpStatus(s) => format!("github api returned {s}"),
+            Self::RateLimited { reset_epoch } => match reset_epoch {
+                Some(t) => format!(
+                    "github api rate-limit hit (resets at unix epoch {t}). \
+                     Set GITHUB_TOKEN or wait until the window resets, \
+                     then re-run `nt self-update`."
+                ),
+                None => "github api rate-limit hit. \
+                     Set GITHUB_TOKEN or wait a few minutes, \
+                     then re-run `nt self-update`."
+                    .to_string(),
+            },
+            Self::Network(msg) => format!("network error: {msg}"),
+            Self::ParseJson(msg) => format!("parse github response: {msg}"),
+            Self::InvalidTagName => {
+                "github response had a missing, non-string, or empty tag_name".to_string()
+            }
+        }
+    }
+}
+
+pub(crate) trait LatestFetcher {
     async fn fetch(&self) -> Result<String, String>;
 }
 
-pub trait SwapPerformer {
+pub(crate) trait SwapPerformer {
     fn apply(&self, target_version: &str) -> Result<(), String>;
 }
 
 /// GitHub owner/repo coordinates the production fetcher and the swap
 /// backend point at. Kept here so the magic strings live in one place.
-pub const GH_OWNER: &str = "magic-ingredients";
-pub const GH_REPO: &str = "no-tickets";
-pub const DEFAULT_GH_API_BASE: &str = "https://api.github.com";
+pub(crate) const GH_OWNER: &str = "magic-ingredients";
+pub(crate) const GH_REPO: &str = "no-tickets";
+pub(crate) const DEFAULT_GH_API_BASE: &str = "https://api.github.com";
 const USER_AGENT: &str = "nt-self-update";
+/// Connect-phase timeout: TLS handshake + initial response. Captive
+/// portals and dead routes typically resolve within this window.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// End-to-end timeout for the whole request. The GH `/releases/latest`
+/// endpoint typically responds in <300ms; 30s leaves plenty of headroom
+/// without letting a stuck connection hang `nt self-update` forever.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub fn detect_install_kind(exe_path: &Path) -> InstallKind {
+pub(crate) fn detect_install_kind(exe_path: &Path) -> InstallKind {
     // We classify by substring match on a normalised path string.
     //
     // Case-folding rationale: every marker below is intentionally
@@ -118,7 +184,7 @@ pub fn detect_install_kind(exe_path: &Path) -> InstallKind {
     InstallKind::Direct
 }
 
-pub fn redirect_message(manager: Manager) -> String {
+pub(crate) fn redirect_message(manager: Manager) -> String {
     match manager {
         Manager::Homebrew => {
             "nt was installed via Homebrew. Run `brew upgrade nt` to update.".to_string()
@@ -142,12 +208,35 @@ pub fn redirect_message(manager: Manager) -> String {
 }
 
 /// Strip a single leading `v` so GitHub tag-style strings parse as
-/// semver. Anything else passes through unchanged.
+/// semver, and drop any `+build.metadata` suffix.
+///
+/// Build metadata is dropped so comparisons follow the SemVer 2.0
+/// spec ("Build metadata MUST be ignored when determining version
+/// precedence"). The `semver` crate v1.x deviates from the spec and
+/// orders `0.2.0+sha.abc` *above* `0.2.0`; stripping the suffix here
+/// gets us spec-aligned semantics for free.
 fn normalise_version(v: &str) -> &str {
-    v.strip_prefix('v').unwrap_or(v)
+    let no_v = v.strip_prefix('v').unwrap_or(v);
+    match no_v.find('+') {
+        Some(idx) => &no_v[..idx],
+        None => no_v,
+    }
 }
 
-pub fn is_downgrade(current: &str, latest: &str) -> bool {
+/// Canonical GitHub release-tag form for a normalised version. Single
+/// source of truth so the fetcher (which strips `v`) and the swap
+/// (which re-adds `v` when telling `self_update` which tag to grab)
+/// can't drift apart. If the release scheme ever changes
+/// (`release-X.Y.Z`, etc.) this is the one line that moves.
+pub(crate) fn to_release_tag(version: &str) -> String {
+    format!("v{}", normalise_version(version))
+}
+
+pub(crate) fn version_parseable(v: &str) -> bool {
+    Version::parse(normalise_version(v)).is_ok()
+}
+
+pub(crate) fn is_downgrade(current: &str, latest: &str) -> bool {
     let (Ok(c), Ok(l)) = (
         Version::parse(normalise_version(current)),
         Version::parse(normalise_version(latest)),
@@ -160,7 +249,7 @@ pub fn is_downgrade(current: &str, latest: &str) -> bool {
     l < c
 }
 
-pub fn is_update_available(current: &str, latest: &str) -> bool {
+pub(crate) fn is_update_available(current: &str, latest: &str) -> bool {
     let (Ok(c), Ok(l)) = (
         Version::parse(normalise_version(current)),
         Version::parse(normalise_version(latest)),
@@ -170,7 +259,7 @@ pub fn is_update_available(current: &str, latest: &str) -> bool {
     l > c
 }
 
-pub async fn orchestrate<F: LatestFetcher, S: SwapPerformer>(
+pub(crate) async fn orchestrate<F: LatestFetcher, S: SwapPerformer>(
     install_kind: InstallKind,
     current_version: &str,
     fetcher: &F,
@@ -188,6 +277,15 @@ pub async fn orchestrate<F: LatestFetcher, S: SwapPerformer>(
         Err(e) => return UpdateOutcome::FetchFailed(e),
     };
     let latest_norm = normalise_version(&latest_raw).to_string();
+
+    // If the latest tag isn't parseable as semver (e.g. release pipeline
+    // switched to calver, or returned a malformed tag), surface that
+    // explicitly. Falling through to `is_update_available` would silently
+    // return NoUpdate forever — a real foot-gun if a release engineer
+    // changes tag style without realising old binaries can't read it.
+    if !version_parseable(&latest_raw) {
+        return UpdateOutcome::VersionParseError { latest: latest_raw };
+    }
 
     if is_downgrade(current_version, &latest_raw) {
         return UpdateOutcome::DowngradeRefused {
@@ -211,35 +309,68 @@ pub async fn orchestrate<F: LatestFetcher, S: SwapPerformer>(
     }
 }
 
-pub async fn fetch_latest_release(
+/// Fetch the `tag_name` of the most recent **stable** release from
+/// GitHub Releases. Drafts and prereleases are silently skipped — that
+/// is GitHub's contract for the `/releases/latest` endpoint, not ours.
+/// If the team ships an rc as the most recent activity, callers on the
+/// prior stable correctly see "no update available" because the most
+/// recent *stable* hasn't moved.
+///
+/// Returns the raw tag string (e.g. `"v0.1.5"`); callers normalise.
+pub(crate) async fn fetch_latest_release(
     api_base: &str,
     owner: &str,
     repo: &str,
-) -> Result<LatestRelease, String> {
+) -> Result<String, FetchError> {
     let url = format!("{api_base}/repos/{owner}/{repo}/releases/latest");
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(|e| format!("self-update: build http client: {e}"))?;
+        .map_err(|e| FetchError::Network(format!("build http client: {e}")))?;
     let resp = client
         .get(&url)
         .header("accept", "application/vnd.github+json")
         .send()
         .await
-        .map_err(|e| format!("self-update: request {url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("self-update: github api {}: {url}", resp.status()));
+        .map_err(|e| FetchError::Network(format!("{e}")))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        // 403 + `X-RateLimit-Remaining: 0` is GitHub's documented
+        // rate-limit signal. Surface it as its own variant so the user
+        // sees an actionable "set GITHUB_TOKEN or wait" message rather
+        // than the misleading generic "403 Forbidden" (which sounds
+        // like an auth problem).
+        if status == reqwest::StatusCode::FORBIDDEN
+            && resp
+                .headers()
+                .get("x-ratelimit-remaining")
+                .and_then(|v| v.to_str().ok())
+                == Some("0")
+        {
+            let reset_epoch = resp
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok());
+            return Err(FetchError::RateLimited { reset_epoch });
+        }
+        return Err(FetchError::HttpStatus(status));
     }
+
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("self-update: parse github response: {e}"))?;
+        .map_err(|e| FetchError::ParseJson(format!("{e}")))?;
     let tag_name = body
         .get("tag_name")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "self-update: github response missing tag_name".to_string())?
+        .filter(|s| !s.is_empty())
+        .ok_or(FetchError::InvalidTagName)?
         .to_string();
-    Ok(LatestRelease { tag_name })
+    Ok(tag_name)
 }
 
 /// Production fetcher — hits `api.github.com` for the real GitHub
@@ -250,14 +381,20 @@ impl LatestFetcher for GithubFetcher {
     async fn fetch(&self) -> Result<String, String> {
         fetch_latest_release(DEFAULT_GH_API_BASE, GH_OWNER, GH_REPO)
             .await
-            .map(|r| r.tag_name)
+            .map_err(|e| e.user_message())
     }
 }
 
-/// Production swap — delegates to the `self_update` crate, which handles
-/// asset matching, download, sha256 verification (when a `.sha256` is
-/// published alongside the asset), and the atomic-replace dance per
-/// platform.
+/// Production swap — delegates to the `self_update` crate.
+///
+/// **Note on integrity verification:** the `self_update` crate verifies
+/// sha256 only when a `<asset>.sha256` companion file is published
+/// alongside the binary in the GitHub release. That's a release-pipeline
+/// contract (owned by Task 6 / cargo-dist config), not a runtime
+/// guarantee enforced here — if a future release ships without the
+/// sha256 file, this code will silently fall back to unverified download.
+/// A separate task should add a CI check that fails the release workflow
+/// when the sha256 companion is missing.
 struct SelfUpdateSwap;
 
 impl SwapPerformer for SelfUpdateSwap {
@@ -265,20 +402,35 @@ impl SwapPerformer for SelfUpdateSwap {
         // `self_update` is synchronous and does its own GH API call.
         // We've already pre-flighted via our async fetcher and decided
         // an update is wanted — `self_update` will re-fetch and pick
-        // the matching asset by target triple.
-        let target = target_version.to_string();
+        // the matching asset by target triple. `target_version_tag`
+        // pins which tag it grabs so the pre-flight and the swap can't
+        // disagree (TOCTOU between our fetch and the crate's fetch).
         self_update::backends::github::Update::configure()
             .repo_owner(GH_OWNER)
             .repo_name(GH_REPO)
             .bin_name("nt")
             .current_version(env!("CARGO_PKG_VERSION"))
-            .target_version_tag(&format!("v{target}"))
+            .target_version_tag(&to_release_tag(target_version))
             .show_download_progress(true)
             .build()
-            .map_err(|e| format!("self-update: configure: {e}"))?
+            .map_err(|e| format!("configure: {e}"))?
             .update()
             .map(|_| ())
-            .map_err(|e| format!("self-update: apply: {e}"))
+            .map_err(|e| format!("apply: {e}"))
+    }
+}
+
+/// Pure mapping from outcome → exit code. Extracted so the table is
+/// testable without touching `current_exe()` / network / swap.
+pub(crate) fn outcome_to_exit_code(outcome: &UpdateOutcome) -> i32 {
+    match outcome {
+        UpdateOutcome::ManagedRedirect(_)
+        | UpdateOutcome::NoUpdate
+        | UpdateOutcome::Updated { .. } => 0,
+        UpdateOutcome::DowngradeRefused { .. }
+        | UpdateOutcome::VersionParseError { .. }
+        | UpdateOutcome::FetchFailed(_)
+        | UpdateOutcome::SwapFailed { .. } => 1,
     }
 }
 
@@ -295,36 +447,26 @@ pub async fn run() -> i32 {
     let current = env!("CARGO_PKG_VERSION");
 
     let outcome = orchestrate(install_kind, current, &GithubFetcher, &SelfUpdateSwap).await;
-
-    match outcome {
-        UpdateOutcome::ManagedRedirect(m) => {
-            println!("{}", redirect_message(m));
-            0
-        }
+    match &outcome {
+        UpdateOutcome::ManagedRedirect(m) => println!("{}", redirect_message(*m)),
         UpdateOutcome::NoUpdate => {
-            println!("nt {current} is already the latest version.");
-            0
+            println!("nt {current} is already the latest version.")
         }
-        UpdateOutcome::Updated { from, to } => {
-            println!("nt updated: {from} → {to}");
-            0
-        }
-        UpdateOutcome::DowngradeRefused { current, latest } => {
-            eprintln!(
-                "nt self-update: refusing to downgrade from {current} to {latest}. \
-                 Reinstall directly if a downgrade is intentional."
-            );
-            1
-        }
-        UpdateOutcome::FetchFailed(msg) => {
-            eprintln!("nt self-update: {msg}");
-            1
-        }
+        UpdateOutcome::Updated { from, to } => println!("nt updated: {from} → {to}"),
+        UpdateOutcome::DowngradeRefused { current, latest } => eprintln!(
+            "nt self-update: refusing to downgrade from {current} to {latest}. \
+             Reinstall directly if a downgrade is intentional."
+        ),
+        UpdateOutcome::VersionParseError { latest } => eprintln!(
+            "nt self-update: latest release tag {latest:?} is not parseable as semver. \
+             The release pipeline may have switched tag style; please report this."
+        ),
+        UpdateOutcome::FetchFailed(msg) => eprintln!("nt self-update: {msg}"),
         UpdateOutcome::SwapFailed { target, reason } => {
-            eprintln!("nt self-update: swap to {target} failed: {reason}");
-            1
+            eprintln!("nt self-update: swap to {target} failed: {reason}")
         }
     }
+    outcome_to_exit_code(&outcome)
 }
 
 #[cfg(test)]
@@ -793,10 +935,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let release = fetch_latest_release(&server.uri(), "magic-ingredients", "no-tickets")
+        let tag = fetch_latest_release(&server.uri(), "magic-ingredients", "no-tickets")
             .await
             .expect("fetch should succeed");
-        assert_eq!(release.tag_name, "v0.1.5");
+        assert_eq!(tag, "v0.1.5");
     }
 
     #[tokio::test]
@@ -889,6 +1031,298 @@ mod tests {
             .await;
 
         let result = fetch_latest_release(&server.uri(), "foo", "bar").await;
-        assert!(result.is_err(), "missing tag_name must surface as Err");
+        assert!(
+            matches!(result, Err(FetchError::InvalidTagName)),
+            "missing tag_name must surface as FetchError::InvalidTagName, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_latest_release_returns_invalid_tag_name_on_empty_string() {
+        // Empty-string tag_name was the sharpest mutation surface flagged
+        // by the adversarial review: parses out of JSON fine, normalises
+        // to empty, fails semver parse, orchestrate would silently
+        // report NoUpdate. Pin that we reject it upstream as
+        // InvalidTagName.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tag_name": ""
+            })))
+            .mount(&server)
+            .await;
+
+        let result = fetch_latest_release(&server.uri(), "foo", "bar").await;
+        assert!(
+            matches!(result, Err(FetchError::InvalidTagName)),
+            "empty tag_name must surface as InvalidTagName, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_latest_release_returns_invalid_tag_name_on_non_string() {
+        // `tag_name` typed as null / number — should be rejected via the
+        // same path as a missing field, not silently coerced.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tag_name": 42
+            })))
+            .mount(&server)
+            .await;
+
+        let result = fetch_latest_release(&server.uri(), "foo", "bar").await;
+        assert!(
+            matches!(result, Err(FetchError::InvalidTagName)),
+            "non-string tag_name must surface as InvalidTagName, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_latest_release_returns_parse_json_on_empty_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(""))
+            .mount(&server)
+            .await;
+
+        let result = fetch_latest_release(&server.uri(), "foo", "bar").await;
+        assert!(
+            matches!(result, Err(FetchError::ParseJson(_))),
+            "empty body must surface as ParseJson, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_latest_release_returns_rate_limited_on_403_with_remaining_zero() {
+        // GitHub's documented rate-limit signal: 403 with
+        // `X-RateLimit-Remaining: 0`. Surface as a distinct variant so
+        // the user-visible message can name a wait time and suggest
+        // GITHUB_TOKEN, rather than the misleading generic 403.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .insert_header("x-ratelimit-remaining", "0")
+                    .insert_header("x-ratelimit-reset", "1234567890"),
+            )
+            .mount(&server)
+            .await;
+
+        let result = fetch_latest_release(&server.uri(), "foo", "bar").await;
+        match result {
+            Err(FetchError::RateLimited { reset_epoch }) => {
+                assert_eq!(reset_epoch, Some(1234567890));
+            }
+            other => panic!("expected RateLimited, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_latest_release_falls_back_to_http_status_on_403_without_remaining_header() {
+        // A 403 without the rate-limit-remaining header (e.g. real
+        // auth failure) must NOT be mis-classified as rate-limited.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+
+        let result = fetch_latest_release(&server.uri(), "foo", "bar").await;
+        assert!(
+            matches!(result, Err(FetchError::HttpStatus(s)) if s.as_u16() == 403),
+            "403 without rate-limit header must stay HttpStatus, got: {result:?}"
+        );
+    }
+
+    // ---- FetchError::user_message --------------------------------------
+
+    #[test]
+    fn fetch_error_user_message_rate_limited_with_reset_names_epoch_and_token() {
+        let msg = FetchError::RateLimited {
+            reset_epoch: Some(1234567890),
+        }
+        .user_message();
+        assert!(msg.contains("1234567890"), "got: {msg}");
+        assert!(msg.contains("GITHUB_TOKEN"), "got: {msg}");
+        assert!(msg.contains("rate-limit"), "got: {msg}");
+    }
+
+    #[test]
+    fn fetch_error_user_message_rate_limited_without_reset_still_actionable() {
+        let msg = FetchError::RateLimited { reset_epoch: None }.user_message();
+        assert!(msg.contains("GITHUB_TOKEN"), "got: {msg}");
+        assert!(msg.contains("rate-limit"), "got: {msg}");
+    }
+
+    #[test]
+    fn fetch_error_user_message_http_status_names_status_code() {
+        let msg = FetchError::HttpStatus(reqwest::StatusCode::SERVICE_UNAVAILABLE).user_message();
+        assert!(msg.contains("503"), "got: {msg}");
+    }
+
+    #[test]
+    fn fetch_error_user_message_invalid_tag_name_is_descriptive() {
+        let msg = FetchError::InvalidTagName.user_message();
+        assert!(msg.to_lowercase().contains("tag_name"), "got: {msg}");
+    }
+
+    // ---- to_release_tag -------------------------------------------------
+
+    #[test]
+    fn to_release_tag_adds_v_prefix_when_missing() {
+        assert_eq!(to_release_tag("0.1.0"), "v0.1.0");
+    }
+
+    #[test]
+    fn to_release_tag_keeps_single_v_prefix_when_present() {
+        // Normalises first, so a `v`-prefixed input doesn't end up `vv…`.
+        assert_eq!(to_release_tag("v0.1.0"), "v0.1.0");
+    }
+
+    // ---- orchestrate: VersionParseError --------------------------------
+
+    #[tokio::test]
+    async fn orchestrate_surfaces_version_parse_error_for_unparseable_latest_tag() {
+        // Calver-style tag from a release pipeline change — pin that we
+        // surface this explicitly instead of falling through to a silent
+        // NoUpdate (which would tell every old binary it's "already the
+        // latest version" forever).
+        let fetcher = StubFetcher(Ok("2026-05-15".into()));
+        let swap = StubSwap::ok();
+        let outcome = orchestrate(InstallKind::Direct, "0.1.0", &fetcher, &swap).await;
+        assert_eq!(
+            outcome,
+            UpdateOutcome::VersionParseError {
+                latest: "2026-05-15".into()
+            }
+        );
+        assert!(
+            swap.called_with.borrow().is_none(),
+            "swap must not run when latest tag is unparseable"
+        );
+    }
+
+    // ---- version comparison: prerelease, build metadata, calver --------
+
+    #[test]
+    fn update_available_treats_prerelease_as_below_release_of_same_version() {
+        // semver spec: 0.2.0-rc.1 < 0.2.0. So upgrading from rc.1 to
+        // the stable release is a valid update.
+        assert!(is_update_available("0.2.0-rc.1", "0.2.0"));
+    }
+
+    #[test]
+    fn update_not_available_when_latest_is_prerelease_of_current() {
+        // ... and an rc of the *current* release isn't an update.
+        assert!(!is_update_available("0.2.0", "0.2.0-rc.2"));
+    }
+
+    #[test]
+    fn update_available_ignores_build_metadata() {
+        // Build metadata (`+sha.abc`) doesn't participate in precedence
+        // per the semver spec. `0.2.0+sha.abc` is equivalent to `0.2.0`.
+        assert!(!is_update_available("0.2.0", "0.2.0+sha.abc"));
+    }
+
+    #[test]
+    fn version_parseable_accepts_standard_semver() {
+        assert!(version_parseable("0.1.0"));
+        assert!(version_parseable("v0.1.0"));
+        assert!(version_parseable("0.1.0-rc.1"));
+        assert!(version_parseable("0.1.0+sha.abc"));
+    }
+
+    #[test]
+    fn version_parseable_rejects_calver_and_garbage() {
+        // Calver-style YYYY-MM-DD doesn't parse as semver because the
+        // segments aren't numeric "major.minor.patch" with a strict
+        // semver shape. Pin: this is the trigger for VersionParseError.
+        assert!(!version_parseable("2026-05-15"));
+        assert!(!version_parseable("release-0.1.0"));
+        assert!(!version_parseable(""));
+        assert!(!version_parseable("v"));
+    }
+
+    // ---- outcome_to_exit_code (run() table extracted) ------------------
+
+    #[test]
+    fn exit_code_zero_for_managed_redirect() {
+        assert_eq!(
+            outcome_to_exit_code(&UpdateOutcome::ManagedRedirect(Manager::Homebrew)),
+            0
+        );
+    }
+
+    #[test]
+    fn exit_code_zero_for_no_update() {
+        assert_eq!(outcome_to_exit_code(&UpdateOutcome::NoUpdate), 0);
+    }
+
+    #[test]
+    fn exit_code_zero_for_updated() {
+        assert_eq!(
+            outcome_to_exit_code(&UpdateOutcome::Updated {
+                from: "0.1.0".into(),
+                to: "0.2.0".into(),
+            }),
+            0
+        );
+    }
+
+    #[test]
+    fn exit_code_one_for_downgrade_refused() {
+        assert_eq!(
+            outcome_to_exit_code(&UpdateOutcome::DowngradeRefused {
+                current: "0.2.0".into(),
+                latest: "0.1.0".into(),
+            }),
+            1
+        );
+    }
+
+    #[test]
+    fn exit_code_one_for_version_parse_error() {
+        assert_eq!(
+            outcome_to_exit_code(&UpdateOutcome::VersionParseError {
+                latest: "2026-05-15".into()
+            }),
+            1
+        );
+    }
+
+    #[test]
+    fn exit_code_one_for_fetch_failed() {
+        assert_eq!(
+            outcome_to_exit_code(&UpdateOutcome::FetchFailed("network down".into())),
+            1
+        );
+    }
+
+    #[test]
+    fn exit_code_one_for_swap_failed() {
+        assert_eq!(
+            outcome_to_exit_code(&UpdateOutcome::SwapFailed {
+                target: "0.2.0".into(),
+                reason: "sha256 mismatch".into(),
+            }),
+            1
+        );
+    }
+
+    // ---- linuxbrew mutation-gap fix ------------------------------------
+
+    #[test]
+    fn detect_homebrew_per_user_linuxbrew_prefix() {
+        // The pre-existing `/home/linuxbrew/.linuxbrew/` test path
+        // matches BOTH the `/.linuxbrew/` and `/linuxbrew/.linuxbrew/`
+        // OR-arms, so flipping `||` to `&&` between them survived
+        // mutation testing. A per-user install at `$HOME/.linuxbrew/`
+        // (no shared linuxbrew system user) exercises ONLY the
+        // `/.linuxbrew/` arm and kills that mutant.
+        assert_eq!(
+            detect_install_kind(&PathBuf::from("/home/alice/.linuxbrew/bin/nt")),
+            InstallKind::Managed(Manager::Homebrew)
+        );
     }
 }

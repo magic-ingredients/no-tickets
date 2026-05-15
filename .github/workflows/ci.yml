@@ -30,3 +30,15 @@ jobs:
       - run: pnpm run lint
 
       - run: pnpm run test
+
+      # Rust toolchain for the CLI / MCP crates. Pre-commit hooks cover this
+      # locally for contributors who installed them, but CI is the only
+      # durable enforcement gate — without this step, fmt / clippy / check
+      # drift in crates/* lands silently until the next release tag fails.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: pnpm run rust:precommit

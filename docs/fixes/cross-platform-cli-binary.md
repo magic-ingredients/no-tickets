@@ -593,9 +593,32 @@ designed against an actually-registered subject type, not
 resurrected from this task.
 
 ### 23. Real-server `list_event_types` (replace fixtures)
-status: not_started
+status: completed
+commitSha: f7a0aa5
 
-Switch `list_event_types` from local fixtures (Task 2 spike) to a real `GET /v1/registry/event-types` call with an in-memory cache + async refresh. Matches TS `RegistryClient` behaviour. Closes out the spike.
+Switch `list_event_types` from local fixtures (Task 2 spike) to a real `GET /v1/registry/event-types` call with an in-memory cache + async refresh. Closes out the spike.
+
+**Completed 2026-05-15.** `crates/nt-mcp/src/registry_cache.rs`
+(new) wraps `Arc<RwLock<Option<Arc<Vec<EventTypeSpec>>>>>` with a
+cold-fetch-on-first-call + warm-spawned-refresh pattern. Refresh is
+throttled by `NT_REGISTRY_REFRESH_INTERVAL_MS` (default 5s) so a
+busy MCP session doesn't translate into one outbound GET per tool
+call. Refresh failures log at debug only and never propagate to the
+user-facing result. 401/403 surface as auth-specific diagnostics
+naming `NO_TICKETS_TOKEN`. Cold-path concurrent callers both fetch
+(last-writer-wins on identical data — benign, documented).
+
+`crates/nt-mcp/src/fixtures.rs` deleted. The wire output strips
+`deprecatedAt` so only the five identity dimensions (id, domain,
+entity, action, version) cross the wire; `deprecated_at` lives only
+on the internal `EventTypeSpec` as a filter dimension.
+
+Test surface: 13 mcp integration tests (up from 8 fixture-based) +
+3 unit tests on `RegistryCache` (throttle within window / past
+window / `is_deprecated` direction) + 4 unit tests on
+`parse_registry_refresh_interval` + 4 unit tests on
+`past_throttle_window`. cargo-mutants on the changed files: 27
+mutants, 24 caught, 3 unviable, 0 surviving.
 
 ### 24. Extract `nt-core` shared crate
 status: completed

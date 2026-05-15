@@ -190,7 +190,7 @@ pub(crate) fn redirect_message(manager: Manager) -> String {
             "nt was installed via Homebrew. Run `brew upgrade nt` to update.".to_string()
         }
         Manager::Cargo => {
-            "nt was installed via Cargo. Run `cargo install --force nt-cli` to update.".to_string()
+            "nt was installed via Cargo. Run `cargo install --force nt` to update.".to_string()
         }
         Manager::Scoop => {
             "nt was installed via Scoop. Run `scoop update nt` to update.".to_string()
@@ -662,7 +662,7 @@ mod tests {
     fn redirect_message_cargo_names_exact_cargo_install_force_command() {
         let msg = redirect_message(Manager::Cargo);
         assert!(
-            msg.contains("`cargo install --force nt-cli`"),
+            msg.contains("`cargo install --force nt`"),
             "Cargo message must quote the exact command, got: {msg}"
         );
     }

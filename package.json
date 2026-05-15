@@ -36,12 +36,12 @@
     "test:coverage": "vitest run --coverage",
     "test:mutate": "npx stryker run",
     "typecheck": "tsc --noEmit",
-    "rust:check": "cargo check -p nt-cli --tests",
-    "rust:clippy": "cargo clippy -p nt-cli --all-targets -- -D warnings",
-    "rust:fmt": "cargo fmt --check -p nt-cli",
-    "rust:fmt:fix": "cargo fmt -p nt-cli",
-    "rust:test": "cargo test -p nt-cli",
-    "rust:mutants": "cargo mutants --package nt-cli",
+    "rust:check": "cargo check -p nt --tests",
+    "rust:clippy": "cargo clippy -p nt --all-targets -- -D warnings",
+    "rust:fmt": "cargo fmt --check -p nt",
+    "rust:fmt:fix": "cargo fmt -p nt",
+    "rust:test": "cargo test -p nt",
+    "rust:mutants": "cargo mutants --package nt",
     "rust:precommit": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check"
   },
   "dependencies": {

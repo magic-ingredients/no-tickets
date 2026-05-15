@@ -481,7 +481,7 @@ Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires b
 **Acceptance:**
 - `cargo check --workspace` and `cargo test --workspace` pass — no behavioural regression
 - `dist plan` announces ONE release (the `nt-cli` package) containing both `nt` and `nt-mcp` binaries across the five targets
-- Generated formula is `nt.rb` (via `formula = "nt"` override); installer is `nt-cli-installer.sh`, tarball is `nt-cli-{target}.{tar.xz,zip}`
+- Generated formula is `nt.rb`, installer is `nt-installer.sh`, tarball is `nt-{target}.{tar.xz,zip}` (workspace package renamed `nt-cli` → `nt` to drive consistent artifact naming)
 - `cargo run -p nt-cli --bin nt` and `cargo run -p nt-cli --bin nt-mcp` both work (dev workflow preserved)
 
 ### 5. Full MCP server surface port

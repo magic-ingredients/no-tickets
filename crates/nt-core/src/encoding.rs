@@ -78,4 +78,37 @@ mod tests {
     fn control_chars_get_encoded() {
         assert_eq!(encode_path_segment("a\nb").to_string(), "a%0Ab");
     }
+
+    /// Adversarial review #5: explicit membership pin for every
+    /// character in `PATH_SEGMENT.add(...)` beyond CONTROLS. A
+    /// regression that drops one of the `.add(...)` lines (say,
+    /// `.add(b'<')`) would leave that character un-encoded — the
+    /// existing `slash_question_hash_get_encoded` test only covers
+    /// three of the ten, so a `<` regression would slip through.
+    /// This test pins each entry individually.
+    #[test]
+    fn every_extra_punctuation_byte_in_the_set_gets_encoded() {
+        let cases = [
+            (' ', "%20"),
+            ('"', "%22"),
+            ('#', "%23"),
+            ('<', "%3C"),
+            ('>', "%3E"),
+            ('?', "%3F"),
+            ('`', "%60"),
+            ('{', "%7B"),
+            ('}', "%7D"),
+            ('/', "%2F"),
+            ('%', "%25"),
+        ];
+        for (raw, encoded) in cases {
+            let input = format!("a{raw}b");
+            let expected = format!("a{encoded}b");
+            assert_eq!(
+                encode_path_segment(&input).to_string(),
+                expected,
+                "byte {raw:?} must encode to {encoded:?}",
+            );
+        }
+    }
 }

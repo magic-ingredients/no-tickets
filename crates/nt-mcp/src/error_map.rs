@@ -30,18 +30,17 @@ use rmcp::ErrorData as McpError;
 /// to the same generic `internal_error` shape the tool handlers
 /// already emit for unhandled status codes.
 pub fn transport_to_mcp(err: CoreError) -> McpError {
-    match err {
-        CoreError::Transport(msg) => {
-            McpError::internal_error(format!("transport error: {msg}"), None)
-        }
-        CoreError::Body(msg) => {
-            McpError::internal_error(format!("transport error reading body: {msg}"), None)
-        }
-        CoreError::InvalidJson(msg) => {
-            McpError::internal_error(format!("invalid server JSON response: {msg}"), None)
-        }
-        CoreError::HttpStatus { status, body } => {
-            McpError::internal_error(format!("server returned {status}: {body}"), None)
-        }
-    }
+    // Defer the wording to `nt_core::Error`'s Display impl — single
+    // source of truth. The previous version reformatted each variant
+    // by hand and drifted: `InvalidJson` adapter said "invalid
+    // server JSON response" while the canonical Display said
+    // "invalid JSON response" (the integration tests pin "invalid"
+    // AND "json" lowercase substrings, so both passed — but the
+    // contract drift is exactly the kind of cross-crate divergence
+    // this adapter is meant to centralise, not introduce).
+    //
+    // Status-code semantic mapping (404 / 401 / 403 → tool-specific
+    // McpError variants) is NOT here — it stays inline at each tool
+    // handler because the wording is per-resource.
+    McpError::internal_error(err.to_string(), None)
 }

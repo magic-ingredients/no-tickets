@@ -10,9 +10,11 @@
 //!   ids and interaction ids into URL paths).
 //! - `url`: API URL composition with trailing-slash normalisation
 //!   (`api_url(base, "/v1/events")` → `<base>/v1/events`).
-//! - `http`: thin reqwest wrapper providing `get_json` / `post_json`
-//!   with Bearer auth. No retry / no backoff / no error mapping —
-//!   nt-cli owns those layers above the primitives.
+//! - `http`: thin reqwest wrappers providing `get_raw` / `post_json`
+//!   with Bearer auth. Both return `RawResponse { status, body }`
+//!   so callers can map status codes to consumer-specific typed
+//!   errors. No retry / no backoff / no error mapping — those
+//!   layers live in each consumer.
 //! - `error`: `Error` enum carrying raw HTTP facts (status + body)
 //!   and transport/parse failures. Consumers convert.
 //!

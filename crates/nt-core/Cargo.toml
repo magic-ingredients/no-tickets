@@ -9,6 +9,7 @@ description = "no-tickets shared HTTP / URL / encoding primitives — consumed b
 [dependencies]
 percent-encoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+serde = "1"
 serde_json = "1"
 
 [dev-dependencies]

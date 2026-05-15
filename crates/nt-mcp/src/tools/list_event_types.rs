@@ -7,23 +7,14 @@
 //! action, version}] }`.
 //!
 //! The output shape strips `deprecatedAt` — only the five identity
-//! dimensions cross the wire (matches the TS handler's `.map(t =>
-//! ({ id, domain, entity, action, version }))`). Drift here would
-//! leak server-internal timestamps; pinned by the wire-shape test.
+//! dimensions cross the wire. Drift here would leak server-internal
+//! timestamps; pinned by the wire-shape test.
 
 use rmcp::{model::*, ErrorData as McpError};
 use serde::{Deserialize, Serialize};
 
 use crate::config::EnvConfig;
 use crate::registry_cache::{EventTypeSpec, RegistryCache};
-
-/// Exact TS-parity description from src/mcp/tools/list-event-types.ts.
-/// Pinned here as a constant so the integration test asserts on
-/// byte-for-byte equality rather than a substring match. The literal
-/// lives in the `#[tool]` attribute over in `server.rs` (rmcp's macro
-/// requires a string literal); this constant is the test-side anchor.
-#[allow(dead_code)] // Test-only anchor; the literal lives in the #[tool] attribute.
-pub const TS_PARITY_DESCRIPTION: &str = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async.";
 
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub struct ListEventTypesArgs {
@@ -35,11 +26,10 @@ pub struct ListEventTypesArgs {
     pub deprecated: Option<bool>,
 }
 
-/// Wire row shape — the five identity dimensions the TS handler
-/// surfaces. Owned `String` rather than borrowed `&str` because the
-/// caller already cloned the rows out of the cache (the cache write
-/// happens on async refresh; holding borrows here would force the
-/// caller to keep the read lock open across an await).
+/// Wire row shape — the five identity dimensions an MCP caller sees.
+/// Owned `String` rather than borrowed `&str` because the caller is
+/// already serving from an `Arc<Vec<EventTypeSpec>>` snapshot and the
+/// row map allocates new strings during the filter/clone step.
 #[derive(Debug, Serialize)]
 struct Row {
     id: String,
@@ -49,14 +39,14 @@ struct Row {
     version: String,
 }
 
-impl From<EventTypeSpec> for Row {
-    fn from(s: EventTypeSpec) -> Self {
+impl From<&EventTypeSpec> for Row {
+    fn from(s: &EventTypeSpec) -> Self {
         Self {
-            id: s.id,
-            domain: s.domain,
-            entity: s.entity,
-            action: s.action,
-            version: s.version,
+            id: s.id.clone(),
+            domain: s.domain.clone(),
+            entity: s.entity.clone(),
+            action: s.action.clone(),
+            version: s.version.clone(),
         }
     }
 }
@@ -81,7 +71,7 @@ pub async fn handle(
     let rows = cache.list(config, http_client).await?;
 
     let filtered: Vec<Row> = rows
-        .into_iter()
+        .iter()
         .filter(|t| match &args.domain {
             Some(d) => t.domain == *d,
             None => true,

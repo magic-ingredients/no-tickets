@@ -52,11 +52,28 @@ pub struct NtServer {
     http_client: reqwest::Client,
 }
 
+/// Default throttle for the registry cache's opportunistic async
+/// refresh. A busy MCP session calling `list_event_types` rapidly must
+/// NOT translate into one outbound GET per call against the registry
+/// — that's wasteful and risks self-DoS-pressure. 5 seconds is short
+/// enough to feel fresh, long enough to coalesce bursts. Override via
+/// `NT_REGISTRY_REFRESH_INTERVAL_MS` (integration tests use `0` to
+/// observe refresh behaviour deterministically).
+const DEFAULT_REGISTRY_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+fn registry_refresh_interval() -> Duration {
+    std::env::var("NT_REGISTRY_REFRESH_INTERVAL_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(DEFAULT_REGISTRY_REFRESH_INTERVAL)
+}
+
 impl NtServer {
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
-            registry: RegistryCache::new(),
+            registry: RegistryCache::new(registry_refresh_interval()),
             http_client: reqwest::Client::builder()
                 .timeout(HTTP_TIMEOUT)
                 .build()

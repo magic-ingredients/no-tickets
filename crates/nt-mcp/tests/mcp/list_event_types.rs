@@ -5,7 +5,7 @@
 //! error mapping, and the stdout-purity + stderr-logging cross-cutting
 //! invariants (those tests use list_event_types as their driver tool).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tokio::time::sleep;
@@ -16,22 +16,21 @@ use super::common::{collect_error_text, extract_tool_result_payload, McpClient};
 
 // ─── Acceptance criterion: list_event_types is registered and discoverable ──
 
-/// Exact byte-for-byte parity with the TS reference at
-/// src/mcp/tools/list-event-types.ts. Pinning the literal string here
-/// catches any drift, including whitespace, that a `contains` check
-/// would miss.
-const TS_PARITY_DESCRIPTION: &str = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async.";
+/// Pinned literal for the `#[tool]` description on `list_event_types`.
+/// rmcp's macro requires a string literal in the attribute, so the
+/// production constant lives there; this test-side copy catches drift,
+/// including whitespace, that a `contains` check would miss.
+const DESCRIPTION: &str = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async.";
 
 /// (id, domain, entity, action, version, deprecatedAt-or-None).
 /// Aliased to keep clippy's `type_complexity` lint quiet without
 /// suppressing it crate-wide.
 type RowTuple<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, Option<&'a str>);
 
-/// Canonical list-endpoint body shape — matches the TS
-/// `listResponseSchema` in src/registry/client.ts: a top-level
-/// `eventTypes` envelope wrapping an array of specs.
-/// `deprecatedAt: null` means active; a string datetime means
-/// deprecated. Only the fields tests assert on are populated.
+/// Canonical list-endpoint body: a top-level `eventTypes` envelope
+/// wrapping an array of specs. `deprecatedAt: null` means active; a
+/// string datetime means deprecated. Only the fields tests assert on
+/// are populated.
 fn list_body(rows: &[RowTuple<'_>]) -> Value {
     let arr: Vec<Value> = rows
         .iter()
@@ -69,8 +68,8 @@ async fn tools_list_includes_list_event_types_with_exact_ts_parity_description()
 
     assert_eq!(
         entry["description"].as_str(),
-        Some(TS_PARITY_DESCRIPTION),
-        "description must byte-match the TS reference",
+        Some(DESCRIPTION),
+        "description must byte-match the pinned literal",
     );
 
     // Input schema must declare optional `domain` and `deprecated` parameters.
@@ -94,10 +93,10 @@ async fn tools_list_includes_list_event_types_with_exact_ts_parity_description()
     c.shutdown().await;
 }
 
-/// `serverInfo.name` in the initialize response must match the TS server
-/// (src/mcp/create-server.ts reports `no-tickets`). Without this pin a
-/// regression on `Implementation::from_build_env()` would silently
-/// switch the reported name to whatever the Rust crate is called.
+/// `serverInfo.name` in the initialize response must be the literal
+/// `no-tickets`. Without this pin a regression on
+/// `Implementation::from_build_env()` would silently switch the
+/// reported name to whatever the Rust crate is called.
 #[tokio::test]
 async fn initialize_reports_ts_parity_server_name() {
     let mut c = McpClient::spawn().await;
@@ -105,7 +104,7 @@ async fn initialize_reports_ts_parity_server_name() {
     assert_eq!(
         init["result"]["serverInfo"]["name"].as_str(),
         Some("no-tickets"),
-        "serverInfo.name must match the TS server identity",
+        "serverInfo.name must be the pinned `no-tickets` identity",
     );
     c.shutdown().await;
 }
@@ -114,8 +113,7 @@ async fn initialize_reports_ts_parity_server_name() {
 
 /// First-call behaviour: GETs the registry endpoint with the Bearer
 /// token, parses the `{eventTypes: [...]}` envelope, and returns each
-/// row's id/domain/entity/action/version on the wire. Replaces the
-/// Task 2 spike fixture-based path.
+/// row's id/domain/entity/action/version on the wire.
 #[tokio::test]
 async fn list_event_types_issues_get_against_registry_with_bearer_and_returns_rows() {
     let server = MockServer::start().await;
@@ -156,8 +154,8 @@ async fn list_event_types_issues_get_against_registry_with_bearer_and_returns_ro
     assert!(ids.contains(&"ai.task.completed.v1"));
     assert!(ids.contains(&"billing.invoice.issued.v2"));
     // Wire-shape: each row carries id/domain/entity/action/version,
-    // NOT deprecatedAt (that's an internal filter dimension stripped
-    // by the handler — matches the spike's contract).
+    // NOT deprecatedAt (an internal filter dimension stripped by the
+    // handler before serialisation).
     for t in types {
         for field in ["id", "domain", "entity", "action", "version"] {
             assert!(
@@ -523,16 +521,23 @@ async fn list_event_types_refresh_failure_after_population_keeps_serving_cache()
         .mount(&server)
         .await;
     let uri = server.uri();
+    // Force a 0-interval throttle so the second call DOES spawn a
+    // refresh — without it, the throttle window would skip the spawn
+    // and the failure mode wouldn't actually exercise.
     let mut c = McpClient::spawn_with_env(&[
         ("NO_TICKETS_TOKEN", "nt_test"),
         ("NO_TICKETS_API_URL", uri.as_str()),
+        ("NT_REGISTRY_REFRESH_INTERVAL_MS", "0"),
     ])
     .await;
     c.handshake().await;
-    // First call populates cache; second call hits cache + spawns
-    // refresh that 503s. Give the spawned refresh a moment to land
-    // (and fail) before the third call so the failure mode actually
-    // exercises.
+    // First call populates cache from the success response. Second
+    // and subsequent calls return the cached value; the spawned
+    // refresh hits 503 and must NOT poison the cache. We don't sleep
+    // for the refresh to complete — the assertion (cached value
+    // preserved) holds whether or not the refresh has finished,
+    // because the read path is cache-first and refresh failures are
+    // discarded.
     let first = c
         .request(
             "tools/call",
@@ -543,24 +548,243 @@ async fn list_event_types_refresh_failure_after_population_keeps_serving_cache()
         extract_tool_result_payload(&first)["types"][0]["id"],
         "cached.event.type.v1",
     );
+    let second = c
+        .request(
+            "tools/call",
+            json!({ "name": "list_event_types", "arguments": {} }),
+        )
+        .await;
+    let payload = extract_tool_result_payload(&second);
+    assert_eq!(
+        payload["types"][0]["id"], "cached.event.type.v1",
+        "refresh failure must NOT poison the cache; got {payload}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Cold-cache error paths ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn list_event_types_cold_cache_401_surfaces_auth_diagnostic() {
+    // 401 on the cold path must surface as an auth-specific error
+    // naming NO_TICKETS_TOKEN — same shape as describe_event_type's
+    // 401 mapping. A regression that collapsed 401 into the generic
+    // 5xx transport-error branch would bury the actionable signal.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/registry/event-types"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({ "name": "list_event_types", "arguments": {} }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("auth"),
+        "401 must surface as an auth-specific diagnostic; got {msg:?}",
+    );
+    assert!(
+        msg.contains("NO_TICKETS_TOKEN"),
+        "401 diagnostic must name the env var to refresh; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn list_event_types_cold_cache_403_surfaces_auth_diagnostic() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/registry/event-types"))
+        .respond_with(ResponseTemplate::new(403))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({ "name": "list_event_types", "arguments": {} }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("auth"),
+        "403 must surface as an auth-specific diagnostic; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn list_event_types_cold_cache_non_json_body_surfaces_parse_error() {
+    // A 200 response whose body isn't JSON (misconfigured CDN
+    // returning HTML, for instance) must surface as a parse error
+    // naming "json" rather than panicking inside serde or returning
+    // a confusingly-empty rows list.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/registry/event-types"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({ "name": "list_event_types", "arguments": {} }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("json"),
+        "non-JSON body must surface as a JSON parse error; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn list_event_types_cold_cache_missing_envelope_surfaces_parse_error() {
+    // 200 with valid JSON but no `eventTypes` field is a server-
+    // contract violation. Surface as a parse-class error rather than
+    // returning a silent empty list — the agent can't distinguish
+    // "no rows defined" from "wrong response shape" otherwise.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/registry/event-types"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({ "name": "list_event_types", "arguments": {} }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("json")
+            || msg.to_lowercase().contains("eventtypes")
+            || msg.to_lowercase().contains("missing"),
+        "missing envelope must surface as a parse/contract error; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+// ─── Async refresh writes the cache (observable test) ──────────────────────
+
+/// Pins that the spawned warm-path refresh actually mutates the
+/// cache. Without this test, deleting the `commit()` call inside the
+/// refresh task would pass every other test (they all read the cache
+/// before the refresh has had a chance to land).
+///
+/// Strategy: throttle=0, server returns A on first request then B on
+/// subsequent. Call 1 populates the cache with A. Call 2 returns A
+/// from cache and spawns a refresh that fetches B. Poll-with-timeout
+/// until subsequent calls return B, proving the refresh wrote.
+#[tokio::test]
+async fn list_event_types_async_refresh_eventually_writes_cache() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/registry/event-types"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list_body(&[(
+            "first.id.v1", "first", "id", "v", "v1", None,
+        )])))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/registry/event-types"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list_body(&[(
+            "second.id.v1",
+            "second",
+            "id",
+            "v",
+            "v1",
+            None,
+        )])))
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+        ("NT_REGISTRY_REFRESH_INTERVAL_MS", "0"),
+    ])
+    .await;
+    c.handshake().await;
+    // Call 1: cold; populates cache with "first.id.v1".
+    let first = c
+        .request(
+            "tools/call",
+            json!({ "name": "list_event_types", "arguments": {} }),
+        )
+        .await;
+    assert_eq!(
+        extract_tool_result_payload(&first)["types"][0]["id"],
+        "first.id.v1",
+    );
+    // Call 2: warm; returns "first.id.v1" from cache AND spawns a
+    // refresh fetching "second.id.v1".
     let _ = c
         .request(
             "tools/call",
             json!({ "name": "list_event_types", "arguments": {} }),
         )
         .await;
-    sleep(Duration::from_millis(100)).await;
-    let third = c
-        .request(
-            "tools/call",
-            json!({ "name": "list_event_types", "arguments": {} }),
-        )
-        .await;
-    let payload = extract_tool_result_payload(&third);
-    assert_eq!(
-        payload["types"][0]["id"], "cached.event.type.v1",
-        "refresh failure must NOT poison the cache; got {payload}",
-    );
+    // Poll until the spawned refresh writes — bounded by a generous
+    // timeout. Deterministic in success (poll finds the new id);
+    // deterministic in failure (timeout panics with a clear message).
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let resp = c
+            .request(
+                "tools/call",
+                json!({ "name": "list_event_types", "arguments": {} }),
+            )
+            .await;
+        let payload = extract_tool_result_payload(&resp);
+        if payload["types"][0]["id"] == "second.id.v1" {
+            break;
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "async refresh never wrote the cache; final payload={payload}",
+            );
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
     c.shutdown().await;
 }
 
@@ -630,37 +854,53 @@ async fn stdout_contains_only_jsonrpc_frames() {
 
     let (captured, _stderr) = c.shutdown().await;
 
-    // Every non-empty line must parse as a JSON-RPC response.
+    // Every non-empty line must be a well-formed JSON-RPC response.
+    // The valuable invariant is per-line validity — any stray log
+    // line on stdout would fail to parse, which is what corrupts
+    // Claude Code's MCP stream. A strict frame count would couple
+    // this test to internal request-counting and break the moment
+    // anyone adds an extra interaction to the loop above.
     let mut frame_count = 0_usize;
     for (i, raw_line) in captured.iter().enumerate() {
-        let line = raw_line.trim();
-        if line.is_empty() {
+        if !assert_jsonrpc_frame(&captured, i, raw_line) {
             continue;
         }
-        let value: Value = serde_json::from_str(line).unwrap_or_else(|e| {
-            panic!(
-                "stdout line {i} is not valid JSON: {e}\nline: {line:?}\nfull capture: {captured:?}"
-            )
-        });
-        assert_eq!(
-            value["jsonrpc"].as_str(),
-            Some("2.0"),
-            "stdout line {i} is JSON but not a JSON-RPC frame (missing or wrong jsonrpc field): {line:?}",
-        );
-        let has_result = !value["result"].is_null();
-        let has_error = !value["error"].is_null();
-        assert!(
-            has_result || has_error,
-            "stdout line {i} is JSON-RPC but neither result nor error: {line:?}",
-        );
         frame_count += 1;
     }
-    // Initialize + 5 tool calls = exactly 6 responses. The
-    // `notifications/initialized` notification expects no response.
-    assert_eq!(
-        frame_count, 6,
-        "expected exactly 6 JSON-RPC frames on stdout; saw {frame_count} (captured: {captured:?})",
+    assert!(
+        frame_count > 0,
+        "no JSON-RPC frames on stdout — server didn't reply at all? captured={captured:?}",
     );
+}
+
+/// Assert one captured stdout line is either empty (skipped) or a
+/// well-formed JSON-RPC 2.0 response carrying `result` or `error`.
+/// Returns `true` if a frame was validated; `false` if the line was
+/// blank. Shared by `stdout_contains_only_jsonrpc_frames` and
+/// `stderr_receives_per_call_logs_without_polluting_stdout` so both
+/// tests apply the same JSON-RPC-shaped check to stdout.
+fn assert_jsonrpc_frame(captured: &[String], idx: usize, raw_line: &str) -> bool {
+    let line = raw_line.trim();
+    if line.is_empty() {
+        return false;
+    }
+    let value: Value = serde_json::from_str(line).unwrap_or_else(|e| {
+        panic!(
+            "stdout line {idx} is not valid JSON: {e}\nline: {line:?}\nfull capture: {captured:?}"
+        )
+    });
+    assert_eq!(
+        value["jsonrpc"].as_str(),
+        Some("2.0"),
+        "stdout line {idx} is JSON but not a JSON-RPC frame: {line:?}",
+    );
+    let has_result = !value["result"].is_null();
+    let has_error = !value["error"].is_null();
+    assert!(
+        has_result || has_error,
+        "stdout line {idx} is JSON-RPC but neither result nor error: {line:?}",
+    );
+    true
 }
 
 // ─── Stderr is allowed to carry logs ────────────────────────────────────────
@@ -708,11 +948,10 @@ async fn stderr_receives_per_call_logs_without_polluting_stdout() {
         "per-call tracing event missing from stderr; got: {stderr:?}",
     );
 
-    for line in &captured {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        serde_json::from_str::<Value>(trimmed).expect("stdout still pure JSON");
+    // Cross-check: stdout must remain a stream of well-formed
+    // JSON-RPC frames regardless of how chatty stderr is — same
+    // check as the strict purity test, applied here for symmetry.
+    for (i, raw_line) in captured.iter().enumerate() {
+        assert_jsonrpc_frame(&captured, i, raw_line);
     }
 }

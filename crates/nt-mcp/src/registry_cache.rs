@@ -2,15 +2,25 @@
 //!
 //! `list_event_types` reads from this cache on every invocation. The
 //! first call populates the cache synchronously (cold-fetch); subsequent
-//! calls serve the cached rows and fire an async refresh to keep the
-//! cache fresh for the next read.
+//! calls serve the cached rows and fire an async refresh (subject to a
+//! throttle window — see `min_refresh_interval`) to keep the cache
+//! fresh for the next read.
 //!
 //! Refresh failures are intentionally swallowed (logged at debug level
 //! only) — the PRD framing is "Reads from the local cache; refresh
 //! fires async": a transient registry failure must NOT propagate to
 //! the user-facing tool result when the cache already has data.
+//!
+//! Cold-path concurrency: two concurrent first-callers BOTH pass the
+//! "cache empty" check and both issue the cold fetch. The outcome is
+//! last-writer-wins on identical data — benign, not coalesced. A
+//! `tokio::sync::Mutex` coordinator would coalesce them but adds
+//! complexity for a path that fires once per process lifetime. The
+//! `cold_path_concurrent_callers_converge_on_same_data` unit test
+//! pins the benign-race contract.
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use nt_core::http::get_raw;
 use nt_core::url::api_url;
@@ -36,16 +46,14 @@ pub struct EventTypeSpec {
     pub version: String,
     /// `null` (or absent) means active; a datetime string means
     /// deprecated as of that timestamp. Wire field name is camelCase
-    /// per the TS `eventTypeSpecSchema` — server contract.
+    /// per the server's registry contract.
     #[serde(rename = "deprecatedAt", default)]
     pub deprecated_at: Option<String>,
 }
 
 impl EventTypeSpec {
-    /// Predicate matching the TS reference's `isDeprecated()` helper:
-    /// non-null + non-absent `deprecatedAt` ⇒ deprecated. A regression
-    /// that flipped the comparison would surface in the
-    /// `list_event_types_filters_by_deprecated_flag` integration test.
+    /// A row is deprecated when the server attached a `deprecatedAt`
+    /// timestamp; null/absent means active.
     pub fn is_deprecated(&self) -> bool {
         self.deprecated_at.is_some()
     }
@@ -58,65 +66,61 @@ struct ListResponse {
 }
 
 /// Process-lifetime cache shared across tool invocations on the same
-/// `NtServer`. `Arc<RwLock<...>>` over an `Option<Vec<_>>`: `None`
-/// before the first successful fetch; `Some(rows)` once populated.
-/// Refresh writes through the same lock — a failed refresh leaves
-/// the existing rows untouched.
-#[derive(Clone, Default)]
+/// `NtServer`. The rows are wrapped in `Arc` so a snapshot for the
+/// read path is a pointer copy (cheap) rather than a `Vec` clone —
+/// matters when an MCP session issues many list_event_types calls.
+///
+/// `min_refresh_interval` throttles the warm-path opportunistic
+/// refresh: a busy MCP session calling `list_event_types` rapidly
+/// must NOT translate into one outbound GET per call. Default 5s
+/// via `NT_REGISTRY_REFRESH_INTERVAL_MS`; tests can set 0 to
+/// observe refresh behaviour deterministically.
+#[derive(Clone)]
 pub struct RegistryCache {
-    inner: Arc<RwLock<Option<Vec<EventTypeSpec>>>>,
+    inner: Arc<RwLock<Option<Arc<Vec<EventTypeSpec>>>>>,
+    last_refresh_at: Arc<Mutex<Option<Instant>>>,
+    min_refresh_interval: Duration,
 }
 
 impl RegistryCache {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(min_refresh_interval: Duration) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(None)),
+            last_refresh_at: Arc::new(Mutex::new(None)),
+            min_refresh_interval,
+        }
     }
 
     /// Return the cached rows. If the cache is empty (cold), fetch
-    /// synchronously, populate, return. If the cache is warm, clone
-    /// the rows out under the read lock, spawn an async refresh that
-    /// the caller does NOT await, then return the cached snapshot.
+    /// synchronously, populate, return. If the cache is warm, take a
+    /// cheap `Arc` snapshot, spawn an opportunistic async refresh
+    /// (subject to the throttle window), then return the snapshot.
     ///
-    /// Spawning the refresh from inside `list()` (rather than at a
-    /// scheduler layer like the TS reference) keeps the cache self-
-    /// contained at this MCP-server scope — there is no external
-    /// refresh trigger (no `nt event list` running alongside, no
-    /// long-lived daemon). The trade-off: the refresh fires opportun-
-    /// istically per-call rather than on a timer; in practice MCP
-    /// sessions issue list calls frequently enough that this stays
-    /// fresh.
+    /// The refresh is spawned from inside `list()` rather than at a
+    /// separate scheduler layer because the MCP server has no
+    /// external refresh trigger — no long-lived daemon, no companion
+    /// CLI invocation to coordinate with.
     pub async fn list(
         &self,
         config: &EnvConfig,
         http_client: &reqwest::Client,
-    ) -> Result<Vec<EventTypeSpec>, McpError> {
-        // Take a read snapshot inside its own scope so the lock is
-        // released before the await that follows. Holding an RwLock
+    ) -> Result<Arc<Vec<EventTypeSpec>>, McpError> {
+        // Snapshot inside an explicit block so the read guard is
+        // dropped before the `.await` that follows. Holding an RwLock
         // guard across an `.await` is a deadlock risk under tokio's
         // current-thread runtime (no other task can grab the lock
         // while we're suspended).
-        let cached_snapshot = self.inner.read().expect("cache lock not poisoned").clone();
+        let cached_snapshot: Option<Arc<Vec<EventTypeSpec>>> = {
+            let guard = self
+                .inner
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            guard.clone()
+        };
 
         if let Some(rows) = cached_snapshot {
-            // Warm cache: spawn an opportunistic refresh and return
-            // the snapshot. Errors during the refresh are logged at
-            // debug level and never reach the caller — PRD contract.
-            let cache = self.clone();
-            let config = config.clone();
-            let http_client = http_client.clone();
-            tokio::spawn(async move {
-                match fetch(&config, &http_client).await {
-                    Ok(fresh) => {
-                        *cache.inner.write().expect("cache lock not poisoned") = Some(fresh);
-                    }
-                    Err(e) => {
-                        // Debug-level only: a transient registry
-                        // failure must not surface anywhere the user
-                        // can see it.
-                        tracing::debug!(error = ?e, "registry refresh failed; cache preserved");
-                    }
-                }
-            });
+            // Warm cache: maybe spawn an opportunistic refresh.
+            self.maybe_spawn_refresh(config, http_client);
             return Ok(rows);
         }
 
@@ -124,8 +128,58 @@ impl RegistryCache {
         // (handler) can surface the diagnostic. Without data the tool
         // has nothing to return — silent empty array would be worse.
         let fresh = fetch(config, http_client).await?;
-        *self.inner.write().expect("cache lock not poisoned") = Some(fresh.clone());
-        Ok(fresh)
+        let arc = Arc::new(fresh);
+        self.commit(arc.clone());
+        Ok(arc)
+    }
+
+    /// Spawn a background refresh iff the throttle window has elapsed
+    /// since the last refresh attempt. Returns `true` if a refresh
+    /// was spawned (used by the unit-level throttle test). The
+    /// check-and-update isn't atomic across the `last_refresh_at`
+    /// mutex — safe because the worst case is two concurrent warm
+    /// callers both spawning a refresh on the same boundary, which
+    /// is the benign cold-path race in miniature.
+    fn maybe_spawn_refresh(&self, config: &EnvConfig, http_client: &reqwest::Client) -> bool {
+        let now = Instant::now();
+        let should_spawn = {
+            let mut last = self
+                .last_refresh_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            match *last {
+                Some(prev) if now.duration_since(prev) < self.min_refresh_interval => false,
+                _ => {
+                    *last = Some(now);
+                    true
+                }
+            }
+        };
+        if !should_spawn {
+            return false;
+        }
+        let cache = self.clone();
+        let config = config.clone();
+        let http_client = http_client.clone();
+        tokio::spawn(async move {
+            match fetch(&config, &http_client).await {
+                Ok(fresh) => cache.commit(Arc::new(fresh)),
+                Err(e) => {
+                    // Debug-level only: a transient registry failure
+                    // must not surface anywhere the user can see it.
+                    tracing::debug!(error = ?e, "registry refresh failed; cache preserved");
+                }
+            }
+        });
+        true
+    }
+
+    fn commit(&self, rows: Arc<Vec<EventTypeSpec>>) {
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = Some(rows);
     }
 }
 
@@ -167,4 +221,71 @@ async fn fetch(
     let parsed: ListResponse = serde_json::from_str(&response.body)
         .map_err(|e| McpError::internal_error(format!("invalid server JSON response: {e}"), None))?;
     Ok(parsed.event_types)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Throttle invariant: a second call within `min_refresh_interval`
+    /// of the first must NOT spawn a refresh. Returns `false` on the
+    /// second call so a caller (the warm-path) can skip the work.
+    #[tokio::test]
+    async fn maybe_spawn_refresh_throttles_within_interval() {
+        let cache = RegistryCache::new(Duration::from_secs(60));
+        let config = EnvConfig {
+            api_url: "http://localhost:1".to_string(),
+            token: "x".to_string(),
+        };
+        let client = reqwest::Client::new();
+        let first = cache.maybe_spawn_refresh(&config, &client);
+        let second = cache.maybe_spawn_refresh(&config, &client);
+        assert!(first, "first call must spawn (no prior refresh recorded)");
+        assert!(
+            !second,
+            "second call within the throttle window must NOT spawn",
+        );
+    }
+
+    /// Throttle invariant pt2: after the window elapses, another
+    /// refresh fires. Use a 0-duration interval so any subsequent
+    /// call is past the window.
+    #[tokio::test]
+    async fn maybe_spawn_refresh_fires_again_after_interval() {
+        let cache = RegistryCache::new(Duration::ZERO);
+        let config = EnvConfig {
+            api_url: "http://localhost:1".to_string(),
+            token: "x".to_string(),
+        };
+        let client = reqwest::Client::new();
+        let first = cache.maybe_spawn_refresh(&config, &client);
+        let second = cache.maybe_spawn_refresh(&config, &client);
+        assert!(first, "first call must spawn");
+        assert!(
+            second,
+            "second call past zero-duration window must also spawn",
+        );
+    }
+
+    /// `is_deprecated` predicate direction. A regression that flipped
+    /// `is_some` ↔ `is_none` would pass the integration filter test
+    /// in some configurations; pin the direction at the type level so
+    /// a unit-level mutation can't slip through.
+    #[test]
+    fn is_deprecated_is_true_iff_deprecated_at_is_some() {
+        let active = EventTypeSpec {
+            id: "x.y.z.v1".into(),
+            domain: "x".into(),
+            entity: "y".into(),
+            action: "z".into(),
+            version: "v1".into(),
+            deprecated_at: None,
+        };
+        let deprecated = EventTypeSpec {
+            deprecated_at: Some("2026-01-01T00:00:00.000Z".into()),
+            ..active.clone()
+        };
+        assert!(!active.is_deprecated());
+        assert!(deprecated.is_deprecated());
+    }
 }

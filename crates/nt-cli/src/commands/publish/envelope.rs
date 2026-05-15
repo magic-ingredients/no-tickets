@@ -114,7 +114,10 @@ pub(super) fn bare_meta(project: &str) -> EventMetadata<'_> {
     attributes.insert("project", project);
     EventMetadata {
         subject: None,
-        source_name: "no-tickets",
+        // Read from the const rather than re-hardcoding the literal —
+        // DEFAULT_SOURCE_NAME's docstring warns about exactly this kind
+        // of duplication causing single-vs-batch path drift.
+        source_name: super::DEFAULT_SOURCE_NAME,
         attributes,
         parent: None,
         trace: None,
@@ -178,11 +181,11 @@ mod tests {
     }
 
     #[test]
-    fn build_envelope_source_name_is_nt_cli() {
+    fn build_envelope_source_name_is_no_tickets() {
         let body = serialise_with_neutral_data("demo");
         assert!(
             body.contains(r#""name":"no-tickets""#),
-            "source.name must be \"nt-cli\"; got {body}",
+            "source.name must be \"no-tickets\"; got {body}",
         );
     }
 

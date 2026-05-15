@@ -138,7 +138,7 @@ async fn publish_emits_dedupe_key_when_dedupe_key_flag_set() {
 }
 
 #[tokio::test]
-async fn publish_source_name_flag_overrides_default_nt_cli() {
+async fn publish_source_name_flag_overrides_default_no_tickets() {
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
 

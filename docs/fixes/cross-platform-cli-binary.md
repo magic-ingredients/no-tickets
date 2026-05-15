@@ -849,7 +849,8 @@ Detection: on launch, if the binary detects it was installed via a package manag
 - Failure modes (network down, sha256 mismatch, downgrade attempt) map to documented exit codes from Task 4a's structured-error contract
 
 ### 12. Retire TS CLI + MCP code
-status: not_started
+status: completed
+commitSha: 5eb5d23
 
 Once the Rust binary covers the full surface and self-update is in place (Task 11), delete `src/cli/`, `src/cli.ts`, `src/mcp/`, related tests. The npm package retires entirely from this repo — no backcompat shim. Phase 4 will reintroduce per-language wrapper packages (including TS) as their own publishing surface when adoption justifies it.
 

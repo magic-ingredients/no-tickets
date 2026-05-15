@@ -30,13 +30,23 @@ behaviour per channel) lives at [docs/install.md](docs/install.md).
 ## Quickstart
 
 ```bash
-nt init                                # browser auth + project setup
-nt publish --type ai.task.completed.v1 \
+nt init                                # browser-based authentication
+
+nt publish --project my-project \
+           --type ai.task.completed.v1 \
            --data '{"taskId":"123","outcome":"success"}'
-nt status                              # show auth + project state
-nt validate                            # validate the .notickets/ directory
+
+nt status                              # print auth + locally registered tokens as JSON
+
+# Validate a single payload against the bundled JSON Schema (no network):
+nt validate --type ai.task.completed.v1 \
+            --data '{"taskId":"123","outcome":"success"}'
+
 nt self-update                         # for install.sh / direct-download installs
 ```
+
+`nt init` handles browser-based auth; per-project push tokens are managed
+separately with `nt token add` and `nt token remove`.
 
 ## What is no-tickets?
 
@@ -97,7 +107,6 @@ tiny-brain is optional — no-tickets works with any tool.
 
 - Install matrix and self-update behaviour: [docs/install.md](docs/install.md)
 - `.notickets/` format spec: [SPEC.md](SPEC.md)
-- Hosted docs: [docs.no-tickets.com](https://docs.no-tickets.com)
 
 ## Contributing
 

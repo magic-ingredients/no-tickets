@@ -20,7 +20,12 @@ curl --proto '=https' --tlsv1.2 -LsSf https://get.no-tickets.com | sh
 ```
 
 Installs both binaries to `~/.local/bin/`. Add that to your `PATH` if it
-isn't already (`echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc`).
+isn't already:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # zsh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # bash
+```
 
 The full URL the shorthand resolves to is
 `https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-installer.sh`
@@ -81,9 +86,12 @@ curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download
 sudo install -m 755 nt nt-mcp /usr/local/bin/
 ```
 
-Each tarball ships with an `.sha256` neighbour for checksum verification:
+Each tarball ships with an `.sha256` neighbour for checksum verification.
+The verifier looks for the file by name in the current directory, so run
+it from wherever you downloaded the tarball:
 
 ```bash
+cd /tmp   # or wherever you want to download
 curl -LO https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.xz
 curl -LO https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.xz.sha256
 shasum -a 256 -c no-tickets-x86_64-unknown-linux-musl.tar.xz.sha256
@@ -98,8 +106,11 @@ your `PATH`.
 ```bash
 nt --version       # prints the release version
 nt-mcp --version   # prints the same version — the binaries ship in lockstep
-nt status          # shows auth + project state (no auth required yet)
+nt status          # prints auth + locally registered tokens as JSON
 ```
+
+`nt status` works without authentication; `nt init` is the next step to
+sign in.
 
 ## Updating
 
@@ -114,9 +125,9 @@ How `nt` updates depends on which channel installed it.
 
 `nt self-update` detects which install channel placed the binary and prints
 the right command for that channel rather than running an in-place swap that
-would conflict with the package manager. Running `nt self-update` after a
-Homebrew install, for example, prints `Run \`brew upgrade no-tickets\` to
-update` and exits cleanly.
+would conflict with the package manager. After a Homebrew install, for
+example, `nt self-update` prints `nt was installed via Homebrew. Run
+\`brew upgrade no-tickets\` to update.` and exits cleanly.
 
 ## Why a binary?
 

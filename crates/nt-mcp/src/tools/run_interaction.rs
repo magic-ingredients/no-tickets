@@ -73,6 +73,19 @@ pub async fn handle(
     config: &EnvConfig,
     http_client: &reqwest::Client,
 ) -> Result<CallToolResult, McpError> {
+    // 0. Client-side `min(1)` parity with the TS reference
+    //    (`z.string().min(1)` on id, subject.type, subject.id). The
+    //    server would reject these too, but a pre-flight check spares
+    //    a round-trip and gives the agent a precise diagnostic
+    //    naming the empty field rather than a generic 400.
+    //    Adversarial review #2: pin the deliberate validation rather
+    //    than silently diverge from TS.
+    reject_if_empty(&args.id, "id")?;
+    if let Some(s) = &args.subject {
+        reject_if_empty(&s.subject_type, "subject.type")?;
+        reject_if_empty(&s.id, "subject.id")?;
+    }
+
     // 1. Build the wire body — `input` is forwarded verbatim; the
     //    optional `subject` is OMITTED when absent (no JSON null) so
     //    the server can distinguish "no subject provided" from
@@ -120,8 +133,13 @@ pub async fn handle(
             ));
         }
         401 | 403 => {
+            // Adversarial review #3: auth failures are NOT param
+            // errors — the agent can't fix this by passing different
+            // args. Map to `internal_error` (-32603) so the JSON-RPC
+            // code distinguishes auth/infra failures from bad-input
+            // (404) and well-formed-but-rejected calls.
             let code = status.as_u16();
-            return Err(McpError::invalid_params(
+            return Err(McpError::internal_error(
                 format!(
                     "authentication failed ({code}) — check NO_TICKETS_TOKEN; the server rejected the bearer credential"
                 ),
@@ -140,26 +158,43 @@ pub async fn handle(
         ));
     }
 
-    // 4. Parse `{ events: [...] }`. A 2xx without the `events` field
-    //    is a server-contract violation — surface loudly rather than
-    //    rendering an empty list. Mirrors the describe_event_type
-    //    missing-schema guard.
+    // 4. Parse `{ events: [...] }`. A 2xx without an `events` ARRAY
+    //    field is a server-contract violation — surface loudly
+    //    rather than rendering an empty list. Adversarial review #5:
+    //    `{ events: null }` and `{ events: "oops" }` both trip the
+    //    `as_array().is_none()` check (covers the missing field,
+    //    null, and wrong-type cases in one guard).
     let parsed: Value = serde_json::from_str(&body_text).map_err(|e| {
         McpError::internal_error(format!("invalid server JSON response: {e}"), None)
     })?;
-    if parsed.get("events").and_then(Value::as_array).is_none() {
+    let Some(events) = parsed.get("events").filter(|v| v.is_array()) else {
         return Err(McpError::internal_error(
             format!(
-                "server-contract violation: interaction \"{}\" response is missing the events array",
+                "server-contract violation: interaction \"{}\" response is missing or malformed events array",
                 args.id,
             ),
             None,
         ));
-    }
+    };
 
     // 5. Passthrough: surface `{ events }` exactly as the server
     //    returned. Matches the TS handler's `{ events: response.events }`.
-    let result = serde_json::json!({ "events": parsed["events"].clone() });
+    let result = serde_json::json!({ "events": events.clone() });
     let text = serde_json::to_string(&result).expect("events array is always serialisable");
     Ok(CallToolResult::success(vec![Content::text(text)]))
+}
+
+/// Reject an empty string-typed field with a precise diagnostic
+/// naming the offending arg. Mirrors the TS `z.string().min(1)`
+/// constraint on `id`, `subject.type`, and `subject.id`. `field` is
+/// the arg name in the MCP tool schema for the error message — e.g.
+/// `"id"`, `"subject.type"`. Adversarial review #2.
+fn reject_if_empty(value: &str, field: &str) -> Result<(), McpError> {
+    if value.is_empty() {
+        return Err(McpError::invalid_params(
+            format!("`{field}` must be a non-empty string"),
+            None,
+        ));
+    }
+    Ok(())
 }

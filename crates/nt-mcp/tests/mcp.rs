@@ -2583,6 +2583,10 @@ async fn run_interaction_wire_body_carries_input_verbatim() {
     ])
     .await;
     c.handshake().await;
+    // Adversarial review #6: pin nested objects, arrays, and JSON
+    // null in `input` too — a regression that coerced primitive
+    // types or stringified the inner JSON would silently pass a
+    // flat-scalar-only assertion.
     let _ = c
         .request(
             "tools/call",
@@ -2590,7 +2594,13 @@ async fn run_interaction_wire_body_carries_input_verbatim() {
                 "name": "run_interaction",
                 "arguments": {
                     "id": "onboard.user",
-                    "input": { "email": "ada@example.com", "plan": "pro" }
+                    "input": {
+                        "email": "ada@example.com",
+                        "plan": "pro",
+                        "address": { "city": "London", "zip": null },
+                        "tags": ["beta", "trial"],
+                        "trial_days": 14
+                    }
                 }
             }),
         )
@@ -2604,6 +2614,26 @@ async fn run_interaction_wire_body_carries_input_verbatim() {
     assert_eq!(
         parsed["input"]["plan"], "pro",
         "input must be forwarded verbatim; got body={body}",
+    );
+    assert_eq!(
+        parsed["input"]["address"]["city"], "London",
+        "nested object must survive passthrough; got body={body}",
+    );
+    assert!(
+        parsed["input"]["address"]["zip"].is_null(),
+        "nested null must survive passthrough; got body={body}",
+    );
+    assert_eq!(
+        parsed["input"]["tags"][0], "beta",
+        "nested array must survive passthrough; got body={body}",
+    );
+    assert_eq!(
+        parsed["input"]["tags"][1], "trial",
+        "nested array order must survive passthrough; got body={body}",
+    );
+    assert_eq!(
+        parsed["input"]["trial_days"], 14,
+        "integer values must not be coerced to string; got body={body}",
     );
     c.shutdown().await;
 }
@@ -2823,6 +2853,220 @@ async fn run_interaction_401_surfaces_auth_error() {
         msg.contains("NO_TICKETS_TOKEN"),
         "401 diagnostic must name the env var to refresh; got {msg:?}",
     );
+    // Adversarial review #3: 401 must use JSON-RPC `internal_error`
+    // (-32603), NOT `invalid_params` (-32602). Distinguishes auth
+    // failure from bad input at the protocol level.
+    assert_eq!(
+        resp["error"]["code"], -32603,
+        "401 must map to internal_error code (-32603); got {resp}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_403_surfaces_auth_error() {
+    // Adversarial review #1: 403 was untested even though the impl
+    // handles `401 | 403` together. Mirror describe_event_type's
+    // 401/403 pair so a future refactor that breaks 403 doesn't
+    // sneak through.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(403))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("auth"),
+        "403 must surface as an auth-specific diagnostic; got {msg:?}",
+    );
+    assert!(
+        msg.contains("403"),
+        "403 diagnostic must include the upstream status; got {msg:?}",
+    );
+    assert_eq!(
+        resp["error"]["code"], -32603,
+        "403 must map to internal_error code; got {resp}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_404_uses_invalid_params_code() {
+    // Adversarial review #3 companion: pin that 404 keeps
+    // `invalid_params` (-32602) — the `id` argument refers to a
+    // non-existent resource, so this IS a param error (unlike
+    // 401/403 which are infra/auth).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/ghost.interaction"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "ghost.interaction",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    assert_eq!(
+        resp["error"]["code"], -32602,
+        "404 must map to invalid_params code (-32602); got {resp}",
+    );
+}
+
+// ─── Client-side `min(1)` parity with TS reference ───────────────────────
+
+#[tokio::test]
+async fn run_interaction_empty_id_rejected_before_http() {
+    // Adversarial review #2: TS reference declares
+    // `z.string().min(1)` on `id`. The Rust port must reject
+    // pre-flight rather than firing a doomed HTTP request that the
+    // server would 400 on. Pin the field name appears in the error
+    // so the agent knows which arg to fix.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("`id`") || msg.contains("\"id\"") || msg.to_lowercase().contains("id"),
+        "empty-id error must name the field; got {msg:?}",
+    );
+    assert!(
+        msg.contains("non-empty") || msg.to_lowercase().contains("empty"),
+        "empty-id error must call out the empty-string constraint; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_empty_subject_type_rejected_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {},
+                    "subject": { "type": "", "id": "user_42" }
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("subject.type") || msg.to_lowercase().contains("subject"),
+        "empty-subject-type error must name the field; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_empty_subject_id_rejected_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {},
+                    "subject": { "type": "user", "id": "" }
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("subject.id") || msg.to_lowercase().contains("subject"),
+        "empty-subject-id error must name the field; got {msg:?}",
+    );
     c.shutdown().await;
 }
 
@@ -2940,8 +3184,136 @@ async fn run_interaction_missing_events_field_surfaces_contract_violation() {
         "missing-events error must mention the field; got {msg:?}",
     );
     assert!(
-        msg.to_lowercase().contains("contract") || msg.to_lowercase().contains("missing"),
+        msg.to_lowercase().contains("contract")
+            || msg.to_lowercase().contains("missing")
+            || msg.to_lowercase().contains("malformed"),
         "missing-events error must call out the server-contract issue; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_null_events_field_surfaces_contract_violation() {
+    // Adversarial review #5: a regression that used `.get("events").
+    // is_none()` (instead of `.filter(|v| v.is_array())`) would pass
+    // when `events` is JSON null. Pin the null path explicitly.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "events": null })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("events"),
+        "events=null error must mention the field; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_wrong_type_events_field_surfaces_contract_violation() {
+    // Adversarial review #5: events typed as a string (or any
+    // non-array) is also a contract violation. Pin the wrong-type
+    // path so the array-check, not just presence-check, is enforced.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "events": "oops" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.to_lowercase().contains("events"),
+        "non-array events error must mention the field; got {msg:?}",
+    );
+    c.shutdown().await;
+}
+
+#[tokio::test]
+async fn run_interaction_400_response_surfaces_generic_transport_error() {
+    // Adversarial review #7: 4xx codes other than 401/403/404 must
+    // map to the generic transport-error branch (status + body), not
+    // to the auth or not-found special cases.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wm_path("/v1/interactions/onboard.user"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("malformed interaction input"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    let mut c = McpClient::spawn_with_env(&[
+        ("NO_TICKETS_TOKEN", "nt_test"),
+        ("NO_TICKETS_API_URL", uri.as_str()),
+    ])
+    .await;
+    c.handshake().await;
+    let resp = c
+        .request(
+            "tools/call",
+            json!({
+                "name": "run_interaction",
+                "arguments": {
+                    "id": "onboard.user",
+                    "input": {}
+                }
+            }),
+        )
+        .await;
+    let msg = collect_error_text(&resp);
+    assert!(
+        msg.contains("400"),
+        "400 must include the upstream status; got {msg:?}",
+    );
+    assert!(
+        msg.contains("malformed interaction input"),
+        "400 must surface the upstream body for diagnostics; got {msg:?}",
+    );
+    // Must NOT be misclassified as the auth branch.
+    assert!(
+        !msg.to_lowercase().contains("authentication failed"),
+        "400 must not be mapped through the 401/403 branch; got {msg:?}",
     );
     c.shutdown().await;
 }
@@ -2950,6 +3322,12 @@ async fn run_interaction_missing_events_field_surfaces_contract_violation() {
 
 #[tokio::test]
 async fn run_interaction_canonical_id_passes_through_url_unchanged() {
+    // Adversarial review #4: real assertion (mock `.expect(1)`) used
+    // to be the only signal; the previous `payload["events"].
+    // is_array()` was trivially true for any successful response.
+    // Tighten by asserting the surfaced event id round-trips, so a
+    // regression that returned an empty / corrupted result still
+    // fails meaningfully.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(wm_path("/v1/interactions/onboard.user"))
@@ -2977,7 +3355,10 @@ async fn run_interaction_canonical_id_passes_through_url_unchanged() {
         )
         .await;
     let payload = extract_tool_result_payload(&resp);
-    assert!(payload["events"].is_array());
+    assert_eq!(
+        payload["events"][0]["id"], "evt_one",
+        "canonical id must round-trip the server response intact; got {payload}",
+    );
     c.shutdown().await;
 }
 
@@ -3042,8 +3423,13 @@ async fn run_interaction_trailing_slash_api_url_routes_to_endpoint_unchanged() {
             }),
         )
         .await;
+    // Tightened per adversarial review #4 — pin the server response
+    // round-trips intact, not just that `events` is an array.
     let payload = extract_tool_result_payload(&resp);
-    assert!(payload["events"].is_array());
+    assert_eq!(
+        payload["events"][0]["id"], "evt_one",
+        "trailing-slash URL must still surface the server-returned events; got {payload}",
+    );
     c.shutdown().await;
 }
 

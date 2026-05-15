@@ -112,8 +112,13 @@ pub async fn handle(
             ));
         }
         401 | 403 => {
+            // Auth failures are not param errors — map to
+            // `internal_error` (-32603) so JSON-RPC codes distinguish
+            // auth/infra failures from bad-input (404). Aligned with
+            // run_interaction (adversarial review #3 on Task 21,
+            // applied here for consistency across the HTTP tools).
             let code = status.as_u16();
-            return Err(McpError::invalid_params(
+            return Err(McpError::internal_error(
                 format!(
                     "authentication failed ({code}) — check NO_TICKETS_TOKEN; the server rejected the bearer credential"
                 ),

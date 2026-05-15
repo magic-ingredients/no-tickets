@@ -240,7 +240,7 @@ A pass through crates.io confirms most of the bespoke surface has well-adopted R
 | **Local OAuth callback server** | `axum` + `oauth2` crate | `axum` for the localhost listener; `oauth2` crate handles the PKCE state machine, CSRF token, code-verifier exchange. Replaces hand-rolled protocol logic. |
 | **Browser opener** | `opener` | Already in fix doc. |
 | **JSON ser/de** | `serde` + `serde_json` | Wire protocol, config files, stream-mode JSONL. |
-| **Error variants → typed exit codes** | `thiserror` (lib) + `anyhow` (app) | Maps directly to the structured-error contract: each variant derives an exit code + serializable stderr JSON shape. Task 4a becomes near-mechanical. |
+| **Error variants → typed exit codes** | `thiserror` (lib) + `anyhow` (app) | Maps directly to the structured-error contract: each variant derives an exit code + serializable stderr JSON shape. Task 26 becomes near-mechanical. |
 | **Cross-platform config paths** | `directories` or `etcetera` | `~/.notickets/` resolution per OS conventions. |
 | **OS keychain (optional upgrade)** | `keyring` | One-API access to macOS Keychain / Linux Secret Service / Windows Credential Manager. Optional improvement over the current plaintext `~/.notickets/credentials`. Out of scope for v1 of the rewrite; flagged for post-Phase-3 follow-up. |
 | **Terminal output (colors, spinners)** | `owo-colors` + `indicatif` | Status output, auth callback polish. |
@@ -263,7 +263,7 @@ A pass through crates.io confirms most of the bespoke surface has well-adopted R
 
 These have no off-the-shelf crate; they're code we write:
 
-- The `--stream` JSONL protocol body (Task 4b) — ~100 LOC of tokio stdio + serde.
+- The `--stream` JSONL protocol body (Task 27) — ~100 LOC of tokio stdio + serde.
 - Each CLI subcommand's behavior matching the TS implementation (Task 4) — clap removes the parser boilerplate; the semantics still need porting one command at a time.
 - The `build.rs` step that fetches the JSON Schema bundle from a `no-tickets-service` release artifact and pins by version (Task 3).
 - Token resolution + project registry persistence (small layer over `serde_json` + `directories`).
@@ -410,7 +410,7 @@ Port all commands to Rust per the ADR-0002 surface (the task description here pr
 **Acceptance:**
 - Feature-equivalence smoke matrix (above) passes for every command
 
-### 4a. Structured error contract on stderr + exit codes
+### 26. Structured error contract on stderr + exit codes
 status: not_started
 
 Implement the structured-error contract documented in "Public binary contract" above. Every failure case maps to a typed exit code with a single-line JSON object on stderr. This is the contract per-language wrappers parse; backward compatibility is mandatory.
@@ -427,7 +427,7 @@ Use `thiserror` for the error enum and a single match arm to map variant → exi
 - Adding a new error class is purely additive (new exit code; old ones unchanged)
 - Contract doc lives at a stable URL referenced by per-language wrappers
 
-### 4b. `--stream` mode for warm in-process publishing
+### 27. `--stream` mode for warm in-process publishing
 status: not_started
 
 Implement the streaming protocol documented in "Public binary contract": JSONL on stdin → JSONL on stdout, id-correlated, multi-project per session, graceful EOF.
@@ -847,7 +847,7 @@ Detection: on launch, if the binary detects it was installed via a package manag
 **Acceptance:**
 - `nt self-update` on an install.sh-installed binary upgrades it to the latest release and verifies sha256
 - `nt self-update` on a Homebrew-installed binary prints the package-manager redirect message and exits 0 without modifying anything
-- Failure modes (network down, sha256 mismatch, downgrade attempt) map to documented exit codes from Task 4a's structured-error contract
+- Failure modes (network down, sha256 mismatch, downgrade attempt) map to documented exit codes from Task 26's structured-error contract
 
 ### 12. Retire TS CLI + MCP code
 status: completed
@@ -947,11 +947,11 @@ Matches the TS reference at `src/transport/events.ts::publish`:
 
 **Explicitly OUT of scope (deferred to later tasks):**
 - Multi-event batches → Task 4
-- `--stream` mode → Task 4b
+- `--stream` mode → Task 27
 - Local JSON Schema validation → Task 3 (server validates anyway, so
   unblocked for now)
 - Full structured-error-contract polish (the 7-exit-code table in §
-  "Public binary contract") → Task 4a; this spike uses exit 0/1 only
+  "Public binary contract") → Task 26; this spike uses exit 0/1 only
 - Retry/backoff on transient errors → Task 4
 - Source auto-detection / merging → Task 4
 - Idempotency keys → Task 4
@@ -995,7 +995,7 @@ commitSha: 1006d82
 
 Port the multi-event batch path from `runPublishBatch`. Reads either a JSON array (`[{event}, {event}, …]`) or JSONL (one event object per line) from `--file <path>` or `-` (stdin). Single POST to `/v1/events` with the array of envelopes.
 
-Distinct from Task 4b (`--stream` mode) — batch is "one finite read → one HTTP call → exit"; stream is "long-lived subprocess, JSONL in/out, persistent".
+Distinct from Task 27 (`--stream` mode) — batch is "one finite read → one HTTP call → exit"; stream is "long-lived subprocess, JSONL in/out, persistent".
 
 **Files to modify:**
 - `crates/nt-cli/src/main.rs` — `--file`, `-` (stdin) flag handling

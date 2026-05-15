@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod credentials;
 mod env;
+mod error;
 mod paths;
 mod source_detect;
 mod transport;

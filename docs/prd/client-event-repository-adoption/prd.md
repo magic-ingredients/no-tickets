@@ -1,10 +1,10 @@
 ---
 id: client-event-repository-adoption
 title: "Client Event Repository Adoption — Envelopes, publish(), Discovery"
-version: 1.2.1
-status: not_started
+version: 1.2.2
+status: in_progress
 created: 2026-04-27
-updated: 2026-05-07
+updated: 2026-05-17
 author: Andy Richardson
 ---
 

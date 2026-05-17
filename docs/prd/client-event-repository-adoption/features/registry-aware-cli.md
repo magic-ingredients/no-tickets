@@ -3,9 +3,9 @@ id: registry-aware-cli
 prd_id: client-event-repository-adoption
 number: 4
 title: nt publish / nt event / nt subject / nt action CLIs
-status: not_started
+status: in_progress
 created: 2026-04-27
-updated: 2026-05-06
+updated: 2026-05-17
 ---
 
 # Feature: nt publish / nt event / nt subject / nt action CLIs
@@ -90,6 +90,10 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 
 ### 1. nt event list
 
+status: not_started
+
+**Reconciliation (2026-05-17):** Genuinely not done — and not strictly required. The MCP server has `list_event_types` for the agent-discovery path; terminal-side users currently rely on `docs/install.md` and `nt --help`. Adding `nt event list` to the Rust CLI is straightforward (the registry HTTP client and cache already exist in `crates/nt-mcp/src/registry_cache.rs` — needs extracting to `nt-core` or being called from nt-cli). Defer until terminal-user demand surfaces.
+
 **Files to modify/create:**
 - `src/cli/commands/event/list.ts` (new)
 - `src/cli/commands/event/list.test.ts` (new)
@@ -101,6 +105,10 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - Tests: empty cache fetches; populated cache reads; --domain filter; --deprecated flag.
 
 ### 2. nt event describe
+
+status: not_started
+
+**Reconciliation (2026-05-17):** Same shape as Task 1 — MCP `describe_event_type` covers the agent flow; terminal users have no equivalent yet. Defer until demand surfaces.
 
 **Files to modify/create:**
 - `src/cli/commands/event/describe.ts` (new)
@@ -116,6 +124,11 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - Tests cover representative shapes: simple object, nested, enums, arrays, refs.
 
 ### 3. nt publish <type-id> (single event)
+
+status: completed
+commitSha: 4844b43
+
+**Reconciliation (2026-05-17):** Landed in Rust under fix `cross-platform-cli-binary` (the TS CLI was retired in fix Task 12). `nt publish --type <id> --data <json> --project <p>` works against staging; lives at `crates/nt-cli/src/commands/publish.rs` + `publish/envelope.rs` + `publish/post.rs`. Bundled JSON Schema validation gates the call (best-effort, server authoritative). Structured error contract on stderr per fix Task 26 (commit `2bc103b`). Subject flags work; source flags work; data-from-stdin works. **Not yet implemented:** fuzzy-match suggestions on unknown type id — captured as a follow-up if user demand surfaces.
 
 **Files to modify/create:**
 - `src/cli/commands/publish/single.ts` (new)
@@ -139,6 +152,11 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 
 ### 4. nt publish --batch <file.jsonl>
 
+status: completed
+commitSha: 8c8dc00
+
+**Reconciliation (2026-05-17):** Landed in Rust as `nt publish --file <path>` (or `--file -` for stdin). Code at `crates/nt-cli/src/commands/publish_batch.rs` + `publish_batch/{jsonl,envelope,source}.rs`. Per-line source override, machine-attribute opt-in, per-line validation with batch-index propagation on server 422 — all implemented. Flag name diverges from PRD's original `--batch` to `--file`; current shape matches the cargo-dist binary surface and is documented in `docs/install.md`.
+
 **Files to modify/create:**
 - `src/cli/commands/publish/batch.ts` (new)
 - `src/cli/commands/publish/batch.test.ts` (new)
@@ -155,6 +173,11 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 
 ### 5. nt subject
 
+status: superseded
+commitSha: null
+
+**Reconciliation (2026-05-17):** Superseded per `[[project_no_subjects_in_model]]` — no production subject types are registered server-side, so a `nt subject` CLI verb has no callers. The TS `subjects.create/get/list` exists as forward-compat infrastructure (publish-client Task 3); the CLI wrapper around it is deferred indefinitely.
+
 **Files to modify/create:**
 - `src/cli/commands/subject/create.ts` (new)
 - `src/cli/commands/subject/get.ts` (new)
@@ -168,6 +191,11 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 
 ### 6. nt action
 
+status: superseded
+commitSha: null
+
+**Reconciliation (2026-05-17):** Superseded per `[[project_workflow_by_events]]` — workflows are modelled as event sequences sharing a `run_id` with autonomous workers emitting their own events, not synchronous `run_interaction` invocations. `nt action` would wrap a primitive that's not how the system works post-2026-05-15.
+
 **Files to modify/create:**
 - `src/cli/commands/action.ts` (new)
 - `src/cli/commands/action.test.ts` (new)
@@ -180,6 +208,10 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - Tests cover happy path, permission denial, unknown interaction id.
 
 ### 7. Drift notification
+
+status: not_started
+
+**Reconciliation (2026-05-17):** Aspirational; not done. The mechanism requires `nt event list` / `nt event describe` (tasks 1, 2 above) to be useful, since drift notification describes which event types are new. Re-evaluate once tasks 1+2 land.
 
 **Files to modify/create:**
 - `src/cli/lib/drift-notify.ts` (new)
@@ -195,6 +227,10 @@ Never blocks the command. Suppressed by `--quiet` and the existing `NO_TICKETS_Q
 - Tests cover: no diff → no print; small diff → full list; large diff → truncated; refresh-too-slow → no print.
 
 ### 8. CLI help + docs
+
+status: not_started
+
+**Reconciliation (2026-05-17):** Partial — Rust clap auto-generates `nt --help` listing current verbs (no push references). README + `docs/install.md` have a quickstart for `nt init` / `nt publish` / `nt status` / `nt validate` per fix `cross-platform-cli-binary` Task 13 (commit `3f2c3bd`). What's *not* covered: `nt event list` / `nt event describe` quickstart — because those commands don't exist (see tasks 1, 2). Marking `not_started` until 1+2 ship and the docs gain the corresponding lines.
 
 **Files to modify/create:**
 - `src/cli.ts`

@@ -3,9 +3,9 @@ id: publish-client
 prd_id: client-event-repository-adoption
 number: 2
 title: publish() + Subjects + Interactions HTTP Client
-status: not_started
+status: in_progress
 created: 2026-04-27
-updated: 2026-05-06
+updated: 2026-05-17
 ---
 
 # Feature: `publish()` + Subjects + Interactions HTTP Client
@@ -69,6 +69,11 @@ The transport client auto-fills `source` on each event before send if the caller
 ### 1. HTTP client core
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
 
+status: completed
+commitSha: 18edc92
+
+**Reconciliation (2026-05-17):** Code landed under `src/transport/{client,errors}.ts` with full test coverage (`client.test.ts` 373 LOC, `errors.test.ts` 324 LOC). Public-export gate: `package.json` `exports` map only exposes `dist/core/*` today, so the transport surface is built and tested but not user-importable from the npm package. Resolution gated on Task 33 of `cross-platform-cli-binary` (TS-SDK Phase 4 survival decision).
+
 **Files to modify/create:**
 - `src/transport/client.ts` (new — replaces existing push client)
 - `src/transport/client.test.ts` (new)
@@ -86,6 +91,11 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 ### 2. publish (array body)
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
 
+status: completed
+commitSha: f53fbed
+
+**Reconciliation (2026-05-17):** `src/transport/events.ts` ships `publish()` with source auto-fill + array body to `POST /v1/events`. 338-LOC test in `events.test.ts`. `src/index.ts` (export) NOT created — the file doesn't exist. Public-export gated on Task 33 like Task 1 above.
+
 **Files to modify/create:**
 - `src/transport/events.ts` (new)
 - `src/transport/events.test.ts` (new)
@@ -101,6 +111,11 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 ### 3. Subjects API
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
 
+status: completed
+commitSha: e4106dc
+
+**Reconciliation (2026-05-17):** `src/transport/subjects.ts` ships `subjects.create/get/list` + 214-LOC test. Same public-export gate as Task 1. **Cross-PRD note:** `[[project_no_subjects_in_model]]` records that no production subject types are registered server-side. The TS subjects client exists as forward-compat infrastructure but has no live caller today.
+
 **Files to modify/create:**
 - `src/transport/subjects.ts` (new)
 - `src/transport/subjects.test.ts` (new)
@@ -112,6 +127,11 @@ End-to-end task — failing tests, implementation, and any review-driven refacto
 
 ### 4. Interactions API
 End-to-end task — failing tests, implementation, and any review-driven refactors land here.
+
+status: completed
+commitSha: 1a372b2
+
+**Reconciliation (2026-05-17):** `src/transport/interactions.ts` ships `runInteraction()` + 257-LOC test. Same public-export gate as Task 1. **Cross-PRD note:** `[[project_workflow_by_events]]` records that workflows are modelled as event sequences with shared `run_id`, not synchronous run_interaction calls. The TS interactions client exists as forward-compat scaffolding; no production caller drives it today.
 
 **Files to modify/create:**
 - `src/transport/interactions.ts` (new)

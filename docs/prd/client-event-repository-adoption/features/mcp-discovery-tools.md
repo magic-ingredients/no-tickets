@@ -3,9 +3,9 @@ id: mcp-discovery-tools
 prd_id: client-event-repository-adoption
 number: 5
 title: MCP Discovery Tools
-status: not_started
+status: completed
 created: 2026-04-27
-updated: 2026-05-06
+updated: 2026-05-17
 ---
 
 # Feature: MCP Discovery Tools
@@ -85,6 +85,11 @@ MCP tools share the same `Client` instance as the CLI (Features 2 + 3). Auth res
 
 ### 1. Register tools in the MCP server
 
+status: superseded
+commitSha: null
+
+**Reconciliation (2026-05-17):** The TS MCP server (`src/mcp/`) was retired in `cross-platform-cli-binary` fix Task 12 (commit `5eb5d23`). Tool registration moved to the Rust MCP server in `crates/nt-mcp/src/server.rs`, with handlers under `crates/nt-mcp/src/tools/`. `run_interaction` + `create_subject` dropped per project memory (`[[project_no_subjects_in_model]]`, `[[project_workflow_by_events]]`) — three tools survive: `list_event_types` (commit `f7a0aa5`), `describe_event_type` (commit `a9432e0`), `publish_event` (commit `dcfc206`).
+
 **Files to modify/create:**
 - `src/mcp/server.ts` (or existing MCP entry point)
 - `src/mcp/server.test.ts`
@@ -105,6 +110,11 @@ MCP tools share the same `Client` instance as the CLI (Features 2 + 3). Auth res
 
 ### 2. Wire tools to underlying client primitives
 
+status: superseded
+commitSha: null
+
+**Reconciliation (2026-05-17):** Superseded with Task 1 — Rust MCP tools wire directly to their own HTTP path (`crates/nt-mcp/src/tools/publish_event.rs` posts to `/v1/events`), not via a shared TS client primitive. Source filling lives in the publish_event handler per the original intent. `create_subject` and `run_interaction` paths dropped.
+
 **Files to modify/create:**
 - Same files as Task 1
 
@@ -116,6 +126,11 @@ MCP tools share the same `Client` instance as the CLI (Features 2 + 3). Auth res
 - Tests cover the wrapping: each tool delegates correctly with arguments mapped 1:1; `publish_event` arrives at `publish` with a fully-formed source the agent could not have supplied.
 
 ### 3. Structured error mapping
+
+status: superseded
+commitSha: null
+
+**Reconciliation (2026-05-17):** Moved to Rust at `crates/nt-mcp/src/error_map.rs`. Wire-equivalent structured-error contract lives in fix `cross-platform-cli-binary` Task 26 (commit `2bc103b`) for the CLI side; the MCP side maps the same error classes into MCP tool-result envelopes from the same error-map module.
 
 **Files to modify/create:**
 - `src/mcp/lib/error-mapping.ts` (new)
@@ -139,6 +154,11 @@ commitSha: fb8cc8a
 - Tests assert the tool is gone.
 
 ### 5. Smoke test the discovery flow
+
+status: superseded
+commitSha: null
+
+**Reconciliation (2026-05-17):** Per-tool integration tests landed under `crates/nt-cli/tests/mcp/` (the MCP tests moved with the binary consolidation in fix Task 28, commit `97e6988`). The originally-envisioned three-call discovery-flow test lives across `crates/nt-cli/tests/mcp/{list_event_types,describe_event_type,publish_event}.rs`; a single end-to-end three-call test that chains them isn't separately written — flagged as a nice-to-have if MCP discovery UX regresses.
 
 **Files to modify/create:**
 - `src/mcp/__tests__/discovery-flow.test.ts` (new)

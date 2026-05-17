@@ -3,9 +3,9 @@ id: registry-introspection
 prd_id: client-event-repository-adoption
 number: 3
 title: Registry Introspection + Caching
-status: not_started
+status: completed
 created: 2026-04-27
-updated: 2026-05-06
+updated: 2026-05-17
 ---
 
 # Feature: Registry Introspection + Caching
@@ -82,6 +82,11 @@ The README documents that `.notickets/.cache/` should be gitignored when `.notic
 
 ### 1. Registry HTTP client (list + describe)
 
+status: completed
+commitSha: f48d34a
+
+**Reconciliation (2026-05-17):** `src/registry/client.ts` ships `listEventTypes` + `getEventType` against `/v1/admin/event-types` (later migrated to `/v1/registry/event-types` per commit `d69b851`). 341-LOC test in `client.test.ts`. Parallel work in Rust at `crates/nt-mcp/src/registry_cache.rs` for the MCP-side caching path (commit `e7e6b73`).
+
 **Files to modify/create:**
 - `src/registry/client.ts` (new)
 - `src/registry/client.test.ts` (new)
@@ -92,6 +97,11 @@ The README documents that `.notickets/.cache/` should be gitignored when `.notic
 - Tests cover query param shaping, 304 handling, permission-filtered responses.
 
 ### 2. Cache layer
+
+status: completed
+commitSha: 101e6b4
+
+**Reconciliation (2026-05-17):** `src/registry/cache.ts` ships read/write with atomic temp+rename, version-discrimination, and the cwd-ancestor walk for `.notickets/.cache/` resolution. Cache path defaults documented in `docs/prd/client-event-repository-adoption/prd.md` line 295.
 
 **Files to modify/create:**
 - `src/registry/cache.ts` (new)
@@ -105,6 +115,11 @@ The README documents that `.notickets/.cache/` should be gitignored when `.notic
 
 ### 3. `client.events.list` + `client.events.describe`
 
+status: completed
+commitSha: 41aef25
+
+**Reconciliation (2026-05-17):** `src/registry/index.ts` ships the `events.list` / `events.describe` facade with cache fallback + async refresh. 368-LOC test in `index.test.ts`. `src/index.ts` (export) not created — same npm-export gap as publish-client tasks 1–4 (resolution gated on `cross-platform-cli-binary` Task 33, TS-SDK Phase 4 decision).
+
 **Files to modify/create:**
 - `src/registry/index.ts` (new — public surface)
 - `src/registry/index.test.ts` (new)
@@ -116,6 +131,11 @@ The README documents that `.notickets/.cache/` should be gitignored when `.notic
 - Tests cover: cache-only mode, offline-with-cache, cache-miss-network-fallback, refresh failure doesn't break read.
 
 ### 4. Async refresh worker
+
+status: completed
+commitSha: 3c13733
+
+**Reconciliation (2026-05-17):** `src/registry/refresh.ts` ships `scheduleRefresh` + `awaitRefresh` + bounded per-server-URL concurrency. 358-LOC test in `refresh.test.ts`.
 
 **Files to modify/create:**
 - `src/registry/refresh.ts` (new)
@@ -130,6 +150,11 @@ The README documents that `.notickets/.cache/` should be gitignored when `.notic
 - Tests: parallel in-process calls coalesce, failed refresh leaves prior cache, 304 updates `fetchedAt` only, `awaitRefresh` returns within timeoutMs even if refresh is slow.
 
 ### 5. Stale-cache detection
+
+status: completed
+commitSha: 6aa41ed
+
+**Reconciliation (2026-05-17):** `src/registry/staleness.ts` ships `isCacheStale` with 14-day default and env override (`NO_TICKETS_REGISTRY_STALE_DAYS`). 171-LOC test in `staleness.test.ts`.
 
 **Files to modify/create:**
 - `src/registry/staleness.ts` (new)

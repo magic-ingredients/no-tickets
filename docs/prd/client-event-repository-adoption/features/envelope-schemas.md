@@ -3,9 +3,9 @@ id: envelope-schemas
 prd_id: client-event-repository-adoption
 number: 1
 title: Envelope Schemas + SDK Surface Reset
-status: not_started
+status: completed
 created: 2026-04-27
-updated: 2026-05-06
+updated: 2026-05-17
 ---
 
 # Feature: Envelope Schemas + SDK Surface Reset

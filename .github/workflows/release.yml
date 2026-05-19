@@ -10,6 +10,14 @@
 #     cargo-dist per release (~10 min added) — not worth it for a
 #     versioned URL.
 #   - PR trigger scoped to release-config paths only
+#   - Job-level `actions: write` on plan / build-local-artifacts /
+#     build-global-artifacts / host. cargo-dist emits only
+#     `permissions: { contents: write }` at the top level, which
+#     zeroes every other scope, so actions/upload-artifact v4+'s
+#     FinalizeArtifact (and actions/download-artifact's listing
+#     calls, which need actions: read implied by write) 403s. Kept
+#     at job level rather than top level so publish-homebrew-formula
+#     and announce don't inherit the broader scope.
 # RE-APPLY THESE EDITS after every `dist generate` — the tool overwrites
 # them blindly. SHAs to use are listed inline next to each `@vN` tag.
 #
@@ -28,11 +36,7 @@
 
 name: Release
 permissions:
-  contents: write
-  # actions/upload-artifact v4+ calls the Artifacts API's FinalizeArtifact
-  # endpoint, which requires actions: write. Declaring an explicit permissions
-  # block (above) zeroes out every scope not listed, so this must be present.
-  actions: write
+  "contents": "write"
 
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
@@ -71,6 +75,11 @@ jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
     runs-on: "ubuntu-22.04"
+    # actions: write for upload-artifact FinalizeArtifact; contents: write
+    # for `dist host --steps=create` which creates the draft GH Release.
+    permissions:
+      "contents": "write"
+      "actions": "write"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
       tag: ${{ !github.event.pull_request && github.ref_name || '' }}
@@ -135,6 +144,11 @@ jobs:
       matrix: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix }}
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container && matrix.container.image || null }}
+    # actions: write for upload-artifact (and the implicit read for
+    # download-artifact). No release create here, so contents: read suffices.
+    permissions:
+      "contents": "read"
+      "actions": "write"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
@@ -197,6 +211,10 @@ jobs:
       - plan
       - build-local-artifacts
     runs-on: "ubuntu-22.04"
+    # actions: write for upload-artifact + download-artifact.
+    permissions:
+      "contents": "read"
+      "actions": "write"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
@@ -245,6 +263,11 @@ jobs:
       - build-global-artifacts
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
     if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    # actions: write for upload/download-artifact; contents: write for
+    # `gh release create` which uploads artifacts to the GH Release.
+    permissions:
+      "contents": "write"
+      "actions": "write"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -309,6 +332,11 @@ jobs:
       - plan
       - host
     runs-on: "ubuntu-22.04"
+    # download-artifact needs actions: read. The homebrew-tap push uses
+    # HOMEBREW_TAP_TOKEN (PAT), not GITHUB_TOKEN, so contents: read is fine.
+    permissions:
+      "contents": "read"
+      "actions": "read"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PLAN: ${{ needs.plan.outputs.val }}

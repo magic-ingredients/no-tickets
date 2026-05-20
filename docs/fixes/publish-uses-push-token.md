@@ -1,10 +1,67 @@
 ---
 id: publish-uses-push-token
 title: "`no-tickets publish --project` must use the registered push token, never the session"
-status: in_progress
+status: completed
 severity: high
 reported: 2026-05-20T00:00:00.000Z
-resolved: null
+resolved: 2026-05-20T00:00:00.000Z
+resolution:
+  rootCause: |
+    `nt publish --project <name>` was wired against the TS-era `resolve_auth`
+    fallback chain (NO_TICKETS_TOKEN env var → ~/.notickets/credentials
+    session file). The `--project` flag never reached the push-token
+    registry written by `token add`; it only populated source.attributes
+    .project on the wire. Net effect: every publish silently sent the
+    session token (a management-API identity from `init`) to /v1/events
+    — privilege confusion that "worked" against a lenient server but
+    401s under tightened validation.
+  fix:
+    - Added `auth::resolve_publish_token(env, project)` reading the
+      project's push token from config.json (NO_TICKETS_TOKEN env var
+      retained as CI escape hatch); session credentials never consulted
+    - Rewired `commands/publish.rs` and `commands/publish_batch.rs` to
+      call the new resolver instead of `resolve_auth`
+    - Deleted `NotAuthenticated` variant (no production callers after
+      the rewire); wire contract reservation kept in markdown
+    - Deleted `NOT_AUTH_MSG`, `ResolvedAuth.token`,
+      `StoredCredentials.token` would-have-been dead code (latter kept
+      as #[allow(dead_code)] for serde shape validation)
+    - Added new `TokenRejected` error variant (exit 8, class
+      "token_rejected") for server-side 401s on requests that DID
+      carry a Bearer — distinct from NotAuthenticated (reserved exit
+      5 for future identity commands)
+    - Hardened resolver against whitespace-only NO_TICKETS_TOKEN
+      (`.trim().is_empty()`) and malformed config.json (Usage error)
+    - Stripped TS-parity comments from auth.rs, publish/metadata.rs,
+      publish/envelope.rs, publish_batch/jsonl.rs, publish_batch/
+      source.rs
+    - Updated README.md quickstart to thread `init` → `token add` →
+      `publish` (the new three-step setup); docs/install.md was
+      already correct
+    - Updated docs/binary-error-contract.md with new token_rejected
+      row, batch publish migration scope, project_not_registered vs
+      token_rejected framing
+    - Updated scripts/seed-product-demo.sh docstring to drop the
+      legacy ~/.notickets/ path reference and clarify the token-add
+      vs init distinction; default NT_BIN flipped from nt → no-tickets
+  filesModified:
+    - crates/nt-cli/src/auth.rs
+    - crates/nt-cli/src/credentials.rs
+    - crates/nt-cli/src/error.rs
+    - crates/nt-cli/src/commands/publish.rs
+    - crates/nt-cli/src/commands/publish/post.rs
+    - crates/nt-cli/src/commands/publish/metadata.rs
+    - crates/nt-cli/src/commands/publish/envelope.rs
+    - crates/nt-cli/src/commands/publish_batch.rs
+    - crates/nt-cli/src/commands/publish_batch/jsonl.rs
+    - crates/nt-cli/src/commands/publish_batch/source.rs
+    - crates/nt-cli/tests/publish.rs
+    - crates/nt-cli/tests/publish/auth.rs
+    - crates/nt-cli/tests/publish/error_handling.rs
+    - crates/nt-cli/tests/structured_errors/publish.rs
+    - docs/binary-error-contract.md
+    - README.md
+    - scripts/seed-product-demo.sh
 ---
 
 # Fix: `publish` ignores the push-token registry; falls back to session auth
@@ -179,6 +236,9 @@ stays.
   that need amending
 
 ### 2. Distinguish `token_rejected` from `not_authenticated` in error contract
+status: completed
+commitSha: c565e67
+
 End-to-end task. New exit code + stderr JSON shape for the
 "server rejected our token" case; keep exit 5 for
 "no token was sent". Additive per `docs/binary-error-contract.md`'s
@@ -208,6 +268,9 @@ cycle.
   carry TS_PARITY identifiers / comments
 
 ### 4. Update docs to reflect the corrected publish auth model
+status: completed
+commitSha: pending
+
 After Task 1 + 2 land, document the rule clearly: publish uses
 the push token registered for `--project`, full stop. Mention the
 new `token_rejected` exit code so wrappers know to handle it.
@@ -220,6 +283,9 @@ new `token_rejected` exit code so wrappers know to handle it.
   but cross-link from here
 
 ### 5. Strip dead `~/.notickets/` path references from docs + scripts
+status: completed
+commitSha: pending
+
 Investigation side-discovery: the Rust binary on macOS uses
 `~/Library/Application Support/com.magic-ingredients.no-tickets/`
 (via `directories::ProjectDirs` in `crates/nt-cli/src/paths.rs:31-36`)

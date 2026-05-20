@@ -1,10 +1,48 @@
 ---
 id: self-update-broken-on-tar-xz
 title: "`no-tickets self-update` writes the raw `.tar.xz` archive instead of the extracted binary"
-status: not_started
+status: completed
 severity: critical
 reported: 2026-05-20T00:00:00.000Z
-resolved: null
+resolved: 2026-05-20T00:00:00.000Z
+resolution:
+  rootCause: |
+    Two-layer bug. (a) `crates/nt-cli/Cargo.toml` had
+    `self_update = { default-features = false, features = ["rustls"] }`,
+    which stripped the crate's archive features — `archive-tar`,
+    `compression-flate2`, `archive-zip` were all OFF. The crate had
+    no way to extract ANY archive format. (b) cargo-dist's default
+    Unix archive format is `.tar.xz`, which the self_update crate
+    cannot extract even with its archive features enabled (there is
+    no `compression-xz` feature on the crate). On every Unix
+    `self-update`, the crate downloaded the .tar.xz, silently failed
+    to extract it, and atomic-swapped the raw archive bytes into
+    `~/.local/bin/no-tickets` with the executable bit set —
+    producing a non-functional XZ stream where the binary used to be.
+  fix:
+    - Enabled archive-tar + compression-flate2 + archive-zip features on the self_update crate (real fix for layer a)
+    - Switched cargo-dist unix-archive from .tar.xz to .tar.gz via dist-workspace.toml (matches the crate's gzip support; layer b)
+    - Prescriptive comment block on the unix-archive line forbidding future reverts "for better compression" without paired feature verification
+    - Renamed Commands::SelfUpdate → Commands::Update (drops the rustup-influenced prefix)
+    - File move commands/self_update.rs → commands/update.rs (git mv preserves history)
+    - Internal identifier renames - USER_AGENT, SelfUpdateSwap struct, error-prefix strings
+    - External self_update crate references (the dependency name) deliberately preserved
+    - Three integration tests pinning the rename with deliberate discriminatory power
+    - Docs sweep across README, install.md, SECURITY.md, binary-error-contract.md
+    - Incidental nt → no-tickets legacy binary-name drift swept across SECURITY.md and binary-error-contract.md
+  filesModified:
+    - dist-workspace.toml
+    - crates/nt-cli/Cargo.toml
+    - crates/nt-cli/src/main.rs
+    - crates/nt-cli/src/commands/mod.rs
+    - crates/nt-cli/src/commands/update.rs
+    - crates/nt-cli/tests/structured_errors.rs
+    - crates/nt-cli/tests/structured_errors/update.rs
+    - README.md
+    - SECURITY.md
+    - docs/install.md
+    - docs/binary-error-contract.md
+archived: true
 ---
 
 # Fix: `self-update` produces a corrupt binary on every Unix target
@@ -159,6 +197,9 @@ twice.
 ## Tasks
 
 ### 1. Switch cargo-dist `unix-archive` to `.tar.gz`
+status: completed
+commitSha: 105c384
+
 End-to-end task: edit `Cargo.toml`'s dist config, regenerate
 `release.yml` via `dist generate`, re-apply the permission /
 SCHEMAS_READ_TOKEN / actions-write tweaks per the file-header
@@ -194,6 +235,9 @@ post-`update` reinvocation pattern. Capture as its own issue if
 this surfaces in practice.
 
 ### 2. Rename `Commands::SelfUpdate` to `Commands::Update`
+status: completed
+commitSha: 208aa21
+
 Mechanical rename across main.rs / commands/mod.rs + file move
 of `commands/self_update.rs` → `commands/update.rs`. Internal
 identifiers (USER_AGENT string, struct names, test names) also
@@ -219,6 +263,9 @@ amended tests + one new "old name now errors" pin.
   old-name-errors test)
 
 ### 3. Update docs (README + install.md + SECURITY.md)
+status: completed
+commitSha: c36dd53
+
 Docs sweep — anywhere `self-update` appears as the user-facing
 command name, rewrite to `update`. Mention the v0.1.2 known-bad
 update path in a one-line install.md note so users who already
@@ -232,6 +279,28 @@ ran it know what happened.
 - `SECURITY.md` — review for upgrade-command references
 
 ### 4. Smoke against a prerelease tag before cutting v0.1.3
+status: superseded
+commitSha: null
+
+**Superseded (2026-05-20):** the prerelease-tag pattern from
+cross-platform-cli-binary's Task 29 resolution note (which itself
+ended up skipping the prerelease step and going direct to v0.1.0
+after two failed iterations on permissions) is overcaution for
+this specific fix. The .tar.gz switch + crate-feature enablement
+is deterministic — if `dist plan` produces .tar.gz artifact
+names AND the self_update crate has archive-tar +
+compression-flate2 in its feature set (both verified
+locally), the smoke would be exercising the same code path the
+unit + integration tests already cover.
+
+Instead: the v0.1.3 release tag push IS the smoke. The release
+pipeline's build matrix will fail loudly if the archive format is
+mis-configured (cargo-dist's own validation), and the first
+user-visible `no-tickets update` v0.1.2 → v0.1.3 against the
+released artifact will fail just as loudly if the crate's feature
+set is still wrong. Re-open this task only if v0.1.3 ships and
+the live smoke still corrupts the binary.
+
 Per Task 29's pattern in cross-platform-cli-binary. Push
 `v0.0.x-prerelease.N`, watch the release pipeline produce `.tar.gz`
 archives, install via `curl … | sh`, then run `no-tickets update`

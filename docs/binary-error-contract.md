@@ -1,12 +1,12 @@
-# `nt` binary — structured error contract
+# `no-tickets` binary — structured error contract
 
-This is the public, stable contract for how the `nt` binary signals failure to consumers (wrappers in any language). The shape is **additive-only across binary releases**: wrappers compiled against an old binary must continue to function against new ones. New variants get new exit codes (≥ 9) and new fields can be added, but existing variant names, exit codes, and field names never change or disappear.
+This is the public, stable contract for how the `no-tickets` binary signals failure to consumers (wrappers in any language). The shape is **additive-only across binary releases**: wrappers compiled against an old binary must continue to function against new ones. New variants get new exit codes (≥ 9) and new fields can be added, but existing variant names, exit codes, and field names never change or disappear.
 
 ## Surface
 
-On failure, `nt` exits with a typed status code and writes a single line to stderr describing the failure. The line's format depends on whether stderr is a pipe or a TTY:
+On failure, `no-tickets` exits with a typed status code and writes a single line to stderr describing the failure. The line's format depends on whether stderr is a pipe or a TTY:
 
-- **stderr is a pipe** (wrappers, CI, `nt ... 2> err.log`) — single-line JSON object
+- **stderr is a pipe** (wrappers, CI, `no-tickets … 2> err.log`) — single-line JSON object
 - **stderr is a TTY** (interactive use) — single human-readable line, no JSON braces
 
 Auto-detection uses `std::io::IsTerminal`. Wrappers always get JSON; humans always get prose.
@@ -38,10 +38,10 @@ stdout is reserved for the command's success output and stays empty on failure.
 - **`domain`** — string identifying the server resource that rejected the request. **As of Task 26 the only emitted value is `"events"`** — the wire layer only touches `/v1/events`. The field exists so wrappers can discriminate when a second domain lands (e.g. `tokens`); building against a single value today is forward-compatible.
 - **`retriable`** — boolean. `true` for 5xx / network failure / **429 (rate-limit)** — the caller may retry after a delay. `false` for terminal 4xx that the caller should surface to the user directly.
 - **`message`** — human-readable context. Pass through to the user, never parse for discrimination.
-- **`storedHost`**, **`currentHost`** — optional, only present on a `not_authenticated` raised by ADR-0002 stored-session host mismatch (a context still emitted by `nt status`; `nt publish` no longer reads session credentials so this combination never appears under the publish exit codes). Both fields are absent (not `null`) when the failure is a plain missing-token case.
+- **`storedHost`**, **`currentHost`** — optional, only present on a `not_authenticated` raised by ADR-0002 stored-session host mismatch (a context still emitted by `no-tickets status`; `no-tickets publish` no longer reads session credentials so this combination never appears under the publish exit codes). Both fields are absent (not `null`) when the failure is a plain missing-token case.
 - **`project`**, **`knownProjects[]`** — the unrecognised project name and the locally-registered set. `knownProjects` is always an array (possibly empty).
 
-> **`project_not_registered` vs `token_rejected`** — sister classes introduced by the `publish-uses-push-token` fix. `project_not_registered` (exit 6) fires **before transport**: the caller asked to publish under a `--project <name>` that isn't in `config.json` and `NO_TICKETS_TOKEN` isn't set. `token_rejected` (exit 8) fires **after transport**: the binary DID send a Bearer token, and the server returned 401. Both are distinct from `not_authenticated` (exit 5), which is reserved for missing-token failures on management-API commands (e.g. future `nt projects list`).
+> **`project_not_registered` vs `token_rejected`** — sister classes introduced by the `publish-uses-push-token` fix. `project_not_registered` (exit 6) fires **before transport**: the caller asked to publish under a `--project <name>` that isn't in `config.json` and `NO_TICKETS_TOKEN` isn't set. `token_rejected` (exit 8) fires **after transport**: the binary DID send a Bearer token, and the server returned 401. Both are distinct from `not_authenticated` (exit 5), which is reserved for missing-token failures on management-API commands (e.g. future `no-tickets projects list`).
 
 ### Versioning policy
 
@@ -53,17 +53,17 @@ If a future change is genuinely breaking (a rename, a field type change, a remov
 
 The contract is wired for:
 
-- `nt publish` (single-event mode) — full structured contract (JSON stderr + typed exit code).
-- `nt validate` — full structured contract.
-- `nt publish --file` (JSONL batch mode) — **typed exit codes via the same `map_transport_error` mapping as single-event; stderr remains plain-text (human-readable line) until the broader batch → `Result<(), NtError>` migration lands.** Wrappers can rely on exit codes (`token_rejected` exit 8 for server-side 401, `project_not_registered` exit 6 for missing project registration, `permission_denied` exit 3 for 403, etc.) without parsing stderr.
+- `no-tickets publish` (single-event mode) — full structured contract (JSON stderr + typed exit code).
+- `no-tickets validate` — full structured contract.
+- `no-tickets publish --file` (JSONL batch mode) — **typed exit codes via the same `map_transport_error` mapping as single-event; stderr remains plain-text (human-readable line) until the broader batch → `Result<(), NtError>` migration lands.** Wrappers can rely on exit codes (`token_rejected` exit 8 for server-side 401, `project_not_registered` exit 6 for missing project registration, `permission_denied` exit 3 for 403, etc.) without parsing stderr.
 
 The following commands still emit free-text errors (no JSON shape, no typed exit codes) on stderr; they will be migrated in follow-up tasks:
 
-- `nt init`
-- `nt logout`
-- `nt status`
-- `nt token add | list | remove`
-- `nt self-update`
+- `no-tickets init`
+- `no-tickets logout`
+- `no-tickets status`
+- `no-tickets token add | list | remove`
+- `no-tickets update`
 
 Wrappers that drive only the migrated commands can rely on the JSON contract today. Wrappers that drive the unmigrated commands should fall back to parsing exit codes for those paths until the migrations land.
 
@@ -73,4 +73,4 @@ The contract is pinned at three levels:
 
 1. **Unit tests** in `crates/nt-cli/src/error.rs` (`#[cfg(test)] mod tests`) — every variant's `exit_code()`, `class()`, `to_json()` shape, `to_human()` line, and the `format_for(is_tty, ...)` / `emit_and_exit_code(...)` plumbing.
 2. **Per-command integration tests** in `crates/nt-cli/tests/structured_errors/` — drive the binary via `assert_cmd` + `wiremock`, assert stderr parses as JSON with the documented shape and the right exit code per class.
-3. **Cross-class invariants** — the exit-codes-are-distinct test guards against an accidental code collision when a new variant lands; the redirect-messages-are-distinct test (in `self_update`) guards against the same for per-manager strings.
+3. **Cross-class invariants** — the exit-codes-are-distinct test guards against an accidental code collision when a new variant lands; the redirect-messages-are-distinct test (in `commands/update.rs`) guards against the same for per-manager strings.

@@ -3,10 +3,11 @@
 ## Reporting a vulnerability
 
 If you've found a security vulnerability in the no-tickets binaries
-(`nt`, `nt-mcp`), any package we publish (`@magic-ingredients/no-tickets`,
-the `no-tickets` crate on crates.io), or the distribution path itself
-(install.sh, our homebrew tap, our scoop bucket), please **report it
-privately** rather than opening a public issue or pull request.
+(`no-tickets`, `no-tickets-mcp`), any package we publish
+(`@magic-ingredients/no-tickets`, the `no-tickets` crate on crates.io),
+or the distribution path itself (install.sh, our homebrew tap, our
+scoop bucket), please **report it privately** rather than opening a
+public issue or pull request.
 
 The preferred channel is GitHub's private vulnerability reporting:
 **[Open a private advisory](https://github.com/magic-ingredients/no-tickets/security/advisories/new)**
@@ -17,8 +18,9 @@ report private until disclosure is coordinated.
 ### What helps us triage
 
 - The affected component and its version (for the binaries:
-  `nt --version` output; for npm: `pnpm list @magic-ingredients/no-tickets`;
-  for cargo: the crate version)
+  `no-tickets --version` output; for npm:
+  `pnpm list @magic-ingredients/no-tickets`; for cargo: the crate
+  version)
 - The OS and install channel (curl / brew / cargo / scoop / direct)
 - Reproduction steps or a proof-of-concept
 - Your assessment of impact — what an attacker can do, what they
@@ -82,7 +84,7 @@ We don't operate a paid bug-bounty program at this stage.
 
 ## What's in scope
 
-- Vulnerabilities in `nt` / `nt-mcp` themselves (memory safety,
+- Vulnerabilities in `no-tickets` / `no-tickets-mcp` themselves (memory safety,
   injection, auth bypass, privilege escalation caused by the tool,
   protocol confusion in MCP stdio, etc.)
 - Vulnerabilities in our published packages
@@ -100,8 +102,8 @@ We don't operate a paid bug-bounty program at this stage.
   patched version exists and assess any user impact.
 - Attacks that require the attacker to **already have** root or
   physical access to the user's machine. (Local privilege escalation
-  caused by running `nt` itself is *in scope* — the distinction is
-  prerequisite, not result.)
+  caused by running `no-tickets` itself is *in scope* — the
+  distinction is prerequisite, not result.)
 - Theoretical issues without a practical exploit path.
 - Functional bugs without a security impact — please use the public
   [issue tracker](https://github.com/magic-ingredients/no-tickets/issues).

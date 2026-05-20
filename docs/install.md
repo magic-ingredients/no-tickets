@@ -120,14 +120,25 @@ Windows users: replace the `.tar.gz` URL with
 `no-tickets-x86_64-pc-windows-msvc.zip` and extract into a directory on
 your `PATH`.
 
-> **v0.1.2 known-bad `self-update`:** the v0.1.2 release ships
-> `.tar.xz` archives that the bundled `self_update` library can't
-> extract — running `no-tickets self-update` on v0.1.2 leaves a
-> non-executable XZ stream where the binary used to be. Recovery:
-> re-run `curl … | sh` (system `tar` handles `.tar.xz`). v0.1.3 onward
-> ships `.tar.gz`, and the subcommand is also renamed
-> `self-update` → `update`; the updater works as designed from v0.1.3
-> on.
+> **v0.1.2 known-bad updater (you're here because `self-update` ate your binary):**
+> the v0.1.2 release ships `.tar.xz` archives that the bundled
+> `self_update` library can't extract — running `no-tickets self-update`
+> on v0.1.2 left a non-executable XZ stream where the binary used to be.
+>
+> **Recovery in two steps:**
+>
+> 1. Re-run `curl … | sh` from the [Quick install](#quick-install)
+>    section above. The installer's `install -m 755` semantics
+>    overwrite the corrupt file at `~/.local/bin/no-tickets` with a
+>    working v0.1.3+ binary.
+> 2. From v0.1.3 on, the subcommand is renamed from `self-update` to
+>    just `update`. Use **`no-tickets update`** going forward, not
+>    `no-tickets self-update` (which will return clap's "unrecognized
+>    subcommand" error on v0.1.3+).
+>
+> v0.1.3 onward also ships `.tar.gz` archives (paired with the
+> required `self_update` crate archive features), so the updater
+> itself works as designed once you're past v0.1.2.
 
 ## Verifying the install
 

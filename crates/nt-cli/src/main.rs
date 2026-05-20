@@ -98,10 +98,8 @@ enum Commands {
         #[arg(long)]
         data: String,
     },
-    /// Upgrade the running binary in-place (install.sh / direct-download
-    /// users only — package-manager installs are detected and redirected
-    /// to the user's package manager).
-    SelfUpdate,
+    /// Update the no-tickets binary (install.sh / direct-download installs only).
+    Update,
 }
 
 #[derive(Subcommand)]
@@ -216,7 +214,7 @@ async fn main() {
             let result = commands::validate::run(&r#type, &data);
             emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)
         }
-        Commands::SelfUpdate => commands::self_update::run().await,
+        Commands::Update => commands::update::run().await,
     };
     std::process::exit(exit);
 }

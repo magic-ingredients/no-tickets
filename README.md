@@ -27,7 +27,7 @@ Ships two binaries: `no-tickets` (the CLI) and `no-tickets-mcp` (the MCP
 server for use with Claude Code and other MCP-capable agents). The single
 install command lands both on your PATH.
 
-Full install matrix (per-target tarballs, sha256 verification, self-update
+Full install matrix (per-target tarballs, sha256 verification, update
 behaviour per channel) lives at [docs/install.md](docs/install.md).
 
 ## Quickstart
@@ -52,7 +52,7 @@ no-tickets status                              # print auth + locally registered
 no-tickets validate --type ai.task.completed.v1 \
                     --data '{"taskId":"123","outcome":"success"}'
 
-no-tickets self-update                         # for install.sh / direct-download installs
+no-tickets update                              # for install.sh / direct-download installs
 
 no-tickets logout                              # remove saved session credentials
 ```
@@ -121,7 +121,7 @@ tiny-brain is optional — no-tickets works with any tool.
 
 ## Documentation
 
-- Install matrix and self-update behaviour: [docs/install.md](docs/install.md)
+- Install matrix and update behaviour: [docs/install.md](docs/install.md)
 - `.notickets/` format spec: [SPEC.md](SPEC.md)
 
 ## Contributing

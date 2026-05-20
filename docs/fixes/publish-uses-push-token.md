@@ -212,3 +212,41 @@ new `token_rejected` exit code so wrappers know to handle it.
 - `docs/install.md` — same in any publish recipes
 - `docs/binary-error-contract.md` — already covered in Task 2,
   but cross-link from here
+
+### 5. Strip dead `~/.notickets/` path references from docs + scripts
+Investigation side-discovery: the Rust binary on macOS uses
+`~/Library/Application Support/com.magic-ingredients.no-tickets/`
+(via `directories::ProjectDirs` in `crates/nt-cli/src/paths.rs:31-36`)
+and the equivalent XDG / `%APPDATA%` paths on Linux / Windows. The
+legacy `~/.notickets/` location is **dead TS state** — the Rust
+binary never reads or writes it. But documentation + helper scripts
+still reference it, which sends users (and AI agents) hunting in the
+wrong place when debugging auth issues.
+
+Known references to sweep:
+- `scripts/seed-product-demo.sh:18` — docstring says *"Local key from
+  `~/.notickets/config.json` that resolves to a push token"*
+- `crates/nt-cli/src/credentials.rs` — module docstring mentions the
+  credentials file but doesn't pin the path; check for any literal
+  `~/.notickets/` strings
+- `README.md` / `docs/install.md` — grep for `~/.notickets` and
+  rewrite as either platform-native examples or `no-tickets token
+  list` / `status` invocations that don't expose the path
+
+Replacement strategy: where docs need to reference the config or
+credentials location, prefer pointing the reader at the CLI command
+that touches it (`no-tickets token list`, `status`, etc.) rather than
+the file path. The platform-native path is a `directories`-crate
+implementation detail; cementing it in docs makes future changes
+(e.g., XDG opt-in on macOS) harder.
+
+Where path examples are genuinely useful (e.g., debugging recipes),
+use `no-tickets status --paths` if it exists, or document the
+per-platform paths together rather than only `~/.notickets/`.
+
+**Files to modify:**
+- `scripts/seed-product-demo.sh` — docstring at line 18
+- `README.md` — grep + rewrite
+- `docs/install.md` — grep + rewrite
+- `crates/nt-cli/src/credentials.rs` — if any literal path comments
+- any other `~/.notickets/` references the sweep surfaces

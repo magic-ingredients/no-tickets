@@ -49,7 +49,7 @@ async fn publish_batch_file_with_jsonl_sends_single_post_with_array_of_envelopes
     assert_eq!(arr.len(), 3, "exactly 3 envelopes on the wire; got {arr:?}");
     for envelope in arr {
         assert_eq!(envelope["type"], "ai.task.completed.v1");
-        assert_eq!(envelope["source"]["name"], "no-tickets");
+        assert_eq!(envelope["source"]["name"], "no-tickets-cli");
         assert_eq!(envelope["source"]["attributes"]["project"], "demo");
     }
 }
@@ -209,7 +209,7 @@ async fn publish_batch_per_line_source_overrides_cli_base() {
 
     let home = tempdir();
     // Line carries its own source.name override. The CLI base is
-    // "no-tickets"; per-line source.name must win on the wire.
+    // "no-tickets-cli"; per-line source.name must win on the wire.
     let path = batch_file(
         home.path(),
         &[format!(

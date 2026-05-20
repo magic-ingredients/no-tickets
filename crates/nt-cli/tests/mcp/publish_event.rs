@@ -427,12 +427,12 @@ async fn publish_event_5xx_response_surfaces_transport_error() {
 // ─── Wire shape: source identity + project attribute ─────────────────────
 
 #[tokio::test]
-async fn publish_event_wire_body_has_source_name_nt_mcp() {
-    // Source identity is server-side per the TS reference. Agents
-    // cannot override `source` via tool args (schema test above pins
-    // the absence of a `source` property), AND the server fills
-    // source.name with the fixed identity `"nt-mcp"`. A regression
-    // that copied the CLI's default (`"no-tickets"`) would land here.
+async fn publish_event_wire_body_has_source_name_no_tickets_mcp() {
+    // Source identity is server-side. Agents cannot override `source`
+    // via tool args (schema test above pins the absence of a `source`
+    // property), AND the binary fills source.name with the fixed
+    // identity `"no-tickets-mcp"`. A regression that copied the
+    // CLI's default (`"no-tickets-cli"`) would land here.
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
     let uri = server.uri();
@@ -458,7 +458,7 @@ async fn publish_event_wire_body_has_source_name_nt_mcp() {
     let parsed: Value = serde_json::from_str(&body).expect("body is JSON");
     let envelope = &parsed[0];
     assert_eq!(
-        envelope["source"]["name"], "nt-mcp",
+        envelope["source"]["name"], "no-tickets-mcp",
         "MCP-side source.name must be `nt-mcp`; got body={body}",
     );
     c.shutdown().await;
@@ -504,7 +504,7 @@ async fn publish_event_wire_body_omits_source_attributes_block_when_absent() {
     );
     // Source still carries name + sdkVersion — only the attributes
     // block is gone.
-    assert_eq!(src["name"], "nt-mcp", "source.name preserved");
+    assert_eq!(src["name"], "no-tickets-mcp", "source.name preserved");
     assert!(
         src["sdkVersion"].is_string(),
         "source.sdkVersion preserved; got src={src}",
@@ -622,7 +622,7 @@ async fn publish_event_wire_body_omits_attributes_when_supplied_empty() {
     // when attributes was empty would also pass the absence check
     // above — sibling assertions stop that.
     assert_eq!(
-        src["name"], "nt-mcp",
+        src["name"], "no-tickets-mcp",
         "source.name must survive empty-attributes; got src={src}",
     );
     assert!(
@@ -1181,7 +1181,7 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
     let envelope: Value = serde_json::from_str(&body).expect("body JSON");
     let src = &envelope[0]["source"];
     assert_eq!(
-        src["name"], "nt-mcp",
+        src["name"], "no-tickets-mcp",
         "source.name must NOT be spoofable; got body={body}"
     );
     assert_eq!(

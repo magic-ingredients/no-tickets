@@ -172,11 +172,11 @@ mod tests {
     }
 
     #[test]
-    fn build_envelope_source_name_is_no_tickets() {
+    fn build_envelope_source_name_is_no_tickets_cli() {
         let body = serialise_with_neutral_data("demo");
         assert!(
-            body.contains(r#""name":"no-tickets""#),
-            "source.name must be \"no-tickets\"; got {body}",
+            body.contains(r#""name":"no-tickets-cli""#),
+            "source.name must be \"no-tickets-cli\"; got {body}",
         );
     }
 

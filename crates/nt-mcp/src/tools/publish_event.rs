@@ -144,7 +144,7 @@ pub async fn handle(
     }
 
     // 2. Build the envelope. Source identity is fixed: `source.name =
-    //    "nt-mcp"`. The agent cannot override `source` — the input
+    //    "no-tickets-mcp"`. The agent cannot override `source` — the input
     //    schema doesn't expose it (pinned by the discovery test).
     //    Client-supplied `attributes` (the deliberate passthrough
     //    slot) lands on `source.attributes` via `build_source`.
@@ -223,7 +223,7 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
 }
 
 /// Build the source identity attached to every MCP-published event.
-/// `name = "nt-mcp"` is fixed — the agent cannot spoof its source via
+/// `name = "no-tickets-mcp"` is fixed — the agent cannot spoof its source via
 /// tool args. `attributes` is the client passthrough slot (flat
 /// scalar map): when supplied non-empty, it lands on
 /// `source.attributes` verbatim. When omitted OR empty, the
@@ -231,7 +231,10 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
 /// doesn't bloat every envelope.
 fn build_source(args: &PublishEventArgs) -> Value {
     let mut src = Map::new();
-    src.insert("name".to_string(), Value::String("nt-mcp".to_string()));
+    src.insert(
+        "name".to_string(),
+        Value::String("no-tickets-mcp".to_string()),
+    );
     src.insert(
         "sdkVersion".to_string(),
         Value::String(env!("CARGO_PKG_VERSION").to_string()),

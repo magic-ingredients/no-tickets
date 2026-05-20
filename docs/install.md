@@ -125,7 +125,9 @@ your `PATH`.
 > extract — running `no-tickets self-update` on v0.1.2 leaves a
 > non-executable XZ stream where the binary used to be. Recovery:
 > re-run `curl … | sh` (system `tar` handles `.tar.xz`). v0.1.3 onward
-> ships `.tar.gz` and the updater works as designed.
+> ships `.tar.gz`, and the subcommand is also renamed
+> `self-update` → `update`; the updater works as designed from v0.1.3
+> on.
 
 ## Verifying the install
 
@@ -144,14 +146,14 @@ How `no-tickets` updates depends on which channel installed it.
 
 | Channel | Update command |
 |---------|---------------|
-| `curl … \| sh` / direct download | `no-tickets self-update` |
+| `curl … \| sh` / direct download | `no-tickets update` |
 | Homebrew | `brew upgrade no-tickets` |
 | Direct tarball | re-download and re-install |
 
-`no-tickets self-update` detects which install channel placed the binary
+`no-tickets update` detects which install channel placed the binary
 and prints the right command for that channel rather than running an
 in-place swap that would conflict with the package manager. After a
-Homebrew install, for example, `no-tickets self-update` prints
+Homebrew install, for example, `no-tickets update` prints
 `no-tickets was installed via Homebrew. Run \`brew upgrade no-tickets\` to
 update.` and exits cleanly.
 

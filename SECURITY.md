@@ -38,7 +38,7 @@ How users get patches depends on the install channel:
 
 | Channel | Update mechanism |
 |---------|------------------|
-| `curl … \| sh` or direct download | `nt self-update` (manual; no auto-update) |
+| `curl … \| sh` or direct download | `no-tickets update` (manual; no auto-update) |
 | Homebrew | `brew upgrade no-tickets` (manual; runs as part of `brew upgrade`) |
 | `cargo install` | `cargo install --force no-tickets` (manual) |
 | Scoop | `scoop update no-tickets` (manual) |

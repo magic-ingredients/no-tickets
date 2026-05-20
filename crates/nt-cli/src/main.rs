@@ -99,7 +99,7 @@ enum Commands {
         data: String,
     },
     /// Update the no-tickets binary (install.sh / direct-download installs only).
-    SelfUpdate,
+    Update,
 }
 
 #[derive(Subcommand)]
@@ -214,7 +214,7 @@ async fn main() {
             let result = commands::validate::run(&r#type, &data);
             emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)
         }
-        Commands::SelfUpdate => commands::self_update::run().await,
+        Commands::Update => commands::update::run().await,
     };
     std::process::exit(exit);
 }

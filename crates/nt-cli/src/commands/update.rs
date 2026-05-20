@@ -1,4 +1,4 @@
-//! `nt self-update` — direct-download binary upgrade path.
+//! `nt update` — direct-download binary upgrade path.
 //!
 //! Scoped to install.sh / direct-download installs. Package-manager
 //! installs (Homebrew, Cargo, Scoop) and version-manager shims (asdf,
@@ -93,11 +93,11 @@ impl FetchError {
                 Some(t) => format!(
                     "github api rate-limit hit (resets at unix epoch {t}). \
                      Set GITHUB_TOKEN or wait until the window resets, \
-                     then re-run `no-tickets self-update`."
+                     then re-run `no-tickets update`."
                 ),
                 None => "github api rate-limit hit. \
                      Set GITHUB_TOKEN or wait a few minutes, \
-                     then re-run `no-tickets self-update`."
+                     then re-run `no-tickets update`."
                     .to_string(),
             },
             Self::Network(msg) => format!("network error: {msg}"),
@@ -122,13 +122,13 @@ pub(crate) trait SwapPerformer {
 pub(crate) const GH_OWNER: &str = "magic-ingredients";
 pub(crate) const GH_REPO: &str = "no-tickets";
 pub(crate) const DEFAULT_GH_API_BASE: &str = "https://api.github.com";
-const USER_AGENT: &str = "no-tickets-self-update";
+const USER_AGENT: &str = "no-tickets-update";
 /// Connect-phase timeout: TLS handshake + initial response. Captive
 /// portals and dead routes typically resolve within this window.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// End-to-end timeout for the whole request. The GH `/releases/latest`
 /// endpoint typically responds in <300ms; 30s leaves plenty of headroom
-/// without letting a stuck connection hang `nt self-update` forever.
+/// without letting a stuck connection hang `nt update` forever.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) fn detect_install_kind(exe_path: &Path) -> InstallKind {
@@ -397,9 +397,9 @@ impl LatestFetcher for GithubFetcher {
 /// sha256 file, this code will silently fall back to unverified download.
 /// A separate task should add a CI check that fails the release workflow
 /// when the sha256 companion is missing.
-struct SelfUpdateSwap;
+struct UpdateSwap;
 
-impl SwapPerformer for SelfUpdateSwap {
+impl SwapPerformer for UpdateSwap {
     fn apply(&self, target_version: &str) -> Result<(), String> {
         // `self_update` is synchronous and does its own GH API call.
         // We've already pre-flighted via our async fetcher and decided
@@ -436,19 +436,19 @@ pub(crate) fn outcome_to_exit_code(outcome: &UpdateOutcome) -> i32 {
     }
 }
 
-/// `nt self-update` subcommand entry point. Returns the process exit code.
+/// `nt update` subcommand entry point. Returns the process exit code.
 pub async fn run() -> i32 {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("no-tickets self-update: cannot resolve own executable path: {e}");
+            eprintln!("no-tickets update: cannot resolve own executable path: {e}");
             return 1;
         }
     };
     let install_kind = detect_install_kind(&exe);
     let current = env!("CARGO_PKG_VERSION");
 
-    let outcome = orchestrate(install_kind, current, &GithubFetcher, &SelfUpdateSwap).await;
+    let outcome = orchestrate(install_kind, current, &GithubFetcher, &UpdateSwap).await;
     match &outcome {
         UpdateOutcome::ManagedRedirect(m) => println!("{}", redirect_message(*m)),
         UpdateOutcome::NoUpdate => {
@@ -456,16 +456,16 @@ pub async fn run() -> i32 {
         }
         UpdateOutcome::Updated { from, to } => println!("no-tickets updated: {from} → {to}"),
         UpdateOutcome::DowngradeRefused { current, latest } => eprintln!(
-            "no-tickets self-update: refusing to downgrade from {current} to {latest}. \
+            "no-tickets update: refusing to downgrade from {current} to {latest}. \
              Reinstall directly if a downgrade is intentional."
         ),
         UpdateOutcome::VersionParseError { latest } => eprintln!(
-            "no-tickets self-update: latest release tag {latest:?} is not parseable as semver. \
+            "no-tickets update: latest release tag {latest:?} is not parseable as semver. \
              The release pipeline may have switched tag style; please report this."
         ),
-        UpdateOutcome::FetchFailed(msg) => eprintln!("no-tickets self-update: {msg}"),
+        UpdateOutcome::FetchFailed(msg) => eprintln!("no-tickets update: {msg}"),
         UpdateOutcome::SwapFailed { target, reason } => {
-            eprintln!("no-tickets self-update: swap to {target} failed: {reason}")
+            eprintln!("no-tickets update: swap to {target} failed: {reason}")
         }
     }
     outcome_to_exit_code(&outcome)
@@ -545,7 +545,7 @@ mod tests {
         // it regardless of prefix — that's the load-bearing
         // generalisation here (the old /usr/local/cellar/-only check
         // would have silently mis-classified custom prefixes as Direct
-        // and corrupted brew's package database on self-update).
+        // and corrupted brew's package database on update).
         assert_eq!(
             detect_install_kind(&PathBuf::from("/opt/brew/Cellar/nt/0.1.0/bin/nt")),
             InstallKind::Managed(Manager::Homebrew)
@@ -612,8 +612,8 @@ mod tests {
         // binary happens to live under (or be symlinked under) a
         // project's node_modules/.bin/ is a direct-install user whose
         // PATH lookup picked the wrong copy — not a managed install.
-        // Refusing self-update here was the prior bug; we now treat
-        // this as Direct so self-update proceeds normally.
+        // Refusing the update here was the prior bug; we now treat
+        // this as Direct so update proceeds normally.
         assert_eq!(
             detect_install_kind(&PathBuf::from("/Users/alice/project/node_modules/.bin/nt")),
             InstallKind::Direct
@@ -974,7 +974,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/repos/foo/bar/releases/latest"))
-            .and(header("user-agent", "no-tickets-self-update"))
+            .and(header("user-agent", "no-tickets-update"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "tag_name": "v0.1.0",
             })))

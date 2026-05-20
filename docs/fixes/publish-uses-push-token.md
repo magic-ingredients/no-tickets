@@ -1,0 +1,214 @@
+---
+id: publish-uses-push-token
+title: "`no-tickets publish --project` must use the registered push token, never the session"
+status: not_started
+severity: high
+reported: 2026-05-20T00:00:00.000Z
+resolved: null
+---
+
+# Fix: `publish` ignores the push-token registry; falls back to session auth
+
+## Issue Summary
+
+`no-tickets publish --project <name>` is supposed to bind to the push
+token registered under `<name>` (via `no-tickets token add <name>`).
+It doesn't. The `--project` argument is purely cosmetic for auth —
+the only thing it does is populate `source.attributes.project` on the
+wire (`crates/nt-cli/src/commands/publish.rs:55`).
+
+What actually happens today (`crates/nt-cli/src/commands/publish.rs:85`):
+
+```rust
+let auth = match resolve_auth(env, &urls.api_url) {
+    AuthOutcome::Resolved(a) => a,
+    …
+};
+```
+
+`resolve_auth` (`crates/nt-cli/src/auth.rs:59-81`) consults exactly
+two sources:
+1. `NO_TICKETS_TOKEN` env var
+2. `~/Library/Application Support/com.magic-ingredients.no-tickets/credentials`
+   — the session file written by `init`
+
+It **never reads `config.json`** — the push-token registry that
+`token add` writes and `token list` reads from.
+
+Net effect: every `no-tickets publish` invocation sends the **session
+token** to `/v1/events`, not the per-project push token. This is
+privilege confusion — session credentials are a management-API
+identity that carry broader authority than a per-project publish
+should. A server that tightens validation will reject the session
+token at the publish endpoint with a 401. Reproduced today against
+staging — exit 5, `{"error":"not_authenticated","message":"server
+rejected the bearer token (401)"}`.
+
+The architectural rule (memory: `[[feedback-publish-uses-push-token-only]]`,
+companion to `[[project-tokens-define-project]]`): **publish must
+only ever use the push token from the registry. Session credentials
+must never reach `/v1/events`.**
+
+## Reproduction
+
+```sh
+# Mint a staging session
+NO_TICKETS_ENV=staging no-tickets init    # → "Authenticated as you@example.com"
+
+# Try to publish with --project
+NO_TICKETS_ENV=staging no-tickets publish \
+  --type product.epic.created.v1 \
+  --data '{"epicId":"smoke","projectId":"demo","title":"hi"}' \
+  --project demo
+# → exit 5, {"error":"not_authenticated","message":"server rejected the bearer token (401)..."}
+
+# Workaround: inject the push token directly
+PUSH_TOKEN=$(jq -r '.projects["demo"].pushToken' \
+  ~/Library/Application\ Support/com.magic-ingredients.no-tickets/config.json)
+NO_TICKETS_ENV=staging NO_TICKETS_TOKEN="$PUSH_TOKEN" no-tickets publish \
+  --type product.epic.created.v1 --data '…' --project demo
+# → {"deduped":0,"ids":["43"],"ingested":1}  ✓
+```
+
+The fact that `NO_TICKETS_TOKEN` (escape hatch) works while `--project`
+(the documented primary path) doesn't confirms the server is fine —
+the gap is purely CLI-side wiring.
+
+## Root Cause
+
+TS-port leftover. `crates/nt-cli/src/auth.rs:2` even says so:
+*"Mirrors `src/sdk/auth.ts::resolveAuth`."* The TS implementation
+predates the push-token registry; when the Rust port shipped
+`token add` / `token list` / `config.json` schema (`crates/nt-cli/src/config.rs`),
+it didn't retrofit `publish` to consult that registry. The wiring
+half-shipped. The misleading TS-parity comment in auth.rs's module
+docstring probably contributed to the gap going unnoticed.
+
+`scripts/seed-product-demo.sh:18` already assumes the correct
+behavior (*"Local key from `~/.notickets/config.json` that resolves
+to a push token. Passed as `nt publish --project`"*) — i.e., the
+docs are right, only the code is wrong.
+
+## Fix Approach
+
+Replace `resolve_auth` in the publish path with a new
+`resolve_publish_token(env, project)` that:
+
+1. If `NO_TICKETS_TOKEN` env var is set + non-empty → use it.
+   Escape hatch for CI; behavior unchanged.
+2. Otherwise, read `config.json`, look up
+   `projects[<project>].pushToken`. If found → use it.
+3. Otherwise, error with a specific message:
+   ```
+   No push token registered for project '<name>'.
+   Run: no-tickets token add <name> --token <token-from-web-ui>
+   ```
+   Map to a new `no_push_token` error variant + exit code, NOT
+   `not_authenticated` (which today's behavior produces and is
+   misleading — see the error-mapping refinement below).
+
+Session credentials from `init` MUST NOT be consulted in this path.
+The session file's purpose narrows to management-API operations
+(none of which are wired today; future scope). `init` itself stays —
+it's still how users prove identity to the web UI to mint push
+tokens — but the credentials it writes are not a fallback for
+publish.
+
+### Error-mapping refinement (sub-issue)
+
+When the server returns 401 on a request that DID carry a Bearer
+header, mapping to `not_authenticated` (exit 5) is misleading. The
+CLI knew it sent a token; the server said "no, that one's bad."
+Distinct error class:
+
+| Exit | Class | When |
+|------|-------|------|
+| 5 | `not_authenticated` | No token to send (no project registered, env var unset, etc.) |
+| ? | `token_rejected` | Sent a token, server returned 401 |
+
+Per Task 26's additive-only contract on `docs/binary-error-contract.md`,
+add a new exit code; don't repurpose 5. Wrappers parsing exit codes
+keep working.
+
+## Test Plan
+
+### 🔒 Regression Tests (must pass unchanged)
+| File | Cases | Status |
+|------|-------|--------|
+| crates/nt-cli/src/auth.rs (inline) | `resolve_auth_*` for env-var / credentials / host-mismatch | ❌ |
+| crates/nt-cli/tests/publish/happy_path.rs | NO_TICKETS_TOKEN env-var path continues to work | ❌ |
+| crates/nt-cli/tests/publish/auth.rs (if present) | env-var beats other sources | ❌ |
+
+### ✏️ Amended Tests
+| File | Case | Change | Status |
+|------|------|--------|--------|
+| crates/nt-cli/tests/publish/*.rs | tests that rely on session-token-as-bearer | Update to register a push token + use --project (or set NO_TICKETS_TOKEN explicitly) | ❌ |
+
+### 🆕 New Tests
+| File | Case | Status |
+|------|------|--------|
+| crates/nt-cli/src/commands/publish.rs (inline) | `resolve_publish_token` reads push token from config.json by --project | ❌ |
+| crates/nt-cli/src/commands/publish.rs (inline) | NO_TICKETS_TOKEN env beats config.json lookup | ❌ |
+| crates/nt-cli/src/commands/publish.rs (inline) | missing project registration → typed error with `no_push_token` variant | ❌ |
+| crates/nt-cli/tests/publish/no_session_fallback.rs (new) | session credentials present + push token absent for project → error, NOT fallback to session | ❌ |
+| crates/nt-cli/tests/publish/no_session_fallback.rs | session credentials present + push token also present → push token wins (no leak of session to `/v1/events`) | ❌ |
+| crates/nt-cli/tests/structured-errors.rs | new `token_rejected` exit code + stderr shape for 401 with token | ❌ |
+
+## Tasks
+
+### 1. Replace `resolve_auth` in publish path with push-token-only resolver
+End-to-end task: failing tests + implementation + review-driven refactors
+land here. Introduce `resolve_publish_token(env, project)` in either
+`auth.rs` or a new `publish/token.rs`; rewire `publish.rs:85` to call
+it instead of `resolve_auth`. Session credentials are no longer
+consulted by the publish path. `NO_TICKETS_TOKEN` env-var escape hatch
+stays.
+
+**Files to modify:**
+- `crates/nt-cli/src/auth.rs` (or new `publish/token.rs`) — new
+  resolver function
+- `crates/nt-cli/src/commands/publish.rs:85` — swap call site
+- `crates/nt-cli/src/error.rs` — new `NoPushToken { project }` variant
+- `crates/nt-cli/src/config.rs` — possibly expose a
+  `find_project(name) -> Option<ProjectEntry>` helper if not already
+- `crates/nt-cli/tests/publish/no_session_fallback.rs` (new)
+- relevant existing tests under `crates/nt-cli/tests/publish/`
+  that need amending
+
+### 2. Distinguish `token_rejected` from `not_authenticated` in error contract
+End-to-end task. New exit code + stderr JSON shape for the
+"server rejected our token" case; keep exit 5 for
+"no token was sent". Additive per `docs/binary-error-contract.md`'s
+contract guarantee.
+
+**Files to modify:**
+- `crates/nt-cli/src/error.rs` — new variant, exit-code mapping
+- `crates/nt-cli/src/commands/publish.rs` — 401-with-token branch
+  emits the new variant instead of `not_authenticated`
+- `crates/nt-cli/tests/structured-errors.rs` — assertions per
+  Task 26's table
+- `docs/binary-error-contract.md` — append the new exit code row
+
+### 3. Strip TS-parity comments from auth.rs while we're touching it
+Memory `[[feedback-no-ts-references-in-rust]]` applies: the
+`Mirrors src/sdk/auth.ts::resolveAuth` line in `auth.rs:2` (and any
+others in the publish auth surface) should go when this work lands.
+Folded into the refactor commit on Task 1 rather than a separate
+cycle.
+
+**Files to modify:**
+- `crates/nt-cli/src/auth.rs` — strip TS-parity docstrings
+- any other auth-surface files touched during Task 1 that still
+  carry TS_PARITY identifiers / comments
+
+### 4. Update docs to reflect the corrected publish auth model
+After Task 1 + 2 land, document the rule clearly: publish uses
+the push token registered for `--project`, full stop. Mention the
+new `token_rejected` exit code so wrappers know to handle it.
+
+**Files to modify:**
+- `README.md` — clarify in quickstart that publish needs a push
+  token via `token add` first
+- `docs/install.md` — same in any publish recipes
+- `docs/binary-error-contract.md` — already covered in Task 2,
+  but cross-link from here

@@ -577,7 +577,7 @@ Root cause of the recurring fmt drift that's been showing up as "incidental rust
 
 ### 33. Decide TS-SDK Phase 4 survival
 status: completed
-commitSha: HEAD
+commitSha: 69f14c3
 
 Parked architectural question. Phase 4 (per-language wrappers) lists TS alongside Python and Go: a ~50–80 LOC wrapper that spawns `no-tickets-mcp` (potentially in `--stream` mode for warm reuse). Open question: does the npm package come back, or is the Rust binary the only client surface forever and TS users go through `execFile('no-tickets', ...)` themselves?
 

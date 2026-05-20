@@ -62,6 +62,7 @@ resolution:
     - docs/binary-error-contract.md
     - README.md
     - scripts/seed-product-demo.sh
+archived: true
 ---
 
 # Fix: `publish` ignores the push-token registry; falls back to session auth
@@ -269,7 +270,7 @@ cycle.
 
 ### 4. Update docs to reflect the corrected publish auth model
 status: completed
-commitSha: pending
+commitSha: 3c7e449
 
 After Task 1 + 2 land, document the rule clearly: publish uses
 the push token registered for `--project`, full stop. Mention the
@@ -284,7 +285,7 @@ new `token_rejected` exit code so wrappers know to handle it.
 
 ### 5. Strip dead `~/.notickets/` path references from docs + scripts
 status: completed
-commitSha: pending
+commitSha: 3c7e449
 
 Investigation side-discovery: the Rust binary on macOS uses
 `~/Library/Application Support/com.magic-ingredients.no-tickets/`

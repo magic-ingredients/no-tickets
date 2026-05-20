@@ -24,8 +24,10 @@
 #                         when omitted.
 #
 # Env knobs:
-#   NO_TICKETS_ENV   — defaults to `staging`. Set to `local` for the
-#                      local stack, or unset/`prod` to point at prod.
+#   NO_TICKETS_ENV   — script default is `staging`. Set to `local` for
+#                      the local stack, or `prod` for prod (both
+#                      route through the `directories` crate's preset
+#                      table in `crates/nt-cli/src/urls.rs`).
 #   NT_BIN           — path to the no-tickets binary (default:
 #                      `no-tickets` from PATH).
 #

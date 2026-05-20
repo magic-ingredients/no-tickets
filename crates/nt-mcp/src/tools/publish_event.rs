@@ -1,15 +1,16 @@
 //! Body of the `publish_event` MCP tool.
 //!
-//! Mirrors `src/mcp/tools/handlers.ts::handlePublishEvent`. Validates
-//! the payload locally against the bundled JSON Schema (via
+//! Validates the payload locally against the bundled JSON Schema (via
 //! `nt_schemas::validate`) before any network call, then POSTs the
 //! envelope to `/v1/events` with Bearer auth.
 //!
-//! Source identity (`source.name`) is fixed at `"nt-mcp"` and cannot
-//! be overridden by the agent. Project tenancy is server-resolved
-//! from the push token (`pushToken.projectId` in
-//! `notickets-service/src/server/routes/events.ts`); there is no
-//! `project` arg.
+//! Source identity (`source.name`) is fixed at `"no-tickets-mcp"` and
+//! cannot be overridden by the agent. Project tenancy is server-
+//! resolved from the push token; there is no `project` arg.
+//!
+//! Subjects are intentionally absent: the wire envelope retains a
+//! `subject` slot for forward-compat, but neither this tool nor the
+//! CLI populates it today. Re-introduce when subjects ship server-side.
 //!
 //! `source.attributes` is exposed as the **client passthrough slot**:
 //! flat `Record<string, string | number | boolean>` of user-supplied
@@ -65,9 +66,6 @@ pub struct PublishEventArgs {
     /// across serialisations.
     #[serde(default)]
     pub attributes: Option<BTreeMap<String, AttributeValue>>,
-    /// Optional subject reference.
-    #[serde(default)]
-    pub subject: Option<SubjectRef>,
     /// Optional ISO-8601 timestamp; defaults to now server-side.
     #[serde(default, rename = "occurred_at")]
     pub occurred_at: Option<String>,
@@ -103,13 +101,6 @@ pub enum AttributeValue {
     Str(String),
     Num(#[schemars(with = "f64")] Number),
     Bool(bool),
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SubjectRef {
-    #[serde(rename = "type")]
-    pub subject_type: String,
-    pub id: String,
 }
 
 /// Handle a `tools/call publish_event` invocation. Resolves auth from
@@ -215,12 +206,6 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
     let mut envelope = Map::new();
     envelope.insert("type".to_string(), Value::String(args.type_id.clone()));
     envelope.insert("data".to_string(), args.data.clone());
-    if let Some(s) = &args.subject {
-        envelope.insert(
-            "subject".to_string(),
-            serde_json::json!({ "type": s.subject_type, "id": s.id }),
-        );
-    }
     envelope.insert("source".to_string(), build_source(args));
     if let Some(p) = &args.parent_event_id {
         envelope.insert("parentEventId".to_string(), Value::String(p.clone()));

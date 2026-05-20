@@ -53,8 +53,6 @@ pub struct PublishArgs<'a> {
     /// dispatch-only; doesn't short-circuit with its own exit calls).
     pub data: &'a str,
     pub project: &'a str,
-    pub subject_type: Option<&'a str>,
-    pub subject_id: Option<&'a str>,
     pub source_name: Option<&'a str>,
     /// Raw `--source-attribute KEY=VALUE` repeats. Parsed inside `run()`
     /// so usage errors flow through the same exit-1 path as the rest of

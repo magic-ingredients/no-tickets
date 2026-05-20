@@ -117,16 +117,9 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
     }
 
     // Optional fields surfaced via JSON Schema properties even though
-    // they're not in `required`. Mirrors the TS reference's input
-    // schema. A missing entry means the schema-derive macro lost a
-    // field — caught here.
-    for optional in [
-        "subject",
-        "occurred_at",
-        "parent_event_id",
-        "trace_id",
-        "dedupe_key",
-    ] {
+    // they're not in `required`. A missing entry means the
+    // schema-derive macro lost a field — caught here.
+    for optional in ["occurred_at", "parent_event_id", "trace_id", "dedupe_key"] {
         assert!(
             props[optional].is_object(),
             "schema must declare optional property `{optional}`; got props={props}",
@@ -149,6 +142,15 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
     assert!(
         props.get("project").is_none(),
         "schema must NOT declare a `project` property — tenancy is token-derived; got props={props}",
+    );
+
+    // `subject` was removed in v0.1.1: subjects are not modelled
+    // server-side, so the tool arg was misleading users into thinking
+    // their input would be tracked. The wire envelope retains a
+    // `subject` slot as forward-compat but neither client populates it.
+    assert!(
+        props.get("subject").is_none(),
+        "schema must NOT declare a `subject` property — subjects not yet modelled; got props={props}",
     );
 
     c.shutdown().await;

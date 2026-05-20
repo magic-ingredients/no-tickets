@@ -1,13 +1,10 @@
 [package]
 # Cargo package name `no-tickets` matches the product name across every
-# distribution channel: `cargo install no-tickets`,
-# `brew install magic-ingredients/tap/no-tickets`,
-# `curl … no-tickets-installer.sh | sh`,
-# tarballs `no-tickets-{target}.tar.xz`. The daily-use binary stays
-# `nt` (short, type-friendly) — see the `[[bin]]` below.
-# Chose `no-tickets` over `nt` because `nt` is taken on crates.io
-# (unrelated NetworkTables crate) and one unified name across all
-# channels beats a divergence-only-on-crates.io split.
+# distribution channel and the daily-use binary. The original Rust spike
+# shipped a short `nt` binary; that was reversed before going public —
+# one product name everywhere (CLI invocation, brew formula, install
+# script, crates.io) beats the cognitive overhead of `nt-vs-no-tickets`.
+# Binary is `no-tickets`; the MCP server is `no-tickets-mcp`.
 name = "no-tickets"
 version = "0.1.0"
 edition.workspace = true
@@ -17,11 +14,11 @@ homepage.workspace = true
 description = "no-tickets CLI — Rust port (Phase 2/3 of cross-platform-cli-binary fix)"
 
 [[bin]]
-name = "nt"
+name = "no-tickets"
 path = "src/main.rs"
 
 [[bin]]
-name = "nt-mcp"
+name = "no-tickets-mcp"
 path = "src/bin/nt-mcp.rs"
 
 [dependencies]

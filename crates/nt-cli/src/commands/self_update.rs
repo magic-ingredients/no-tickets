@@ -93,11 +93,11 @@ impl FetchError {
                 Some(t) => format!(
                     "github api rate-limit hit (resets at unix epoch {t}). \
                      Set GITHUB_TOKEN or wait until the window resets, \
-                     then re-run `nt self-update`."
+                     then re-run `no-tickets self-update`."
                 ),
                 None => "github api rate-limit hit. \
                      Set GITHUB_TOKEN or wait a few minutes, \
-                     then re-run `nt self-update`."
+                     then re-run `no-tickets self-update`."
                     .to_string(),
             },
             Self::Network(msg) => format!("network error: {msg}"),
@@ -122,7 +122,7 @@ pub(crate) trait SwapPerformer {
 pub(crate) const GH_OWNER: &str = "magic-ingredients";
 pub(crate) const GH_REPO: &str = "no-tickets";
 pub(crate) const DEFAULT_GH_API_BASE: &str = "https://api.github.com";
-const USER_AGENT: &str = "nt-self-update";
+const USER_AGENT: &str = "no-tickets-self-update";
 /// Connect-phase timeout: TLS handshake + initial response. Captive
 /// portals and dead routes typically resolve within this window.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -187,21 +187,23 @@ pub(crate) fn detect_install_kind(exe_path: &Path) -> InstallKind {
 pub(crate) fn redirect_message(manager: Manager) -> String {
     match manager {
         Manager::Homebrew => {
-            "nt was installed via Homebrew. Run `brew upgrade no-tickets` to update.".to_string()
+            "no-tickets was installed via Homebrew. Run `brew upgrade no-tickets` to update."
+                .to_string()
         }
-        Manager::Cargo => "nt was installed via Cargo. \
+        Manager::Cargo => "no-tickets was installed via Cargo. \
              Run `cargo install --force no-tickets` to update."
             .to_string(),
         Manager::Scoop => {
-            "nt was installed via Scoop. Run `scoop update no-tickets` to update.".to_string()
+            "no-tickets was installed via Scoop. Run `scoop update no-tickets` to update."
+                .to_string()
         }
-        Manager::Asdf => "nt was installed via asdf. \
+        Manager::Asdf => "no-tickets was installed via asdf. \
              Update via your asdf plugin (e.g. `asdf install no-tickets latest && asdf reshim`)."
             .to_string(),
-        Manager::Mise => "nt was installed via mise. \
+        Manager::Mise => "no-tickets was installed via mise. \
              Update via `mise install no-tickets@latest` (or your mise tools manifest)."
             .to_string(),
-        Manager::Volta => "nt was installed via Volta. \
+        Manager::Volta => "no-tickets was installed via Volta. \
              Update via `volta install no-tickets@latest`."
             .to_string(),
     }
@@ -408,7 +410,7 @@ impl SwapPerformer for SelfUpdateSwap {
         self_update::backends::github::Update::configure()
             .repo_owner(GH_OWNER)
             .repo_name(GH_REPO)
-            .bin_name("nt")
+            .bin_name("no-tickets")
             .current_version(env!("CARGO_PKG_VERSION"))
             .target_version_tag(&to_release_tag(target_version))
             .show_download_progress(true)
@@ -439,7 +441,7 @@ pub async fn run() -> i32 {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("nt self-update: cannot resolve own executable path: {e}");
+            eprintln!("no-tickets self-update: cannot resolve own executable path: {e}");
             return 1;
         }
     };
@@ -450,20 +452,20 @@ pub async fn run() -> i32 {
     match &outcome {
         UpdateOutcome::ManagedRedirect(m) => println!("{}", redirect_message(*m)),
         UpdateOutcome::NoUpdate => {
-            println!("nt {current} is already the latest version.")
+            println!("no-tickets {current} is already the latest version.")
         }
-        UpdateOutcome::Updated { from, to } => println!("nt updated: {from} → {to}"),
+        UpdateOutcome::Updated { from, to } => println!("no-tickets updated: {from} → {to}"),
         UpdateOutcome::DowngradeRefused { current, latest } => eprintln!(
-            "nt self-update: refusing to downgrade from {current} to {latest}. \
+            "no-tickets self-update: refusing to downgrade from {current} to {latest}. \
              Reinstall directly if a downgrade is intentional."
         ),
         UpdateOutcome::VersionParseError { latest } => eprintln!(
-            "nt self-update: latest release tag {latest:?} is not parseable as semver. \
+            "no-tickets self-update: latest release tag {latest:?} is not parseable as semver. \
              The release pipeline may have switched tag style; please report this."
         ),
-        UpdateOutcome::FetchFailed(msg) => eprintln!("nt self-update: {msg}"),
+        UpdateOutcome::FetchFailed(msg) => eprintln!("no-tickets self-update: {msg}"),
         UpdateOutcome::SwapFailed { target, reason } => {
-            eprintln!("nt self-update: swap to {target} failed: {reason}")
+            eprintln!("no-tickets self-update: swap to {target} failed: {reason}")
         }
     }
     outcome_to_exit_code(&outcome)
@@ -972,7 +974,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/repos/foo/bar/releases/latest"))
-            .and(header("user-agent", "nt-self-update"))
+            .and(header("user-agent", "no-tickets-self-update"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "tag_name": "v0.1.0",
             })))

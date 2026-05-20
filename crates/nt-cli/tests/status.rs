@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 fn nt() -> Command {
-    Command::cargo_bin("nt").expect("binary built")
+    Command::cargo_bin("no-tickets").expect("binary built")
 }
 
 /// Clears every env var the binary reads. Sets NO_TICKETS_HOME to the
@@ -122,7 +122,7 @@ fn status_scenario_session_host_mismatch_emits_warning_and_authenticated_false()
         ))
         .stderr(predicate::str::contains("https://api.no-tickets.com"))
         .stderr(predicate::str::contains("re-authenticate"))
-        .stderr(predicate::str::contains("nt init"))
+        .stderr(predicate::str::contains("no-tickets init"))
         // Token MUST NOT leak.
         .stderr(predicate::str::contains("nt_session_staging").not());
 }
@@ -256,7 +256,7 @@ fn status_broken_pipe_on_stdout_exits_zero() {
     use std::process::{Command, Stdio};
 
     let temp = tempfile::tempdir().unwrap();
-    let bin = assert_cmd::cargo::cargo_bin("nt");
+    let bin = assert_cmd::cargo::cargo_bin("no-tickets");
     let mut child = Command::new(&bin)
         .env("NO_TICKETS_HOME", temp.path())
         .env_remove("NO_TICKETS_TOKEN")

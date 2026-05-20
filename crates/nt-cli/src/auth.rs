@@ -9,24 +9,24 @@
 use crate::credentials::{self, LoadOutcome};
 use crate::env::Env;
 
-pub const NOT_AUTH_MSG: &str = "Not authenticated. Set NO_TICKETS_TOKEN or run `nt init`.";
+pub const NOT_AUTH_MSG: &str = "Not authenticated. Set NO_TICKETS_TOKEN or run `no-tickets init`.";
 
 /// Emits the ADR-0002 stored-session host-mismatch warning to stderr.
 /// Centralised so identity-aware callers (status, publish, future commands)
 /// share one phrasing. Token is never included — the warning is identity-free.
 pub fn emit_host_mismatch_warning(stored_host: &str, current_host: &str) {
     eprintln!(
-        "Warning: stored session was issued for {stored_host} but the current environment resolves to {current_host}. Run `nt init` to re-authenticate against the current environment.",
+        "Warning: stored session was issued for {stored_host} but the current environment resolves to {current_host}. Run `no-tickets init` to re-authenticate against the current environment.",
     );
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AuthSource {
     /// Token came from `NO_TICKETS_TOKEN` env var. Transport-level escape
-    /// hatch; doesn't count as authenticated identity in `nt status`.
+    /// hatch; doesn't count as authenticated identity in `no-tickets status`.
     Env,
     /// Token came from the session credentials file. The
-    /// "authenticated" identity in `nt status`.
+    /// "authenticated" identity in `no-tickets status`.
     Credentials,
 }
 
@@ -34,7 +34,7 @@ pub struct ResolvedAuth {
     /// The actual bearer token. Required by transport callers (publish).
     pub token: String,
     pub source: AuthSource,
-    /// Set when `source == Credentials`. Surfaced by `nt status` as the
+    /// Set when `source == Credentials`. Surfaced by `no-tickets status` as the
     /// identity attached to an authenticated session. None for env-supplied
     /// `NO_TICKETS_TOKEN` — those are transport-level overrides, not
     /// identity claims.

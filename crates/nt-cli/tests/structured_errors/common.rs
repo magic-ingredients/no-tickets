@@ -44,7 +44,7 @@ impl Output {
 
 /// Run `nt <args...>` with hermetic env. `extra_env` overrides defaults.
 pub(crate) async fn run_nt(home: &Path, extra_env: &[(&str, &str)], args: &[&str]) -> Output {
-    let mut cmd = Command::new(cargo_bin("nt"));
+    let mut cmd = Command::new(cargo_bin("no-tickets"));
     cmd.env("NO_TICKETS_HOME", home)
         // Prevent the host shell from leaking credentials/URLs into
         // the subprocess. Each test opts in by passing values via

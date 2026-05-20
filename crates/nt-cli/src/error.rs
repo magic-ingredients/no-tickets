@@ -243,7 +243,7 @@ impl NtError {
                 if known_projects.is_empty() {
                     format!(
                         "project {project} is not registered locally. \
-                         Run `nt token add <project> <token>` to register."
+                         Run `no-tickets token add <project> <token>` to register."
                     )
                 } else {
                     format!(

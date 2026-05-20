@@ -65,7 +65,7 @@ async fn publish_batch_stdin_dash_reads_jsonl_from_stdin() {
          {{\"type\":\"ai.task.completed.v1\",\"data\":{VALID_AI_TASK_DATA}}}\n"
     );
 
-    let mut cmd = Command::new(cargo_bin("nt"));
+    let mut cmd = Command::new(cargo_bin("no-tickets"));
     cmd.env("NO_TICKETS_HOME", home.path())
         .env_remove("NO_TICKETS_ENV")
         .env_remove("NO_TICKETS_INCLUDE_MACHINE")

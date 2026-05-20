@@ -19,7 +19,7 @@ use crate::error::emit_and_exit_code;
 
 #[derive(Parser)]
 #[command(
-    name = "nt",
+    name = "no-tickets",
     version,
     about = "no-tickets — ticketless project management for AI teams"
 )]

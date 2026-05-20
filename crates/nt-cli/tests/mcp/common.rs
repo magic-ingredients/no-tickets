@@ -43,7 +43,7 @@ impl McpClient {
     /// host-shell vars they want guaranteed-absent (the helper itself
     /// doesn't strip — different tests need different defaults).
     pub(crate) async fn spawn_with_env(extra_env: &[(&str, &str)]) -> Self {
-        let bin = env!("CARGO_BIN_EXE_nt-mcp");
+        let bin = env!("CARGO_BIN_EXE_no-tickets-mcp");
         let mut cmd = Command::new(bin);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())

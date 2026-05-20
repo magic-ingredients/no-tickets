@@ -1,14 +1,33 @@
-//! Auth resolution. NO_TICKETS_TOKEN env var beats the credentials file.
-//! Mirrors `src/sdk/auth.ts::resolveAuth`.
+//! Auth resolution.
 //!
-//! Per ADR-0002, session credentials from disk carry a `host` tag — the
-//! api_url they were issued against. `resolve_auth` takes the current
-//! api_url so it can surface a host-mismatch warning instead of silently
-//! treating a stale session as authenticated.
+//! Two distinct resolvers, by purpose:
+//!
+//! - **`resolve_publish_token`** — what `nt publish` uses. Reads the
+//!   push token registered for the caller-supplied `--project` from
+//!   `config.json` (or `NO_TICKETS_TOKEN` as a CI escape hatch).
+//!   Session credentials from `nt init` are NEVER consulted here —
+//!   they're a management-API identity, not a publish credential. See
+//!   `docs/fixes/publish-uses-push-token.md`.
+//!
+//! - **`resolve_auth`** — what identity / management commands use
+//!   (`nt status` today; future identity commands). Reads the session
+//!   credentials file written by `nt init`, with the env-var escape
+//!   hatch first. Carries the host-tag check from ADR-0002 so a stale
+//!   session (different env than the one currently selected) surfaces
+//!   as `SessionHostMismatch` rather than silently treating a stale
+//!   session as authenticated.
 
+use crate::config;
 use crate::credentials::{self, LoadOutcome};
 use crate::env::Env;
+use crate::error::NtError;
 
+/// Standard "not authenticated" message for identity-command errors.
+/// `nt publish` no longer uses this (it surfaces `ProjectNotRegistered`
+/// instead, since `publish` doesn't consult session credentials), but
+/// it stays available for future identity commands (e.g. `nt projects
+/// list`) that DO need session auth.
+#[allow(dead_code)]
 pub const NOT_AUTH_MSG: &str = "Not authenticated. Set NO_TICKETS_TOKEN or run `no-tickets init`.";
 
 /// Emits the ADR-0002 stored-session host-mismatch warning to stderr.
@@ -31,7 +50,12 @@ pub enum AuthSource {
 }
 
 pub struct ResolvedAuth {
-    /// The actual bearer token. Required by transport callers (publish).
+    /// The actual bearer token. Future identity commands (e.g. `nt
+    /// projects list` against a management endpoint) will read this;
+    /// `nt status` reports identity only and doesn't read the field,
+    /// and `nt publish` deliberately uses `resolve_publish_token`
+    /// (push tokens only) rather than this struct.
+    #[allow(dead_code)]
     pub token: String,
     pub source: AuthSource,
     /// Set when `source == Credentials`. Surfaced by `no-tickets status` as the
@@ -54,6 +78,39 @@ pub enum AuthOutcome {
         stored_host: String,
         current_host: String,
     },
+}
+
+/// Resolve the Bearer token `nt publish` will send for the given
+/// `--project`. Either:
+///
+/// - `NO_TICKETS_TOKEN` env var (CI escape hatch, wins when non-empty), or
+/// - `config.json`'s `projects[project].pushToken` (the canonical path,
+///   written by `nt token add`).
+///
+/// Session credentials from `nt init` are deliberately NOT consulted.
+/// Session tokens are a management-API identity claim and must not
+/// reach `/v1/events` (privilege confusion). Unregistered projects
+/// surface as `NtError::ProjectNotRegistered` (exit code 6) — sharp
+/// signal carrying the offending project name AND the
+/// locally-registered alternatives so wrappers can offer a hint.
+///
+/// Config-read failures (malformed JSON, I/O error, unresolvable home)
+/// surface as `NtError::Usage` since they're caller-environment problems
+/// rather than auth-state problems.
+pub fn resolve_publish_token(env: &dyn Env, project: &str) -> Result<String, NtError> {
+    if let Some(token) = env.var("NO_TICKETS_TOKEN").filter(|t| !t.is_empty()) {
+        return Ok(token);
+    }
+    let cfg = config::read(env).map_err(|e| NtError::Usage {
+        message: format!("read config.json: {e}"),
+    })?;
+    if let Some(entry) = cfg.projects.get(project) {
+        return Ok(entry.push_token.clone());
+    }
+    Err(NtError::ProjectNotRegistered {
+        project: project.to_string(),
+        known_projects: cfg.projects.keys().cloned().collect(),
+    })
 }
 
 pub fn resolve_auth(env: &dyn Env, current_api_url: &str) -> AuthOutcome {
@@ -108,6 +165,127 @@ mod tests {
             _ => panic!("expected Resolved; got something else"),
         }
     }
+
+    // ─── resolve_publish_token ────────────────────────────────────────
+
+    /// Write a config.json under `$home/.notickets/` with a single project.
+    fn write_test_config(home: &std::path::Path, project: &str, push_token: &str) {
+        let dir = home.join(".notickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{"projects":{{"{project}":{{"pushToken":"{push_token}","addedAt":"2026-05-20T00:00:00.000Z"}}}}}}"#,
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn resolve_publish_token_reads_env_var_first_when_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Config.json has a different token; env var must still win.
+        write_test_config(tmp.path(), "demo", "nt_push_from_config");
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_HOME", tmp.path().to_str().unwrap()),
+            ("NO_TICKETS_TOKEN", TEST_TOKEN),
+        ]);
+        let token = resolve_publish_token(&env, "demo").expect("resolves");
+        assert_eq!(token, TEST_TOKEN);
+    }
+
+    #[test]
+    fn resolve_publish_token_skips_empty_env_var_and_falls_through_to_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_test_config(tmp.path(), "demo", "nt_push_from_config");
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_HOME", tmp.path().to_str().unwrap()),
+            ("NO_TICKETS_TOKEN", ""), // empty must NOT win
+        ]);
+        let token = resolve_publish_token(&env, "demo").expect("resolves");
+        assert_eq!(token, "nt_push_from_config");
+    }
+
+    #[test]
+    fn resolve_publish_token_reads_config_json_when_no_env_var() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_test_config(tmp.path(), "demo", "nt_push_from_config");
+        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", tmp.path().to_str().unwrap())]);
+        let token = resolve_publish_token(&env, "demo").expect("resolves");
+        assert_eq!(token, "nt_push_from_config");
+    }
+
+    #[test]
+    fn resolve_publish_token_errors_with_project_not_registered_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No config.json at all. Project is unregistered.
+        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", tmp.path().to_str().unwrap())]);
+        let err = resolve_publish_token(&env, "demo").expect_err("must error");
+        match err {
+            NtError::ProjectNotRegistered {
+                project,
+                known_projects,
+            } => {
+                assert_eq!(project, "demo");
+                assert!(
+                    known_projects.is_empty(),
+                    "empty config → no known projects; got {known_projects:?}",
+                );
+            }
+            other => panic!("expected ProjectNotRegistered; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_publish_token_lists_known_projects_when_some_are_registered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".notickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"projects":{"other-a":{"pushToken":"nt_push_a","addedAt":"2026-05-20T00:00:00.000Z"},"other-b":{"pushToken":"nt_push_b","addedAt":"2026-05-20T00:00:00.000Z"}}}"#,
+        )
+        .unwrap();
+        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", tmp.path().to_str().unwrap())]);
+
+        let err = resolve_publish_token(&env, "demo").expect_err("must error");
+        match err {
+            NtError::ProjectNotRegistered {
+                project,
+                known_projects,
+            } => {
+                assert_eq!(project, "demo");
+                // BTreeMap iteration order is deterministic (alpha).
+                assert_eq!(known_projects, vec!["other-a", "other-b"]);
+            }
+            other => panic!("expected ProjectNotRegistered; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_publish_token_does_not_consult_session_credentials_file() {
+        // Architectural pin: a perfectly valid credentials file on disk
+        // matching the same env must NOT be consulted by the publish
+        // token resolver. The session token never reaches /v1/events.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".notickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("credentials"),
+            format!(
+                r#"{{"token":"nt_session_NEVER_USED","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"{API_URL_PROD}"}}"#,
+            ),
+        )
+        .unwrap();
+        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", tmp.path().to_str().unwrap())]);
+
+        // No env var, no config.json — only the credentials file. Must
+        // surface as ProjectNotRegistered, not as a session-token leak.
+        let err = resolve_publish_token(&env, "demo").expect_err("must error");
+        assert!(matches!(err, NtError::ProjectNotRegistered { .. }));
+    }
+
+    // ─── resolve_auth (identity/status) ────────────────────────────────
 
     #[test]
     fn resolve_auth_returns_session_host_mismatch_when_credentials_host_differs_from_current() {

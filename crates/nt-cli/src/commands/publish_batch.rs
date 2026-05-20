@@ -1,14 +1,17 @@
 //! `nt publish --file <path>` — batch publish from JSONL.
 //!
-//! Mirrors `src/cli/commands/publish/batch.ts::runPublishBatch` from the
-//! TS reference. Reads JSONL (one JSON object per line) from a file path
-//! (or stdin when path is `-`), validates each line locally, builds
-//! one envelope per line with a per-line source override on top of the
-//! CLI base source, and sends the lot as a single POST to `/v1/events`.
+//! Reads JSONL (one JSON object per line) from a file path (or stdin
+//! when path is `-`), validates each line locally, builds one envelope
+//! per line with a per-line source override on top of the CLI base
+//! source, and sends the lot as a single POST to `/v1/events`.
 //!
-//! Distinct from Task 4b (`--stream` mode): batch is one finite read
-//! → one HTTP call → exit. Stream is a long-lived subprocess with
-//! JSONL on stdin AND stdout.
+//! Distinct from `--stream` mode: batch is one finite read → one HTTP
+//! call → exit. Stream is a long-lived subprocess with JSONL on stdin
+//! AND stdout (separate fix).
+//!
+//! Auth model: same as single-event publish — token comes from
+//! `auth::resolve_publish_token(env, --project)`, never session
+//! credentials. See `docs/fixes/publish-uses-push-token.md`.
 
 mod envelope;
 mod jsonl;
@@ -16,8 +19,9 @@ mod source;
 
 use serde_json::Value;
 
-use crate::auth::{emit_host_mismatch_warning, resolve_auth, AuthOutcome, NOT_AUTH_MSG};
+use crate::auth::resolve_publish_token;
 use crate::env::Env;
+use crate::error::format_for;
 use crate::source_detect::machine_hash_attribute;
 use crate::transport::{
     post_json_with_retry, Client, HttpClient, RetryPolicy, Sleeper, TokioSleeper,
@@ -102,7 +106,9 @@ pub async fn run(args: PublishBatchArgs<'_>, env: &dyn Env) -> i32 {
         }
     }
 
-    // 6. Resolve URLs + auth (same shape as single-event run()).
+    // 6. Resolve URLs + push token (same as single-event run()).
+    //    Session credentials are NEVER consulted here — token comes
+    //    from the project registry or NO_TICKETS_TOKEN env var.
     let urls = match resolve_urls(env) {
         Ok(u) => u,
         Err(e) => {
@@ -110,22 +116,20 @@ pub async fn run(args: PublishBatchArgs<'_>, env: &dyn Env) -> i32 {
             return 1;
         }
     };
-    let auth = match resolve_auth(env, &urls.api_url) {
-        AuthOutcome::Resolved(a) => a,
-        AuthOutcome::SessionHostMismatch {
-            stored_host,
-            current_host,
-        } => {
-            emit_host_mismatch_warning(&stored_host, &current_host);
-            eprintln!("{NOT_AUTH_MSG}");
-            return 1;
-        }
-        AuthOutcome::None => {
-            eprintln!("{NOT_AUTH_MSG}");
-            return 1;
+    let token = match resolve_publish_token(env, args.project) {
+        Ok(t) => t,
+        Err(e) => {
+            // Surface as the structured-error contract line for
+            // wrapper parity with single-event publish, even though
+            // this command's `run` still returns plain i32. The
+            // pipe/tty branch flips at this layer so an interactive
+            // shell still sees a readable line.
+            let is_tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
+            eprintln!("{}", format_for(is_tty, &e));
+            return e.exit_code();
         }
     };
-    let client = match Client::new(urls.api_url, auth.token) {
+    let client = match Client::new(urls.api_url, token) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");

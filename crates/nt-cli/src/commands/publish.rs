@@ -1,11 +1,18 @@
 //! `nt publish` — single-event publish over HTTPS with Bearer auth.
-//! Mirrors `src/cli/commands/publish` + `src/transport/events.ts::publish`.
 //!
 //! Scope: single event with bounded retry/backoff on transient failures
 //! (Task 17 — retry policy + classifier live in `transport`) and an
 //! opt-in machine-hash source attribute (Task 18 — computed in
-//! `source_detect`, gated on `NO_TICKETS_INCLUDE_MACHINE=1`). `--stream`
-//! mode (Task 4b) and batch mode (Task 16) live in their own tasks.
+//! `source_detect`, gated on `NO_TICKETS_INCLUDE_MACHINE=1`). Batch mode
+//! lives in `publish_batch`.
+//!
+//! Auth model: the Bearer token comes from
+//! `auth::resolve_publish_token(env, --project)` — either the
+//! `NO_TICKETS_TOKEN` env-var escape hatch or the push token registered
+//! for the project in `config.json`. Session credentials from `nt init`
+//! are deliberately not consulted by this path; they're a management-
+//! API identity, not a publish credential. See
+//! `docs/fixes/publish-uses-push-token.md`.
 
 mod envelope;
 mod metadata;
@@ -13,7 +20,7 @@ mod post;
 
 use serde_json::Value;
 
-use crate::auth::{resolve_auth, AuthOutcome, NOT_AUTH_MSG};
+use crate::auth::resolve_publish_token;
 use crate::env::Env;
 use crate::error::NtError;
 use crate::source_detect::machine_hash_attribute;
@@ -82,34 +89,10 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
         message: e.user_message(),
     })?;
 
-    let auth = match resolve_auth(env, &urls.api_url) {
-        AuthOutcome::Resolved(a) => a,
-        AuthOutcome::SessionHostMismatch {
-            stored_host,
-            current_host,
-        } => {
-            // Stored / current hosts go into dedicated fields on the
-            // structured payload so wrappers can build their own
-            // reconnect prompt without parsing `message` (which the
-            // contract reserves for human display). `message` itself
-            // gives a TTY user a useful summary.
-            return Err(NtError::NotAuthenticated {
-                message: format!(
-                    "{NOT_AUTH_MSG} (stored session host {stored_host:?} \
-                     does not match current host {current_host:?})"
-                ),
-                stored_host: Some(stored_host),
-                current_host: Some(current_host),
-            });
-        }
-        AuthOutcome::None => {
-            return Err(NtError::NotAuthenticated {
-                message: NOT_AUTH_MSG.to_string(),
-                stored_host: None,
-                current_host: None,
-            });
-        }
-    };
+    // Resolve the publish token from the project registry (or the
+    // env-var escape hatch). NEVER session credentials — see module
+    // docstring.
+    let token = resolve_publish_token(env, args.project)?;
 
     // --data must be valid JSON. Parsing inside run() means the contract
     // owns the full input-handling path. Local *schema* validation is
@@ -122,7 +105,7 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
         message: format!("--data must be valid JSON: {e}"),
     })?;
 
-    let client = Client::new(urls.api_url, auth.token).map_err(|e| NtError::Usage {
+    let client = Client::new(urls.api_url, token).map_err(|e| NtError::Usage {
         message: e.to_string(),
     })?;
 

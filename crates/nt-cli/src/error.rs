@@ -69,14 +69,9 @@ pub enum NtError {
     /// `--project <name>` referenced a project that's not in the local
     /// config registry. `known_projects` carries the locally-registered
     /// project names so wrappers can prompt or auto-complete.
-    ///
-    /// `#[allow(dead_code)]`: the variant + its on-the-wire shape are
-    /// part of the public contract per `docs/binary-error-contract.md`
-    /// and tested by `error::tests::*`, but the *production* code path
-    /// that constructs it lives behind a project-registry resolver
-    /// (Task 19's territory) that isn't wired through `publish` /
-    /// `validate` yet. Variant stays load-bearing for wrappers.
-    #[allow(dead_code)]
+    /// Constructed by `auth::resolve_publish_token` whenever the
+    /// requested `--project` isn't present in `config.json` and the
+    /// `NO_TICKETS_TOKEN` env-var escape hatch isn't set.
     #[error("project not registered: {project}")]
     ProjectNotRegistered {
         project: String,

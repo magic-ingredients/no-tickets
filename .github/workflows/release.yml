@@ -23,9 +23,17 @@
 #     schemas bundle from the private no-tickets-service repo, which
 #     the default GITHUB_TOKEN cannot read across repo boundaries.
 #     Replaced with secrets.SCHEMAS_REPO_TOKEN (fine-grained PAT,
-#     Contents:Read on no-tickets-service only). Override is
-#     job-level so plan/host/publish-homebrew-formula/announce keep
-#     using GITHUB_TOKEN.
+#     Contents:Read on no-tickets-service only). plan/host/announce
+#     keep using GITHUB_TOKEN; publish-homebrew-formula has env.GH_TOKEN
+#     but no step in it actually consumes the variable (homebrew-tap
+#     push uses HOMEBREW_TAP_TOKEN), so the value there is inert.
+#     Two known constraints, neither blocking today's matrix:
+#       (a) build.rs shells out to the `gh` CLI binary, so any future
+#           matrix.container image MUST ship gh (or the build panics).
+#       (b) pull_request triggers from forks cannot read repo secrets,
+#           so SCHEMAS_REPO_TOKEN resolves to "" and gh 401s with a less
+#           obvious symptom. Fork PRs are limited to plan-validation
+#           only via the existing path filter on the pull_request trigger.
 # RE-APPLY THESE EDITS after every `dist generate` — the tool overwrites
 # them blindly. SHAs to use are listed inline next to each `@vN` tag.
 #
@@ -158,12 +166,7 @@ jobs:
       "contents": "read"
       "actions": "write"
     env:
-      # nt-schemas' build.rs runs `gh release download` against the private
-      # magic-ingredients/no-tickets-service repo. GITHUB_TOKEN is scoped to
-      # this workflow's repo only and 401s on cross-repo private releases;
-      # SCHEMAS_REPO_TOKEN is a fine-grained PAT with Contents:Read on
-      # no-tickets-service. Override is job-level (build jobs only) so the
-      # token never reaches host/announce/publish-homebrew-formula.
+      # GH_TOKEN override — see file header note for full rationale.
       GH_TOKEN: ${{ secrets.SCHEMAS_REPO_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
     steps:
@@ -230,10 +233,10 @@ jobs:
       "contents": "read"
       "actions": "write"
     env:
-      # See build-local-artifacts above: nt-schemas build.rs requires a
-      # PAT with read access to magic-ingredients/no-tickets-service.
-      # Global artifacts can transitively re-compile if cache misses, so
-      # the override applies here too.
+      # GH_TOKEN override — see file header note. dist build --artifacts=global
+      # doesn't itself recompile the workspace, but matched to
+      # build-local-artifacts for defensive symmetry: if a future cargo-dist
+      # release ever adds a Rust step here, it still has the right token.
       GH_TOKEN: ${{ secrets.SCHEMAS_REPO_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:

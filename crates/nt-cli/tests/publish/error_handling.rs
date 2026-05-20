@@ -8,10 +8,17 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::common::{base_args_with_data, run_nt_publish, tempdir};
 
-// ─── Missing token short-circuits BEFORE any request ─────────────────────
+// ─── Missing project registration short-circuits BEFORE any request ─────
+//
+// After the publish-uses-push-token fix, "no env token AND no project
+// registered for --project" surfaces as `project_not_registered` (exit
+// 6), not `not_authenticated` (exit 5). The semantic is sharper: the
+// CLI knows exactly what's missing — a `token add` invocation for this
+// project — and tells the user that, rather than the vaguer "you're
+// not authenticated".
 
 #[tokio::test]
-async fn publish_with_no_token_fails_before_request() {
+async fn publish_with_no_token_and_no_project_registered_fails_before_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/events"))
@@ -23,19 +30,19 @@ async fn publish_with_no_token_fails_before_request() {
     let home = tempdir();
     let out = run_nt_publish(
         &server.uri(),
-        None, // no token
+        None, // no token; no config.json either
         home.path(),
         &base_args_with_data("{}"),
     )
     .await;
-    assert_ne!(
-        out.code, 0,
-        "missing token must fail; stdout={:?}",
-        out.stdout
+    assert_eq!(
+        out.code, 6,
+        "missing project registration must produce exit 6; stdout={:?} stderr={:?}",
+        out.stdout, out.stderr,
     );
     assert!(
-        out.stderr.contains("Not authenticated"),
-        "stderr must surface the auth error; got {:?}",
+        out.stderr.contains("\"project_not_registered\""),
+        "stderr must carry the structured class; got {:?}",
         out.stderr,
     );
 }
@@ -199,75 +206,15 @@ async fn publish_connection_refused_maps_to_transport_error() {
 }
 
 // ─── --data must be valid JSON; reject early without a request ────────────
-
-/// ADR-0002 Task 3: when the credentials file's `host` doesn't match the
-/// publish target's api_url, the session is stale and must be declined
-/// with a stderr warning — same contract as `nt status`. Pinned at the
-/// integration layer so a regression in `publish.rs` (where the warning
-/// emission lives next to the same eprintln in `status.rs`) can't pass
-/// the publish suite while breaking the contract.
-#[tokio::test]
-async fn publish_session_host_mismatch_emits_warning_and_declines_session() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/events"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0) // must NOT be hit — stale session declined before transport
-        .mount(&server)
-        .await;
-
-    let home = tempdir();
-    // Write a credentials file whose host == staging, but the publish
-    // command will resolve to `server.uri()` (the wiremock URL).
-    let dir = home.path().join(".notickets");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("credentials"),
-        r#"{"token":"nt_session_staging","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api-staging.no-tickets.com"}"#,
-    )
-    .unwrap();
-
-    // No env token → publish must fall back to credentials → mismatch fires.
-    let out = run_nt_publish(
-        &server.uri(),
-        None,
-        home.path(),
-        &[
-            "--type",
-            "ai.task.completed.v1",
-            "--data",
-            r#"{"taskId":"t-1"}"#,
-            "--project",
-            "demo",
-        ],
-    )
-    .await;
-
-    // Task 26: host mismatch now surfaces as the structured
-    // not_authenticated error (exit 5). The stored-host / current-host
-    // context is folded into the `message` field rather than a separate
-    // "Warning:" stderr line — wrappers need exactly one parseable line.
-    assert_eq!(
-        out.code, 5,
-        "publish must surface not_authenticated; got {:?}",
-        out
-    );
-    assert!(
-        out.stderr.contains("\"not_authenticated\""),
-        "stderr must carry structured class; got: {:?}",
-        out.stderr,
-    );
-    assert!(
-        out.stderr.contains("https://api-staging.no-tickets.com"),
-        "stored host must be named in the message; got: {:?}",
-        out.stderr,
-    );
-    assert!(
-        !out.stderr.contains("nt_session_staging"),
-        "token MUST NOT leak into the error payload; got: {:?}",
-        out.stderr,
-    );
-}
+//
+// Session-host-mismatch test removed (publish-uses-push-token fix):
+// `publish` no longer consults the credentials file at all, so the
+// stored-host vs current-host check is moot for this command. The
+// architectural pin that session credentials are never consulted by
+// publish lives in `tests/publish/auth.rs::publish_does_not_fall_back_
+// to_session_credentials_when_project_unregistered`. The host-mismatch
+// warning itself still belongs to `nt status` (the identity command);
+// its dedicated test stays under `tests/status.rs`.
 
 #[tokio::test]
 async fn publish_with_malformed_data_fails_before_request() {

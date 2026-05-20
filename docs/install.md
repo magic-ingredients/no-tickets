@@ -147,6 +147,101 @@ three reasons:
 The npm package now ships the TypeScript SDK only (for programmatic use from
 JS / TS); the CLI and MCP server retired from npm with the binary release.
 
+## Using no-tickets in CI
+
+CI runners usually install fresh on every job — package managers don't
+fit, but `curl … | sh` does. Three things to handle in every recipe:
+
+1. **Install** the binary via the shell installer.
+2. **PATH** — the installer drops both binaries into `~/.local/bin`,
+   which isn't on most CI runner's default PATH; each later step has
+   to find them.
+3. **Auth** — set `NO_TICKETS_TOKEN` from your CI secret store rather
+   than running `no-tickets init` (which opens a browser).
+
+Tokens are minted on a workstation via `no-tickets token add
+<project> <token>` and the raw token value (`nt_push_…`) is what goes
+in the secret store. The CLI reads `NO_TICKETS_TOKEN` before consulting
+the local registry, so CI doesn't need a registry file.
+
+### GitHub Actions
+
+```yaml
+jobs:
+  publish-event:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install no-tickets
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://get.no-tickets.com | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Publish event
+        env:
+          NO_TICKETS_TOKEN: ${{ secrets.NO_TICKETS_TOKEN }}
+        run: |
+          no-tickets publish \
+            --project my-project \
+            --type ai.task.completed.v1 \
+            --data '{"taskId":"${{ github.run_id }}","outcome":"success"}'
+```
+
+The `echo "$HOME/.local/bin" >> $GITHUB_PATH` step is mandatory — the
+installer modifies shell rc files, but every Actions step runs in a
+fresh shell that doesn't source them.
+
+### GitLab CI
+
+```yaml
+.no-tickets-setup: &no-tickets-setup
+  before_script:
+    - curl --proto '=https' --tlsv1.2 -LsSf https://get.no-tickets.com | sh
+    - export PATH="$HOME/.local/bin:$PATH"
+
+publish-event:
+  image: alpine:3.20
+  variables:
+    NO_TICKETS_TOKEN: $NO_TICKETS_TOKEN   # from CI/CD Variables
+  <<: *no-tickets-setup
+  script:
+    - no-tickets publish --project my-project --type ai.task.completed.v1 --data '{"runId":"'"$CI_PIPELINE_ID"'"}'
+```
+
+The `<<: *no-tickets-setup` YAML anchor lets you reuse the install
+across jobs without duplication. Drop the anchor + paste the two
+`before_script` lines inline if your YAML pipeline doesn't use anchors.
+
+### Generic shell (CircleCI, Bitbucket Pipelines, Jenkins, Drone, …)
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://get.no-tickets.com | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+# Provider sets NO_TICKETS_TOKEN from the secret store at job start.
+no-tickets publish \
+  --project my-project \
+  --type ai.task.completed.v1 \
+  --data "{\"runId\":\"$BUILD_ID\"}"
+```
+
+Each provider has its own secret-store mechanism (CircleCI contexts,
+Bitbucket repository variables, Jenkins credentials, Drone secrets);
+the env-var contract on the binary is the same.
+
+### Verifying the install in CI
+
+Add a `no-tickets --version` step after install so a broken release
+fails the job at install time, not at first publish:
+
+```yaml
+- run: no-tickets --version    # surfaces the release version into the log
+```
+
+This also covers the case where `~/.local/bin` didn't make it onto
+PATH — `no-tickets --version` will exit "command not found" loudly
+rather than letting a downstream publish step fail with a confusing
+error.
+
 ## Coming soon
 
 - **Scoop** (Windows package manager) — separate from cargo-dist's installer

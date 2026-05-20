@@ -602,7 +602,8 @@ commitSha: null
 The PowerShell installer + direct ZIP download cover day-one Windows users. If Windows demand surfaces and a PM channel is asked for, `winget` is the strategic pick (Microsoft first-party, no bucket-repo bootstrap, manifests committed via PR to `microsoft/winget-pkgs`). Open a new task at that point.
 
 ### 35. CI integration polish
-status: not_started
+status: completed
+commitSha: 5857e37
 depends_on: [13, 29]
 
 Two-audience framing surfaced during session 2026-05-15: CI runners use `curl … | sh` regardless of platform (no PM, no state between runs); only developer workstations install via brew/cargo/PowerShell/etc. CI usage is likely the larger volume once adoption picks up — every PR / push pulls the binary, vs. one install per dev workstation. This task closes the gap on CI-side ergonomics.
@@ -631,10 +632,17 @@ instead of the 3-step recipe. Optional because the recipe is what most CI provid
 - `docs/install.md` gains a verified "Using no-tickets in CI" section with at least the GH Actions recipe.
 - (Optional) `magic-ingredients/install-no-tickets@v1` published on the GH Marketplace, with README pointing at it as the preferred GH-Actions install path.
 
-### 5. Full MCP server surface port
-status: in_progress
+**Resolution note (2026-05-20):** `docs/install.md` now has a "Using no-tickets in CI" section with three recipes: GitHub Actions (with the mandatory `$GITHUB_PATH` export), GitLab CI (with reusable YAML anchor), and a generic-shell recipe covering CircleCI / Bitbucket Pipelines / Jenkins / Drone. CI-auth note (NO_TICKETS_TOKEN env-var bypass of interactive init) included. The optional `magic-ingredients/install-no-tickets@v1` GitHub Marketplace Action is deferred — needs a separate repo, Marketplace publishing flow, and a real GH-Actions demand signal before the maintenance cost is worth it. Recipe is what most CI providers will use.
 
-Port all tools and discovery flow to the Rust MCP server. Match the TS server's tool descriptors, input schemas, response shapes.
+### 5. Full MCP server surface port
+status: completed
+commitSha: 0410215
+
+Port all tools and discovery flow to the Rust MCP server. Match the canonical tool descriptors, input schemas, response shapes.
+
+**Resolution note (2026-05-20):** Aggregator for sub-tasks 19-24, all closed. `publish_event` (19, ce52ef0), `describe_event_type` (20, c53bc52), and real-server `list_event_types` (23) shipped; `nt-core` extraction (24, 0410215) was the last sub-task. Tasks 21 (`run_interaction`) and 22 (`create_subject`) superseded mid-flight per `project_workflow_by_events` + `project_no_subjects_in_model`. commitSha pinned to 24's final commit — the chronological close of the full surface.
+
+
 
 **Scope clarification (2026-05-14):** the TS `create-server.ts` wires only `validate` (legacy `.notickets/` directory checker) and `status` into the actually-exposed MCP surface. The richer toolset (`list_event_types`, `describe_event_type`, `publish_event`, `run_interaction`, `create_subject`) lives in `src/mcp/tools/handlers.ts` but was never registered. The fix doc explicitly names list/describe/publish as in-scope, so the Rust port targets the planned-but-unwired TS surface, not the vestigial validate/status pair.
 

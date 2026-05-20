@@ -13,13 +13,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::common::{collect_error_text, extract_tool_result_payload, McpClient};
 
-/// Byte-for-byte TS-parity description from `src/mcp/tools/publish-event.ts`.
-/// Pinned here as a string literal (not a path import — the binary's
-/// production constant lives in `crates/nt-mcp/src/tools/publish_event.rs`
-/// but the binary isn't a library, so the test can't see it). Drift
-/// here is the same kind of drift the list_event_types parity test
-/// catches.
-const PUBLISH_EVENT_TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
+/// Byte-for-byte expected description for the `publish_event` MCP tool.
+/// Pinned here so a drift in the production description string fails
+/// this test loudly.
+const PUBLISH_EVENT_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
 
 /// Valid `ai.task.completed.v1` data payload — matches the
 /// `crates/nt-cli/tests/publish.rs::VALID_AI_TASK_DATA` shape and is
@@ -75,8 +72,8 @@ async fn tools_list_includes_publish_event_with_ts_parity_description() {
         .expect("publish_event tool registered");
     assert_eq!(
         entry["description"].as_str(),
-        Some(PUBLISH_EVENT_TS_PARITY_DESCRIPTION),
-        "publish_event description must byte-match TS reference",
+        Some(PUBLISH_EVENT_DESCRIPTION),
+        "publish_event description must match the pinned literal",
     );
     c.shutdown().await;
 }

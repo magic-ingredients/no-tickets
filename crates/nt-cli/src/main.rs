@@ -39,10 +39,12 @@ enum Commands {
     /// Publish one or more events to the configured no-tickets API.
     ///
     /// Two modes:
-    /// - Single-event: `--type` + `--data` (a JSON payload string).
-    /// - Batch: `--file <path>` (or `-` for stdin) — JSONL, one event
-    ///   object per line. Each line may carry its own `source`
-    ///   override; otherwise the CLI base source is applied.
+    ///
+    /// {n}- Single-event: `--type` + `--data` (a JSON payload string).
+    ///
+    /// {n}- Batch: `--file <path>` (or `-` for stdin) — JSONL, one
+    /// event object per line. Each line may carry its own `source`
+    /// override; otherwise the CLI base source is applied.
     ///
     /// `--file` is mutually exclusive with `--type` and `--data`.
     Publish {

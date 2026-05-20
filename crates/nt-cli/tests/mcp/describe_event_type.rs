@@ -11,13 +11,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::common::{collect_error_text, extract_tool_result_payload, McpClient};
 
-/// Byte-for-byte TS-parity description from
-/// `src/mcp/tools/describe-event-type.ts`. Pinned as a string literal
-/// (the binary's production constant lives in
-/// `crates/nt-mcp/src/tools/describe_event_type.rs` but the binary
-/// isn't a library, so the test can't see it). Drift here is the same
-/// kind the list_event_types / publish_event parity tests catch.
-const DESCRIBE_EVENT_TYPE_TS_PARITY_DESCRIPTION: &str = "Return schema, dedupe strategy, retention, and a synthesised example payload for a single event type. Call this before publish_event when you do not already know the schema; the example field is a starting point you can adapt.";
+/// Byte-for-byte expected description for the `describe_event_type`
+/// MCP tool. Pinned so a drift in the production description fails
+/// this test loudly.
+const DESCRIBE_EVENT_TYPE_DESCRIPTION: &str = "Return schema, dedupe strategy, retention, and a synthesised example payload for a single event type. Call this before publish_event when you do not already know the schema; the example field is a starting point you can adapt.";
 
 /// Canonical event-type detail body — the wire shape the server
 /// returns for `GET /v1/registry/event-types/{id}`. Matches the TS
@@ -59,8 +56,8 @@ async fn tools_list_includes_describe_event_type_with_ts_parity_description() {
         .expect("describe_event_type tool registered");
     assert_eq!(
         entry["description"].as_str(),
-        Some(DESCRIBE_EVENT_TYPE_TS_PARITY_DESCRIPTION),
-        "describe_event_type description must byte-match TS reference",
+        Some(DESCRIBE_EVENT_TYPE_DESCRIPTION),
+        "describe_event_type description must match the pinned literal",
     );
     c.shutdown().await;
 }

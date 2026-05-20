@@ -42,15 +42,6 @@ use serde_json::{Map, Number, Value};
 use crate::config::EnvConfig;
 use crate::error_map::transport_to_mcp;
 
-/// Exact TS-parity description from `src/mcp/tools/publish-event.ts`.
-/// Pinned here as a constant so the integration test asserts on byte-
-/// for-byte equality rather than a substring match. Referenced only
-/// from the integration test (`tests/mcp.rs`) — the `#[tool]` macro
-/// in `server.rs` requires a literal, so the constant can't be passed
-/// to it directly.
-#[allow(dead_code)] // Test-only reference; the literal lives in the #[tool] attribute.
-pub const TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
-
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PublishEventArgs {
     /// Event type id (domain.entity.action.vN).

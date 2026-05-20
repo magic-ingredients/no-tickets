@@ -1,7 +1,7 @@
 ---
 id: publish-uses-push-token
 title: "`no-tickets publish --project` must use the registered push token, never the session"
-status: not_started
+status: in_progress
 severity: high
 reported: 2026-05-20T00:00:00.000Z
 resolved: null
@@ -157,6 +157,9 @@ keep working.
 ## Tasks
 
 ### 1. Replace `resolve_auth` in publish path with push-token-only resolver
+status: completed
+commitSha: 212f66c
+
 End-to-end task: failing tests + implementation + review-driven refactors
 land here. Introduce `resolve_publish_token(env, project)` in either
 `auth.rs` or a new `publish/token.rs`; rewire `publish.rs:85` to call
@@ -190,6 +193,9 @@ contract guarantee.
 - `docs/binary-error-contract.md` — append the new exit code row
 
 ### 3. Strip TS-parity comments from auth.rs while we're touching it
+status: completed
+commitSha: 212f66c
+
 Memory `[[feedback-no-ts-references-in-rust]]` applies: the
 `Mirrors src/sdk/auth.ts::resolveAuth` line in `auth.rs:2` (and any
 others in the publish auth surface) should go when this work lands.

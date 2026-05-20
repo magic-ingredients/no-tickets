@@ -34,7 +34,7 @@ use super::envelope::{build_envelope, EventMetadata};
 /// - other 4xx → Transport { retriable: false } (terminal, caller
 ///   should not retry; the body is preserved in the message so server
 ///   validation context survives verbatim to wrappers)
-fn map_transport_error(e: TransportError) -> NtError {
+pub(crate) fn map_transport_error(e: TransportError) -> NtError {
     match e {
         TransportError::Config(msg) => NtError::Usage {
             message: format!("client configuration error: {msg}"),

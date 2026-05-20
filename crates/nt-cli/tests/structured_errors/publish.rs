@@ -119,7 +119,7 @@ async fn publish_with_401_surfaces_token_rejected_exit_8() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/events"))
-        .respond_with(ResponseTemplate::new(401))
+        .respond_with(ResponseTemplate::new(401).set_body_string(r#"{"error":"unauthorized"}"#))
         .mount(&server)
         .await;
 
@@ -149,6 +149,71 @@ async fn publish_with_401_surfaces_token_rejected_exit_8() {
     assert!(
         v["message"].as_str().is_some_and(|m| m.contains("401")),
         "token_rejected message must reference the 401, got: {v:?}",
+    );
+    // Shape pin: token_rejected has exactly {error, message} — no
+    // storedHost/currentHost (those belonged to the deleted
+    // NotAuthenticated variant) and no domain (that's
+    // permission_denied). Catches drift if a future change
+    // accidentally widens the payload.
+    assert!(
+        v.get("storedHost").is_none(),
+        "token_rejected must not carry storedHost; got: {v:?}",
+    );
+    assert!(
+        v.get("currentHost").is_none(),
+        "token_rejected must not carry currentHost; got: {v:?}",
+    );
+    assert!(
+        v.get("domain").is_none(),
+        "token_rejected must not carry domain; got: {v:?}",
+    );
+}
+
+#[tokio::test]
+async fn publish_with_401_empty_body_still_surfaces_token_rejected() {
+    // Servers may return 401 with an empty body (rare, but valid
+    // HTTP). The mapping code has an explicit `if body.is_empty()`
+    // branch producing a distinct message; this end-to-end test
+    // covers that branch which the wire-byte snapshot can't reach
+    // (the snapshot constructs an NtError directly, bypassing
+    // map_transport_error).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        // No body — wiremock defaults to Content-Length: 0.
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let out = run_nt(
+        home.path(),
+        &[
+            ("NO_TICKETS_TOKEN", "nt_push_test"),
+            ("NO_TICKETS_API_URL", &server.uri()),
+            ("NO_TICKETS_AUTH_URL", "https://unused.example/auth"),
+        ],
+        &[
+            "publish",
+            "--type",
+            TYPE,
+            "--data",
+            DATA,
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+
+    assert_eq!(out.code, 8, "empty-body 401 must still be exit 8");
+    let v = out.stderr_json();
+    assert_eq!(v["error"], "token_rejected");
+    let message = v["message"].as_str().expect("message present");
+    assert!(message.contains("401"), "got: {message}");
+    // Body-was-empty branch must NOT append a "body:" suffix.
+    assert!(
+        !message.contains(": "),
+        "empty-body branch must not have a body suffix; got: {message}",
     );
 }
 

@@ -20,6 +20,11 @@ mod post;
 
 use serde_json::Value;
 
+// Re-export so the sibling batch command can share the structured-
+// error mapping rather than emitting unstructured eprintln on
+// transport failures. See `publish_batch::publish_envelopes`.
+pub(crate) use post::map_transport_error;
+
 use crate::auth::resolve_publish_token;
 use crate::env::Env;
 use crate::error::NtError;

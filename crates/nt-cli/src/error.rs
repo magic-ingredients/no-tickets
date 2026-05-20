@@ -54,24 +54,14 @@ pub enum NtError {
     /// than 401/403 (which map to NotAuthenticated/PermissionDenied).
     #[error("transport error: {message}")]
     Transport { message: String, retriable: bool },
-    /// No token to send: pre-flight failure on a management-API
-    /// command that needs session authentication. `nt publish` no
-    /// longer constructs this variant — its "no token to send" case
-    /// is the sharper `ProjectNotRegistered` (exit 6), and a 401 from
-    /// the server is `TokenRejected` (exit 8). The variant stays as
-    /// a reserved part of the wire contract (exit 5 frozen per the
-    /// additive-only rule) for future identity / management commands
-    /// (e.g., `nt projects list`) that genuinely have a missing-
-    /// credentials pre-flight failure mode. Wire shape continues to
-    /// carry optional `stored_host` / `current_host` fields for the
-    /// stored-session host-mismatch case.
-    #[allow(dead_code)]
-    #[error("not authenticated: {message}")]
-    NotAuthenticated {
-        message: String,
-        stored_host: Option<String>,
-        current_host: Option<String>,
-    },
+    // `NotAuthenticated` was deleted as part of the
+    // publish-uses-push-token refactor — no production code path
+    // constructed it after `publish` switched off session
+    // credentials. Exit code 5 and the `not_authenticated` class
+    // string remain reserved on the wire contract (see
+    // `docs/binary-error-contract.md`); re-introduce the variant
+    // when a real producer lands (a future management-API command
+    // with a pre-flight no-token failure mode).
     /// `--project <name>` referenced a project that's not in the local
     /// config registry. `known_projects` carries the locally-registered
     /// project names so wrappers can prompt or auto-complete.
@@ -106,7 +96,7 @@ impl NtError {
             NtError::UnknownEventType { .. } => 2,
             NtError::PermissionDenied { .. } => 3,
             NtError::Transport { .. } => 4,
-            NtError::NotAuthenticated { .. } => 5,
+            // exit 5 = `not_authenticated` (reserved; no producer)
             NtError::ProjectNotRegistered { .. } => 6,
             NtError::Usage { .. } => 7,
             NtError::TokenRejected { .. } => 8,
@@ -121,7 +111,6 @@ impl NtError {
             NtError::UnknownEventType { .. } => "unknown_event_type",
             NtError::PermissionDenied { .. } => "permission_denied",
             NtError::Transport { .. } => "transport_error",
-            NtError::NotAuthenticated { .. } => "not_authenticated",
             NtError::ProjectNotRegistered { .. } => "project_not_registered",
             NtError::Usage { .. } => "usage",
             NtError::TokenRejected { .. } => "token_rejected",
@@ -169,23 +158,6 @@ impl NtError {
                 "message": message,
                 "retriable": retriable,
             }),
-            NtError::NotAuthenticated {
-                message,
-                stored_host,
-                current_host,
-            } => {
-                let mut obj = json!({
-                    "error": class,
-                    "message": message,
-                });
-                if let Some(h) = stored_host {
-                    obj["storedHost"] = json!(h);
-                }
-                if let Some(h) = current_host {
-                    obj["currentHost"] = json!(h);
-                }
-                obj
-            }
             NtError::ProjectNotRegistered {
                 project,
                 known_projects,
@@ -247,9 +219,6 @@ impl NtError {
                 } else {
                     format!("transport error: {message}")
                 }
-            }
-            NtError::NotAuthenticated { message, .. } => {
-                format!("not authenticated: {message}")
             }
             NtError::ProjectNotRegistered {
                 project,
@@ -367,15 +336,9 @@ mod tests {
         assert_eq!(err.exit_code(), 4);
     }
 
-    #[test]
-    fn exit_code_not_authenticated_is_five() {
-        let err = NtError::NotAuthenticated {
-            message: "no credentials".into(),
-            stored_host: None,
-            current_host: None,
-        };
-        assert_eq!(err.exit_code(), 5);
-    }
+    // Exit code 5 / `not_authenticated` is reserved on the wire
+    // contract but has no enum variant today. Re-introduce when a
+    // real producer lands (future management-API command).
 
     #[test]
     fn exit_code_project_not_registered_is_six() {
@@ -431,12 +394,6 @@ mod tests {
                 retriable: false,
             }
             .exit_code(),
-            NtError::NotAuthenticated {
-                message: "x".into(),
-                stored_host: None,
-                current_host: None,
-            }
-            .exit_code(),
             NtError::ProjectNotRegistered {
                 project: "x".into(),
                 known_projects: vec![],
@@ -460,7 +417,13 @@ mod tests {
             assert!(!seen.contains(&code), "duplicate exit code: {code}");
             seen.push(code);
         }
-        assert_eq!(seen.len(), 8, "all 8 documented variants must be covered");
+        assert_eq!(
+            seen.len(),
+            7,
+            "all 7 currently-constructable variants must be covered \
+             (exit code 5 / not_authenticated is reserved on the wire \
+             contract but has no variant today)"
+        );
     }
 
     // ---- class() discriminator -----------------------------------------
@@ -498,15 +461,6 @@ mod tests {
             }
             .class(),
             "transport_error"
-        );
-        assert_eq!(
-            NtError::NotAuthenticated {
-                message: "x".into(),
-                stored_host: None,
-                current_host: None,
-            }
-            .class(),
-            "not_authenticated"
         );
         assert_eq!(
             NtError::ProjectNotRegistered {
@@ -630,41 +584,8 @@ mod tests {
         assert_eq!(v["retriable"], false);
     }
 
-    #[test]
-    fn json_not_authenticated_includes_message() {
-        let err = NtError::NotAuthenticated {
-            message: "no credentials configured".into(),
-            stored_host: None,
-            current_host: None,
-        };
-        let v = err.to_json();
-        assert_eq!(v["error"], "not_authenticated");
-        assert_eq!(v["message"], "no credentials configured");
-        // stored/currentHost absent when None — wrappers iterate
-        // present-only fields.
-        assert!(
-            v.get("storedHost").is_none(),
-            "storedHost must be omitted when None, got: {v:?}"
-        );
-        assert!(
-            v.get("currentHost").is_none(),
-            "currentHost must be omitted when None, got: {v:?}"
-        );
-    }
-
-    #[test]
-    fn json_not_authenticated_includes_hosts_when_present() {
-        // The structured payload carries stored / current hosts as
-        // dedicated fields so wrappers don't have to parse `message`.
-        let err = NtError::NotAuthenticated {
-            message: "host mismatch".into(),
-            stored_host: Some("https://api-staging.no-tickets.com".into()),
-            current_host: Some("http://127.0.0.1:5173".into()),
-        };
-        let v = err.to_json();
-        assert_eq!(v["storedHost"], "https://api-staging.no-tickets.com");
-        assert_eq!(v["currentHost"], "http://127.0.0.1:5173");
-    }
+    // NotAuthenticated JSON / wire-byte tests deleted alongside the
+    // variant. Re-introduce when a real producer lands.
 
     #[test]
     fn json_project_not_registered_includes_project_and_known_projects() {
@@ -780,11 +701,6 @@ mod tests {
             NtError::Transport {
                 message: "x".into(),
                 retriable: true,
-            },
-            NtError::NotAuthenticated {
-                message: "x".into(),
-                stored_host: None,
-                current_host: None,
             },
             NtError::ProjectNotRegistered {
                 project: "x".into(),
@@ -1019,31 +935,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wire_byte_snapshot_not_authenticated_with_hosts() {
-        let err = NtError::NotAuthenticated {
-            message: "host mismatch".into(),
-            stored_host: Some("https://a.example".into()),
-            current_host: Some("https://b.example".into()),
-        };
-        assert_eq!(
-            format_for(false, &err),
-            r#"{"currentHost":"https://b.example","error":"not_authenticated","message":"host mismatch","storedHost":"https://a.example"}"#
-        );
-    }
-
-    #[test]
-    fn wire_byte_snapshot_not_authenticated_without_hosts() {
-        let err = NtError::NotAuthenticated {
-            message: "no creds".into(),
-            stored_host: None,
-            current_host: None,
-        };
-        assert_eq!(
-            format_for(false, &err),
-            r#"{"error":"not_authenticated","message":"no creds"}"#
-        );
-    }
+    // Wire-byte snapshots for NotAuthenticated deleted with the
+    // variant. The wire shape is preserved in the markdown contract
+    // (`docs/binary-error-contract.md` row for exit 5); a future
+    // producer can restore the snapshots when re-introducing the
+    // variant.
 
     #[test]
     fn wire_byte_snapshot_project_not_registered() {
@@ -1087,15 +983,28 @@ mod tests {
             message: "server rejected the bearer token (401)".into(),
         };
         let human = err.to_human();
-        // The human render must distinguish itself from
-        // "not authenticated" so an interactive user understands the
-        // distinction (they DID have a token; it was rejected).
+        // The human render must name the rejection so an interactive
+        // user understands the distinction from other auth-class
+        // failures (the token WAS sent; the server rejected it).
+        // "rejected" is the load-bearing word; matching "token"
+        // alone would be too lax — any auth-class message could
+        // trip it.
         assert!(
-            human.to_lowercase().contains("rejected") || human.to_lowercase().contains("token"),
-            "human render must name the rejection or token, got: {human}"
+            human.to_lowercase().contains("rejected"),
+            "human render must name the rejection, got: {human}"
         );
     }
 
+    /// Wire-byte snapshot caveat: `TokenRejected` has only two fields
+    /// (`error`, `message`), which happen to be alphabetical in both
+    /// source-insertion order AND serde_json's BTreeMap-backed
+    /// serialisation order. That means this snapshot can't catch a
+    /// regression that silently switches serde_json to
+    /// `preserve_order`-mode for this variant alone — it would still
+    /// produce identical bytes. What this snapshot CAN catch: a
+    /// renamed key, a stray extra field, or a missing field. The
+    /// broader insertion-vs-alpha-order property is pinned by the
+    /// ≥ 3-key variants' snapshots (validation, project_not_registered).
     #[test]
     fn wire_byte_snapshot_token_rejected() {
         let err = NtError::TokenRejected {

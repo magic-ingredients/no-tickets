@@ -51,19 +51,19 @@ If a future change is genuinely breaking (a rename, a field type change, a remov
 
 ## Migration scope
 
-As of the Task 26 landing, the contract is wired for:
+The contract is wired for:
 
-- `nt publish` (single-event mode)
-- `nt validate`
+- `nt publish` (single-event mode) — full structured contract (JSON stderr + typed exit code).
+- `nt validate` — full structured contract.
+- `nt publish --file` (JSONL batch mode) — **typed exit codes via the same `map_transport_error` mapping as single-event; stderr remains plain-text (human-readable line) until the broader batch → `Result<(), NtError>` migration lands.** Wrappers can rely on exit codes (`token_rejected` exit 8 for server-side 401, `project_not_registered` exit 6 for missing project registration, `permission_denied` exit 3 for 403, etc.) without parsing stderr.
 
-The following commands still emit free-text errors (no JSON shape) on stderr; they will be migrated in follow-up tasks:
+The following commands still emit free-text errors (no JSON shape, no typed exit codes) on stderr; they will be migrated in follow-up tasks:
 
 - `nt init`
 - `nt logout`
 - `nt status`
 - `nt token add | list | remove`
 - `nt self-update`
-- `nt publish --file` (JSONL batch mode)
 
 Wrappers that drive only the migrated commands can rely on the JSON contract today. Wrappers that drive the unmigrated commands should fall back to parsing exit codes for those paths until the migrations land.
 

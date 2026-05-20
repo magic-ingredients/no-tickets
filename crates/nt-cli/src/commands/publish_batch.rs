@@ -20,6 +20,7 @@ mod source;
 use serde_json::Value;
 
 use crate::auth::resolve_publish_token;
+use crate::commands::publish::map_transport_error;
 use crate::env::Env;
 use crate::source_detect::machine_hash_attribute;
 use crate::transport::{
@@ -167,8 +168,18 @@ async fn publish_envelopes<C: HttpClient, S: Sleeper>(
             0
         }
         Err(e) => {
-            eprintln!("{e}");
-            1
+            // Route through the same mapping the single-event path
+            // uses so batch publishes share the structured-error
+            // contract — 401 → token_rejected (8), 403 →
+            // permission_denied (3), 429/5xx → transport_error (4),
+            // etc. Plain-text human render matches the rest of this
+            // command's surface (eprintln + non-zero exit); broader
+            // migration to `Result<(), NtError>` + `emit_and_exit_code`
+            // is tracked separately, but exit codes are wrapper-
+            // parseable today regardless.
+            let nt_err = map_transport_error(e);
+            eprintln!("{}", nt_err.to_human());
+            nt_err.exit_code()
         }
     }
 }

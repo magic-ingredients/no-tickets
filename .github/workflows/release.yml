@@ -18,6 +18,14 @@
 #     calls, which need actions: read implied by write) 403s. Kept
 #     at job level rather than top level so publish-homebrew-formula
 #     and announce don't inherit the broader scope.
+#   - GH_TOKEN override on build-local-artifacts and
+#     build-global-artifacts: nt-schemas' build.rs fetches the
+#     schemas bundle from the private no-tickets-service repo, which
+#     the default GITHUB_TOKEN cannot read across repo boundaries.
+#     Replaced with secrets.SCHEMAS_REPO_TOKEN (fine-grained PAT,
+#     Contents:Read on no-tickets-service only). Override is
+#     job-level so plan/host/publish-homebrew-formula/announce keep
+#     using GITHUB_TOKEN.
 # RE-APPLY THESE EDITS after every `dist generate` — the tool overwrites
 # them blindly. SHAs to use are listed inline next to each `@vN` tag.
 #
@@ -150,7 +158,13 @@ jobs:
       "contents": "read"
       "actions": "write"
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # nt-schemas' build.rs runs `gh release download` against the private
+      # magic-ingredients/no-tickets-service repo. GITHUB_TOKEN is scoped to
+      # this workflow's repo only and 401s on cross-repo private releases;
+      # SCHEMAS_REPO_TOKEN is a fine-grained PAT with Contents:Read on
+      # no-tickets-service. Override is job-level (build jobs only) so the
+      # token never reaches host/announce/publish-homebrew-formula.
+      GH_TOKEN: ${{ secrets.SCHEMAS_REPO_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
     steps:
       - name: enable windows longpaths
@@ -216,7 +230,11 @@ jobs:
       "contents": "read"
       "actions": "write"
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # See build-local-artifacts above: nt-schemas build.rs requires a
+      # PAT with read access to magic-ingredients/no-tickets-service.
+      # Global artifacts can transitively re-compile if cache misses, so
+      # the override applies here too.
+      GH_TOKEN: ${{ secrets.SCHEMAS_REPO_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

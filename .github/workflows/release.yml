@@ -22,7 +22,7 @@
 #     build-global-artifacts: nt-schemas' build.rs fetches the
 #     schemas bundle from the private no-tickets-service repo, which
 #     the default GITHUB_TOKEN cannot read across repo boundaries.
-#     Replaced with secrets.SCHEMAS_REPO_TOKEN (fine-grained PAT,
+#     Replaced with secrets.SCHEMAS_READ_TOKEN (fine-grained PAT,
 #     Contents:Read on no-tickets-service only). plan/host/announce
 #     keep using GITHUB_TOKEN; publish-homebrew-formula has env.GH_TOKEN
 #     but no step in it actually consumes the variable (homebrew-tap
@@ -31,7 +31,7 @@
 #       (a) build.rs shells out to the `gh` CLI binary, so any future
 #           matrix.container image MUST ship gh (or the build panics).
 #       (b) pull_request triggers from forks cannot read repo secrets,
-#           so SCHEMAS_REPO_TOKEN resolves to "" and gh 401s with a less
+#           so SCHEMAS_READ_TOKEN resolves to "" and gh 401s with a less
 #           obvious symptom. Fork PRs are limited to plan-validation
 #           only via the existing path filter on the pull_request trigger.
 # RE-APPLY THESE EDITS after every `dist generate` — the tool overwrites
@@ -167,7 +167,7 @@ jobs:
       "actions": "write"
     env:
       # GH_TOKEN override — see file header note for full rationale.
-      GH_TOKEN: ${{ secrets.SCHEMAS_REPO_TOKEN }}
+      GH_TOKEN: ${{ secrets.SCHEMAS_READ_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
     steps:
       - name: enable windows longpaths
@@ -237,7 +237,7 @@ jobs:
       # doesn't itself recompile the workspace, but matched to
       # build-local-artifacts for defensive symmetry: if a future cargo-dist
       # release ever adds a Rust step here, it still has the right token.
-      GH_TOKEN: ${{ secrets.SCHEMAS_REPO_TOKEN }}
+      GH_TOKEN: ${{ secrets.SCHEMAS_READ_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

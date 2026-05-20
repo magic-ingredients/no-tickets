@@ -3,14 +3,14 @@
 //! Per `docs/binary-error-contract.md`, every command failure path maps
 //! to one of these variants. The variant determines:
 //!
-//! - the process exit code (`exit_code()`) — 1–7 today, 64+ reserved
+//! - the process exit code (`exit_code()`) — 1–8 today, 64+ reserved
 //! - the JSON shape on stderr when stderr is a pipe (`to_json()`)
 //! - the human-readable line on stderr when stderr is a TTY (`to_human()`)
 //!
 //! The wire contract is **additive-only** across binary releases:
 //! wrappers compiled against an old binary must continue to function
 //! against new ones. Practically that means new variants get new exit
-//! codes (≥ 8) and new fields get added, but existing variant names,
+//! codes (≥ 9) and new fields get added, but existing variant names,
 //! exit codes, and field names never change or disappear.
 
 use std::io::Write;
@@ -54,12 +54,18 @@ pub enum NtError {
     /// than 401/403 (which map to NotAuthenticated/PermissionDenied).
     #[error("transport error: {message}")]
     Transport { message: String, retriable: bool },
-    /// Bearer token absent, mis-shaped, or rejected (server 401). When
-    /// the failure is a stored-session host mismatch (ADR-0002), the
-    /// optional `stored_host` / `current_host` fields surface the
-    /// concrete hosts so wrappers can show a targeted reconnect prompt
-    /// without parsing `message` (the contract forbids `message`
-    /// parsing).
+    /// No token to send: pre-flight failure on a management-API
+    /// command that needs session authentication. `nt publish` no
+    /// longer constructs this variant — its "no token to send" case
+    /// is the sharper `ProjectNotRegistered` (exit 6), and a 401 from
+    /// the server is `TokenRejected` (exit 8). The variant stays as
+    /// a reserved part of the wire contract (exit 5 frozen per the
+    /// additive-only rule) for future identity / management commands
+    /// (e.g., `nt projects list`) that genuinely have a missing-
+    /// credentials pre-flight failure mode. Wire shape continues to
+    /// carry optional `stored_host` / `current_host` fields for the
+    /// stored-session host-mismatch case.
+    #[allow(dead_code)]
     #[error("not authenticated: {message}")]
     NotAuthenticated {
         message: String,
@@ -82,6 +88,14 @@ pub enum NtError {
     /// rather than the server's or the schema's.
     #[error("{message}")]
     Usage { message: String },
+    /// Server returned 401 on a request that DID carry a Bearer token.
+    /// Distinct from `NotAuthenticated` (no token to send) so wrappers
+    /// can act differently — re-auth flow for the former, re-mint-and-
+    /// retry for the latter. Introduced by the `publish-uses-push-
+    /// token` fix when the publish auth path stopped silently falling
+    /// back to session credentials.
+    #[error("token rejected: {message}")]
+    TokenRejected { message: String },
 }
 
 impl NtError {
@@ -95,6 +109,7 @@ impl NtError {
             NtError::NotAuthenticated { .. } => 5,
             NtError::ProjectNotRegistered { .. } => 6,
             NtError::Usage { .. } => 7,
+            NtError::TokenRejected { .. } => 8,
         }
     }
 
@@ -109,6 +124,7 @@ impl NtError {
             NtError::NotAuthenticated { .. } => "not_authenticated",
             NtError::ProjectNotRegistered { .. } => "project_not_registered",
             NtError::Usage { .. } => "usage",
+            NtError::TokenRejected { .. } => "token_rejected",
         }
     }
 
@@ -182,6 +198,10 @@ impl NtError {
                 "error": class,
                 "message": message,
             }),
+            NtError::TokenRejected { message } => json!({
+                "error": class,
+                "message": message,
+            }),
         }
     }
 
@@ -249,6 +269,7 @@ impl NtError {
                 }
             }
             NtError::Usage { message } => message.clone(),
+            NtError::TokenRejected { message } => format!("token rejected: {message}"),
         }
     }
 }
@@ -374,9 +395,23 @@ mod tests {
     }
 
     #[test]
+    fn exit_code_token_rejected_is_eight() {
+        // New variant introduced by the publish-uses-push-token fix:
+        // distinct from NotAuthenticated (exit 5). 5 is reserved for
+        // "the CLI had no token to send"; 8 is "the CLI sent a token
+        // and the server returned 401". Wrappers parsing exit codes
+        // can act differently — re-auth for 5, re-mint-token-and-
+        // try-again for 8.
+        let err = NtError::TokenRejected {
+            message: "server rejected the bearer token (401)".into(),
+        };
+        assert_eq!(err.exit_code(), 8);
+    }
+
+    #[test]
     fn exit_codes_are_all_distinct_and_in_documented_range() {
         // Defends against an accidental copy-paste duplicate when a new
-        // variant lands. Every documented code (1–7) must appear
+        // variant lands. Every documented code (1–8) must appear
         // exactly once; nothing falls outside [1, 63] (64+ reserved).
         let all = [
             NtError::Validation {
@@ -411,6 +446,10 @@ mod tests {
                 message: "x".into(),
             }
             .exit_code(),
+            NtError::TokenRejected {
+                message: "x".into(),
+            }
+            .exit_code(),
         ];
         let mut seen = Vec::new();
         for code in all {
@@ -421,7 +460,7 @@ mod tests {
             assert!(!seen.contains(&code), "duplicate exit code: {code}");
             seen.push(code);
         }
-        assert_eq!(seen.len(), 7, "all 7 documented variants must be covered");
+        assert_eq!(seen.len(), 8, "all 8 documented variants must be covered");
     }
 
     // ---- class() discriminator -----------------------------------------
@@ -483,6 +522,13 @@ mod tests {
             }
             .class(),
             "usage"
+        );
+        assert_eq!(
+            NtError::TokenRejected {
+                message: "x".into()
+            }
+            .class(),
+            "token_rejected"
         );
     }
 
@@ -745,6 +791,9 @@ mod tests {
                 known_projects: vec![],
             },
             NtError::Usage {
+                message: "x".into(),
+            },
+            NtError::TokenRejected {
                 message: "x".into(),
             },
         ];
@@ -1016,6 +1065,45 @@ mod tests {
         assert_eq!(
             format_for(false, &err),
             r#"{"error":"usage","message":"missing --type"}"#
+        );
+    }
+
+    #[test]
+    fn json_token_rejected_includes_message() {
+        let err = NtError::TokenRejected {
+            message: "server rejected the bearer token (401): expired".into(),
+        };
+        let v = err.to_json();
+        assert_eq!(v["error"], "token_rejected");
+        assert_eq!(
+            v["message"],
+            "server rejected the bearer token (401): expired"
+        );
+    }
+
+    #[test]
+    fn human_token_rejected_surfaces_the_message() {
+        let err = NtError::TokenRejected {
+            message: "server rejected the bearer token (401)".into(),
+        };
+        let human = err.to_human();
+        // The human render must distinguish itself from
+        // "not authenticated" so an interactive user understands the
+        // distinction (they DID have a token; it was rejected).
+        assert!(
+            human.to_lowercase().contains("rejected") || human.to_lowercase().contains("token"),
+            "human render must name the rejection or token, got: {human}"
+        );
+    }
+
+    #[test]
+    fn wire_byte_snapshot_token_rejected() {
+        let err = NtError::TokenRejected {
+            message: "server rejected the bearer token (401)".into(),
+        };
+        assert_eq!(
+            format_for(false, &err),
+            r#"{"error":"token_rejected","message":"server rejected the bearer token (401)"}"#
         );
     }
 }

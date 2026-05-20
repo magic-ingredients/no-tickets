@@ -110,7 +110,12 @@ async fn publish_with_403_surfaces_permission_denied_exit_3() {
 }
 
 #[tokio::test]
-async fn publish_with_401_surfaces_not_authenticated_exit_5() {
+async fn publish_with_401_surfaces_token_rejected_exit_8() {
+    // After the publish-uses-push-token fix, `publish` always carries
+    // a Bearer (env-var or registered push token). A 401 means the
+    // server rejected the token we sent — token_rejected (exit 8),
+    // NOT not_authenticated (exit 5, which is reserved for "no token
+    // to send" by future management commands).
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/events"))
@@ -138,9 +143,13 @@ async fn publish_with_401_surfaces_not_authenticated_exit_5() {
     )
     .await;
 
-    assert_eq!(out.code, 5, "401 must surface as not_authenticated exit 5");
+    assert_eq!(out.code, 8, "401 must surface as token_rejected exit 8");
     let v = out.stderr_json();
-    assert_eq!(v["error"], "not_authenticated");
+    assert_eq!(v["error"], "token_rejected");
+    assert!(
+        v["message"].as_str().is_some_and(|m| m.contains("401")),
+        "token_rejected message must reference the 401, got: {v:?}",
+    );
 }
 
 #[tokio::test]

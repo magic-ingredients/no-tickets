@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { eventSchema, type Event } from '../event.js';
 import { sourceSchema } from '../source.js';
-import { subjectRefSchema } from '../subject.js';
 
 const validSource = { name: 'cli', sdkVersion: '1.2.3' };
 
@@ -28,7 +27,6 @@ describe('eventSchema', () => {
       type: 'ai.completion.recorded.v1',
       data: { callId: 'c-1', tokens: 42 },
       source: { name: 'mcp', sdkVersion: '1.2.3', attributes: { client: 'claude-code' } },
-      subject: { type: 'feature', id: 'f-1' },
       occurredAt: '2026-05-07T10:30:00Z',
       parentEventId: 'e-100',
       traceId: 'session-abc',
@@ -86,38 +84,6 @@ describe('eventSchema', () => {
   it('rejects an invalid source object (empty name)', () => {
     expect(() =>
       eventSchema.parse({ ...minimalEvent, source: { name: '', sdkVersion: '1.2.3' } }),
-    ).toThrow();
-  });
-
-  it('delegates subject validation to subjectRefSchema (reference equality after .optional() unwrap)', () => {
-    // subjectRefSchema.optional() wraps the schema; unwrap to compare.
-    const subjectField = eventSchema.shape.subject;
-    expect(subjectField.unwrap()).toBe(subjectRefSchema);
-  });
-
-  it('accepts optional subject when shaped { type, id }', () => {
-    const event = { ...minimalEvent, subject: { type: 'feature', id: 'f-1' } };
-    expect(() => eventSchema.parse(event)).not.toThrow();
-  });
-
-  it('rejects subject missing required fields', () => {
-    expect(() =>
-      eventSchema.parse({ ...minimalEvent, subject: { type: 'feature' } }),
-    ).toThrow();
-    expect(() =>
-      eventSchema.parse({ ...minimalEvent, subject: { id: 'f-1' } }),
-    ).toThrow();
-  });
-
-  it('rejects empty-string subject.type', () => {
-    expect(() =>
-      eventSchema.parse({ ...minimalEvent, subject: { type: '', id: 'f-1' } }),
-    ).toThrow();
-  });
-
-  it('rejects empty-string subject.id', () => {
-    expect(() =>
-      eventSchema.parse({ ...minimalEvent, subject: { type: 'feature', id: '' } }),
     ).toThrow();
   });
 

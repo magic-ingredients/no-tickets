@@ -1,12 +1,10 @@
 import { z } from 'zod';
 import { sourceSchema } from './source.js';
-import { subjectRefSchema } from './subject.js';
 
 export const eventSchema = z.object({
   type: z.string().min(1),
   data: z.unknown(),
   source: sourceSchema,
-  subject: subjectRefSchema.optional(),
   occurredAt: z.string().min(1).optional(),
   parentEventId: z.string().min(1).optional(),
   traceId: z.string().min(1).optional(),

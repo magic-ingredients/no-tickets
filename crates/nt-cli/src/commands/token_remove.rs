@@ -16,7 +16,7 @@ pub fn run(env: &dyn Env, project: &str) -> i32 {
     };
     if cfg.projects.remove(project).is_none() {
         eprintln!(
-            "No token registered for project `{project}`. Run `nt token list` to see registered projects.",
+            "No token registered for project `{project}`. Run `no-tickets token list` to see registered projects.",
         );
         return 1;
     }

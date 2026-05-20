@@ -19,7 +19,7 @@ use crate::error::emit_and_exit_code;
 
 #[derive(Parser)]
 #[command(
-    name = "nt",
+    name = "no-tickets",
     version,
     about = "no-tickets — ticketless project management for AI teams"
 )]
@@ -39,10 +39,12 @@ enum Commands {
     /// Publish one or more events to the configured no-tickets API.
     ///
     /// Two modes:
-    /// - Single-event: `--type` + `--data` (a JSON payload string).
-    /// - Batch: `--file <path>` (or `-` for stdin) — JSONL, one event
-    ///   object per line. Each line may carry its own `source`
-    ///   override; otherwise the CLI base source is applied.
+    ///
+    /// {n}- Single-event: `--type` + `--data` (a JSON payload string).
+    ///
+    /// {n}- Batch: `--file <path>` (or `-` for stdin) — JSONL, one
+    /// event object per line. Each line may carry its own `source`
+    /// override; otherwise the CLI base source is applied.
     ///
     /// `--file` is mutually exclusive with `--type` and `--data`.
     Publish {
@@ -59,18 +61,12 @@ enum Commands {
         /// and `--data`.
         #[arg(long, value_name = "PATH")]
         file: Option<String>,
-        /// Project name; sent as `--project` for routing alongside the
-        /// Bearer token.
+        /// Local project key — looks up the push token registered via
+        /// `no-tickets token add`. The server resolves the actual project
+        /// from the token; this value is not sent on the wire.
         #[arg(long)]
         project: String,
-        /// Subject type (paired with `--subject-id`). Both flags must be
-        /// present together, or neither.
-        #[arg(long)]
-        subject_type: Option<String>,
-        /// Subject id (paired with `--subject-type`).
-        #[arg(long)]
-        subject_id: Option<String>,
-        /// Override the default `source.name` ("no-tickets").
+        /// Override the default `source.name` ("no-tickets-cli").
         #[arg(long)]
         source_name: Option<String>,
         /// Add an attribute to `source.attributes` as `KEY=VALUE`. May be
@@ -147,8 +143,6 @@ async fn main() {
             data,
             file,
             project,
-            subject_type,
-            subject_id,
             source_name,
             source_attribute,
             parent,
@@ -157,21 +151,15 @@ async fn main() {
         } => {
             let is_tty = std::io::stderr().is_terminal();
             if let Some(batch_path) = file.as_deref() {
-                // Per-event metadata flags (--subject-*, --parent,
-                // --trace, --dedupe-key) are single-event-only: each
-                // batch line carries its own envelope-level metadata.
-                // We could clap-conflict these too, but the cost of a
-                // surface that quietly ignores them is high (silent
-                // data loss); reject early with a clear message.
-                if subject_type.is_some()
-                    || subject_id.is_some()
-                    || parent.is_some()
-                    || trace.is_some()
-                    || dedupe_key.is_some()
-                {
+                // Per-event metadata flags (--parent, --trace,
+                // --dedupe-key) are single-event-only: each batch line
+                // carries its own envelope-level metadata. We could
+                // clap-conflict these too, but the cost of a surface
+                // that quietly ignores them is high (silent data loss);
+                // reject early with a clear message.
+                if parent.is_some() || trace.is_some() || dedupe_key.is_some() {
                     let err = error::NtError::Usage {
-                        message: "--file is incompatible with --subject-type/--subject-id/\
-                                  --parent/--trace/--dedupe-key. \
+                        message: "--file is incompatible with --parent/--trace/--dedupe-key. \
                                   Per-event metadata in batch mode lives in each JSONL line."
                             .to_string(),
                     };
@@ -201,8 +189,6 @@ async fn main() {
                         type_id: &r#type,
                         data: &data,
                         project: &project,
-                        subject_type: subject_type.as_deref(),
-                        subject_id: subject_id.as_deref(),
                         source_name: source_name.as_deref(),
                         source_attributes: &source_attribute,
                         parent: parent.as_deref(),

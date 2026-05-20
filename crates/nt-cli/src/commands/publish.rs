@@ -38,7 +38,7 @@ pub(super) fn parse_source_attribute(raw: &str) -> Result<(&str, &str), String> 
 /// with `publish_batch` to keep single-event and batch paths in lockstep
 /// — a drift here would silently re-attribute every event from one
 /// surface but not the other.
-pub(super) const DEFAULT_SOURCE_NAME: &str = "no-tickets";
+pub(super) const DEFAULT_SOURCE_NAME: &str = "no-tickets-cli";
 
 /// SDK version stamped into every envelope's `source.sdkVersion`. Bound
 /// to the binary's own crate version at compile time so a binary
@@ -53,8 +53,6 @@ pub struct PublishArgs<'a> {
     /// dispatch-only; doesn't short-circuit with its own exit calls).
     pub data: &'a str,
     pub project: &'a str,
-    pub subject_type: Option<&'a str>,
-    pub subject_id: Option<&'a str>,
     pub source_name: Option<&'a str>,
     /// Raw `--source-attribute KEY=VALUE` repeats. Parsed inside `run()`
     /// so usage errors flow through the same exit-1 path as the rest of

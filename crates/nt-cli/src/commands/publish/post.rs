@@ -281,7 +281,7 @@ mod tests {
         );
         // Envelope fields present
         assert!(body_str.contains(r#""type":"ai.task.completed.v1""#));
-        assert!(body_str.contains(r#""name":"no-tickets""#));
+        assert!(body_str.contains(r#""name":"no-tickets-cli""#));
         assert!(body_str.contains(r#""project":"my-project""#));
     }
 

@@ -10,9 +10,42 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      # nt-schemas' build.rs runs `gh release download` against the
+      # private no-tickets-service repo to fetch the canonical schemas
+      # bundle. GITHUB_TOKEN is scoped to this workflow's own repo and
+      # 401s on the cross-repo private release call. SCHEMAS_READ_TOKEN
+      # is a fine-grained PAT with Contents:Read on no-tickets-service.
+      # See .github/workflows/release.yml header for the longer story.
+      #
+      # Without this env var, CI passes today only because Swatinem/
+      # rust-cache caches the nt-schemas OUT_DIR. The first cache miss
+      # (dep change, lockfile bump, runner image roll) 401s. Injecting
+      # the PAT here makes the schemas fetch deterministic.
+      GH_TOKEN: ${{ secrets.SCHEMAS_READ_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
+
+      # ── Rust workspace — canonical product surface ──────────────
+      # Run first so a Rust break fails CI fast; the TS SDK is a
+      # smaller surface (markdown helpers + frontmatter parser) and
+      # is unlikely to change without the Rust side also changing.
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+      # ── TypeScript SDK — npm package surface ────────────────────
+      # The npm package ships the markdown / frontmatter SDK only
+      # (Phase 4 will add a thin spawn-based client per ADR-0003);
+      # CI keeps it linted and tested so the SDK contract holds.
 
       - run: corepack enable
 
@@ -24,21 +57,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run typecheck
-
       - run: pnpm run build
-
       - run: pnpm run lint
-
       - run: pnpm run test
-
-      # Rust toolchain for the CLI / MCP crates. Pre-commit hooks cover this
-      # locally for contributors who installed them, but CI is the only
-      # durable enforcement gate — without this step, fmt / clippy / check
-      # drift in crates/* lands silently until the next release tag fails.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: pnpm run rust:precommit

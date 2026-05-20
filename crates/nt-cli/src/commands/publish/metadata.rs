@@ -6,23 +6,13 @@
 
 use std::collections::BTreeMap;
 
-use super::envelope::{EventMetadata, Subject};
+use super::envelope::EventMetadata;
 use super::{PublishArgs, DEFAULT_SOURCE_NAME};
 
 pub(super) fn build_metadata<'a>(
     args: &'a PublishArgs<'a>,
     machine_hash: Option<&'a str>,
 ) -> Result<EventMetadata<'a>, String> {
-    let subject = match (args.subject_type, args.subject_id) {
-        (Some(t), Some(i)) => Some(Subject {
-            subject_type: t,
-            id: i,
-        }),
-        (None, None) => None,
-        (Some(_), None) => return Err("--subject-type requires --subject-id".to_string()),
-        (None, Some(_)) => return Err("--subject-id requires --subject-type".to_string()),
-    };
-
     let mut attributes: BTreeMap<&'a str, &'a str> = BTreeMap::new();
     attributes.insert("project", args.project);
     // Insert the auto-computed machine hash BEFORE the flag-derived
@@ -38,7 +28,6 @@ pub(super) fn build_metadata<'a>(
     }
 
     Ok(EventMetadata {
-        subject,
         source_name: args.source_name.unwrap_or(DEFAULT_SOURCE_NAME),
         attributes,
         parent: args.parent,
@@ -70,32 +59,12 @@ mod tests {
             type_id: "ai.task.completed.v1",
             data: "{}",
             project,
-            subject_type: None,
-            subject_id: None,
             source_name: None,
             source_attributes: attrs,
             parent: None,
             trace: None,
             dedupe_key: None,
         }
-    }
-
-    #[test]
-    fn build_metadata_subject_type_without_id_is_usage_error() {
-        let attrs: [String; 0] = [];
-        let mut args = args_with_attrs("demo", &attrs);
-        args.subject_type = Some("task");
-        let err = build_metadata(&args, None).expect_err("expected usage error");
-        assert!(err.contains("--subject-id"), "got {err:?}");
-    }
-
-    #[test]
-    fn build_metadata_subject_id_without_type_is_usage_error() {
-        let attrs: [String; 0] = [];
-        let mut args = args_with_attrs("demo", &attrs);
-        args.subject_id = Some("task-42");
-        let err = build_metadata(&args, None).expect_err("expected usage error");
-        assert!(err.contains("--subject-type"), "got {err:?}");
     }
 
     #[test]

@@ -13,13 +13,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::common::{collect_error_text, extract_tool_result_payload, McpClient};
 
-/// Byte-for-byte TS-parity description from `src/mcp/tools/publish-event.ts`.
-/// Pinned here as a string literal (not a path import — the binary's
-/// production constant lives in `crates/nt-mcp/src/tools/publish_event.rs`
-/// but the binary isn't a library, so the test can't see it). Drift
-/// here is the same kind of drift the list_event_types parity test
-/// catches.
-const PUBLISH_EVENT_TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
+/// Byte-for-byte expected description for the `publish_event` MCP tool.
+/// Pinned here so a drift in the production description string fails
+/// this test loudly.
+const PUBLISH_EVENT_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
 
 /// Valid `ai.task.completed.v1` data payload — matches the
 /// `crates/nt-cli/tests/publish.rs::VALID_AI_TASK_DATA` shape and is
@@ -75,8 +72,8 @@ async fn tools_list_includes_publish_event_with_ts_parity_description() {
         .expect("publish_event tool registered");
     assert_eq!(
         entry["description"].as_str(),
-        Some(PUBLISH_EVENT_TS_PARITY_DESCRIPTION),
-        "publish_event description must byte-match TS reference",
+        Some(PUBLISH_EVENT_DESCRIPTION),
+        "publish_event description must match the pinned literal",
     );
     c.shutdown().await;
 }
@@ -117,16 +114,9 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
     }
 
     // Optional fields surfaced via JSON Schema properties even though
-    // they're not in `required`. Mirrors the TS reference's input
-    // schema. A missing entry means the schema-derive macro lost a
-    // field — caught here.
-    for optional in [
-        "subject",
-        "occurred_at",
-        "parent_event_id",
-        "trace_id",
-        "dedupe_key",
-    ] {
+    // they're not in `required`. A missing entry means the
+    // schema-derive macro lost a field — caught here.
+    for optional in ["occurred_at", "parent_event_id", "trace_id", "dedupe_key"] {
         assert!(
             props[optional].is_object(),
             "schema must declare optional property `{optional}`; got props={props}",
@@ -149,6 +139,15 @@ async fn publish_event_input_schema_declares_required_and_optional_fields() {
     assert!(
         props.get("project").is_none(),
         "schema must NOT declare a `project` property — tenancy is token-derived; got props={props}",
+    );
+
+    // `subject` was removed in v0.1.1: subjects are not modelled
+    // server-side, so the tool arg was misleading users into thinking
+    // their input would be tracked. The wire envelope retains a
+    // `subject` slot as forward-compat but neither client populates it.
+    assert!(
+        props.get("subject").is_none(),
+        "schema must NOT declare a `subject` property — subjects not yet modelled; got props={props}",
     );
 
     c.shutdown().await;
@@ -425,12 +424,12 @@ async fn publish_event_5xx_response_surfaces_transport_error() {
 // ─── Wire shape: source identity + project attribute ─────────────────────
 
 #[tokio::test]
-async fn publish_event_wire_body_has_source_name_nt_mcp() {
-    // Source identity is server-side per the TS reference. Agents
-    // cannot override `source` via tool args (schema test above pins
-    // the absence of a `source` property), AND the server fills
-    // source.name with the fixed identity `"nt-mcp"`. A regression
-    // that copied the CLI's default (`"no-tickets"`) would land here.
+async fn publish_event_wire_body_has_source_name_no_tickets_mcp() {
+    // Source identity is server-side. Agents cannot override `source`
+    // via tool args (schema test above pins the absence of a `source`
+    // property), AND the binary fills source.name with the fixed
+    // identity `"no-tickets-mcp"`. A regression that copied the
+    // CLI's default (`"no-tickets-cli"`) would land here.
     let server = MockServer::start().await;
     let captured = capture_publish_body(&server).await;
     let uri = server.uri();
@@ -456,7 +455,7 @@ async fn publish_event_wire_body_has_source_name_nt_mcp() {
     let parsed: Value = serde_json::from_str(&body).expect("body is JSON");
     let envelope = &parsed[0];
     assert_eq!(
-        envelope["source"]["name"], "nt-mcp",
+        envelope["source"]["name"], "no-tickets-mcp",
         "MCP-side source.name must be `nt-mcp`; got body={body}",
     );
     c.shutdown().await;
@@ -502,7 +501,7 @@ async fn publish_event_wire_body_omits_source_attributes_block_when_absent() {
     );
     // Source still carries name + sdkVersion — only the attributes
     // block is gone.
-    assert_eq!(src["name"], "nt-mcp", "source.name preserved");
+    assert_eq!(src["name"], "no-tickets-mcp", "source.name preserved");
     assert!(
         src["sdkVersion"].is_string(),
         "source.sdkVersion preserved; got src={src}",
@@ -620,7 +619,7 @@ async fn publish_event_wire_body_omits_attributes_when_supplied_empty() {
     // when attributes was empty would also pass the absence check
     // above — sibling assertions stop that.
     assert_eq!(
-        src["name"], "nt-mcp",
+        src["name"], "no-tickets-mcp",
         "source.name must survive empty-attributes; got src={src}",
     );
     assert!(
@@ -1179,7 +1178,7 @@ async fn publish_event_extra_source_arg_does_not_spoof_identity() {
     let envelope: Value = serde_json::from_str(&body).expect("body JSON");
     let src = &envelope[0]["source"];
     assert_eq!(
-        src["name"], "nt-mcp",
+        src["name"], "no-tickets-mcp",
         "source.name must NOT be spoofable; got body={body}"
     );
     assert_eq!(

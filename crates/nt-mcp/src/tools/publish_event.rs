@@ -1,15 +1,16 @@
 //! Body of the `publish_event` MCP tool.
 //!
-//! Mirrors `src/mcp/tools/handlers.ts::handlePublishEvent`. Validates
-//! the payload locally against the bundled JSON Schema (via
+//! Validates the payload locally against the bundled JSON Schema (via
 //! `nt_schemas::validate`) before any network call, then POSTs the
 //! envelope to `/v1/events` with Bearer auth.
 //!
-//! Source identity (`source.name`) is fixed at `"nt-mcp"` and cannot
-//! be overridden by the agent. Project tenancy is server-resolved
-//! from the push token (`pushToken.projectId` in
-//! `notickets-service/src/server/routes/events.ts`); there is no
-//! `project` arg.
+//! Source identity (`source.name`) is fixed at `"no-tickets-mcp"` and
+//! cannot be overridden by the agent. Project tenancy is server-
+//! resolved from the push token; there is no `project` arg.
+//!
+//! Subjects are intentionally absent: the wire envelope retains a
+//! `subject` slot for forward-compat, but neither this tool nor the
+//! CLI populates it today. Re-introduce when subjects ship server-side.
 //!
 //! `source.attributes` is exposed as the **client passthrough slot**:
 //! flat `Record<string, string | number | boolean>` of user-supplied
@@ -41,15 +42,6 @@ use serde_json::{Map, Number, Value};
 use crate::config::EnvConfig;
 use crate::error_map::transport_to_mcp;
 
-/// Exact TS-parity description from `src/mcp/tools/publish-event.ts`.
-/// Pinned here as a constant so the integration test asserts on byte-
-/// for-byte equality rather than a substring match. Referenced only
-/// from the integration test (`tests/mcp.rs`) — the `#[tool]` macro
-/// in `server.rs` requires a literal, so the constant can't be passed
-/// to it directly.
-#[allow(dead_code)] // Test-only reference; the literal lives in the #[tool] attribute.
-pub const TS_PARITY_DESCRIPTION: &str = "Publish a single event. Call describe_event_type first to confirm the schema; the server will reject mismatches. Source metadata is filled server-side and cannot be overridden.";
-
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PublishEventArgs {
     /// Event type id (domain.entity.action.vN).
@@ -65,9 +57,6 @@ pub struct PublishEventArgs {
     /// across serialisations.
     #[serde(default)]
     pub attributes: Option<BTreeMap<String, AttributeValue>>,
-    /// Optional subject reference.
-    #[serde(default)]
-    pub subject: Option<SubjectRef>,
     /// Optional ISO-8601 timestamp; defaults to now server-side.
     #[serde(default, rename = "occurred_at")]
     pub occurred_at: Option<String>,
@@ -103,13 +92,6 @@ pub enum AttributeValue {
     Str(String),
     Num(#[schemars(with = "f64")] Number),
     Bool(bool),
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SubjectRef {
-    #[serde(rename = "type")]
-    pub subject_type: String,
-    pub id: String,
 }
 
 /// Handle a `tools/call publish_event` invocation. Resolves auth from
@@ -153,7 +135,7 @@ pub async fn handle(
     }
 
     // 2. Build the envelope. Source identity is fixed: `source.name =
-    //    "nt-mcp"`. The agent cannot override `source` — the input
+    //    "no-tickets-mcp"`. The agent cannot override `source` — the input
     //    schema doesn't expose it (pinned by the discovery test).
     //    Client-supplied `attributes` (the deliberate passthrough
     //    slot) lands on `source.attributes` via `build_source`.
@@ -215,12 +197,6 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
     let mut envelope = Map::new();
     envelope.insert("type".to_string(), Value::String(args.type_id.clone()));
     envelope.insert("data".to_string(), args.data.clone());
-    if let Some(s) = &args.subject {
-        envelope.insert(
-            "subject".to_string(),
-            serde_json::json!({ "type": s.subject_type, "id": s.id }),
-        );
-    }
     envelope.insert("source".to_string(), build_source(args));
     if let Some(p) = &args.parent_event_id {
         envelope.insert("parentEventId".to_string(), Value::String(p.clone()));
@@ -238,7 +214,7 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
 }
 
 /// Build the source identity attached to every MCP-published event.
-/// `name = "nt-mcp"` is fixed — the agent cannot spoof its source via
+/// `name = "no-tickets-mcp"` is fixed — the agent cannot spoof its source via
 /// tool args. `attributes` is the client passthrough slot (flat
 /// scalar map): when supplied non-empty, it lands on
 /// `source.attributes` verbatim. When omitted OR empty, the
@@ -246,7 +222,10 @@ fn build_envelope(args: &PublishEventArgs) -> Value {
 /// doesn't bloat every envelope.
 fn build_source(args: &PublishEventArgs) -> Value {
     let mut src = Map::new();
-    src.insert("name".to_string(), Value::String("nt-mcp".to_string()));
+    src.insert(
+        "name".to_string(),
+        Value::String("no-tickets-mcp".to_string()),
+    );
     src.insert(
         "sdkVersion".to_string(),
         Value::String(env!("CARGO_PKG_VERSION").to_string()),

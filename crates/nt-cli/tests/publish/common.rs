@@ -77,7 +77,7 @@ pub(crate) async fn run_nt_publish_with_env(
     extra_env: &[(&str, &str)],
     args: &[&str],
 ) -> Output {
-    let mut cmd = Command::new(cargo_bin("nt"));
+    let mut cmd = Command::new(cargo_bin("no-tickets"));
     cmd.env("NO_TICKETS_HOME", home)
         // ADR-0002 layer 2/3 mutual exclusion: NO_TICKETS_ENV set in the
         // host shell collides with the explicit pair we set below and

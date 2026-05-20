@@ -26,7 +26,7 @@ pub async fn run() -> anyhow::Result<()> {
         .with_ansi(false)
         .try_init();
 
-    tracing::info!("nt-mcp starting (stdio transport)");
+    tracing::info!("no-tickets-mcp starting (stdio transport)");
 
     let service = NtServer::new().serve(stdio()).await.inspect_err(|e| {
         tracing::error!("rmcp serve error: {e:?}");

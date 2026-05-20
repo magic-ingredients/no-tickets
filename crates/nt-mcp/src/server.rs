@@ -99,11 +99,10 @@ impl Default for NtServer {
 
 #[tool_router]
 impl NtServer {
-    // Description literal MUST stay byte-for-byte in sync with
-    // `tools::list_event_types::TS_PARITY_DESCRIPTION` — the rmcp
-    // `#[tool]` attribute requires a string literal, so the constant
-    // can't be referenced here directly. The integration test asserts
-    // byte-equality against the constant, so any drift fails CI.
+    // Description literal — the rmcp `#[tool]` attribute requires a
+    // string literal, so this can't be a constant. The integration
+    // test pins the exact wording against a local fixture; any drift
+    // fails CI.
     #[tool(
         description = "List event types this caller can publish, optionally filtered by domain. Type ids follow domain.entity.action.vN grammar. Reads from the local cache; refresh fires async."
     )]
@@ -115,9 +114,8 @@ impl NtServer {
         list_event_types::handle(&args, &config, &self.http_client, &self.registry).await
     }
 
-    // Description MUST stay byte-for-byte in sync with
-    // `tools::publish_event::TS_PARITY_DESCRIPTION`. Same constraint
-    // as above — rmcp's `#[tool]` requires a string literal.
+    // Description literal — pinned by the integration test. Same
+    // string-literal constraint as `list_event_types` above.
     //
     // Env config is resolved lazily on each call: `EnvConfig::from_
     // env()` reads NO_TICKETS_TOKEN + NO_TICKETS_API_URL. A missing
@@ -135,10 +133,7 @@ impl NtServer {
         publish_event::handle(&args, &config, &self.http_client).await
     }
 
-    // Description MUST stay byte-for-byte in sync with
-    // `tools::describe_event_type::TS_PARITY_DESCRIPTION`. rmcp's
-    // `#[tool]` macro requires a string literal so the constant can't
-    // be referenced directly here.
+    // Description literal — pinned by the integration test.
     //
     // Env resolution is lazy, matching `publish_event` — a missing
     // NO_TICKETS_TOKEN / NO_TICKETS_API_URL surfaces per-call rather

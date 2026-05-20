@@ -30,11 +30,28 @@ already-provisioned `get.no-tickets.com` custom domain.
 
 ## How it works
 
-`src/index.js` returns the body of
-`github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-installer.sh`
-with `Content-Type: text/x-shellscript` and a 5-minute edge cache. On
-upstream failure (rare — only when GitHub Releases is down) it returns
-a shell script that prints a helpful error and exits 1.
+`src/index.js` proxies the install scripts from GitHub Releases with
+content-negotiation:
+
+| Request | Response |
+|---|---|
+| `GET /` (any client) | POSIX shell installer (text/x-shellscript) |
+| `GET /` with `Accept: text/html` | HTML landing page (browser visitors) |
+| `GET /installer.sh` | POSIX shell installer (explicit) |
+| `GET /install.sh` | POSIX shell installer (rustup/deno/bun alias) |
+| `GET /installer.ps1` | PowerShell installer |
+
+Upstream is
+`github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-installer.{sh,ps1}`,
+served with a 5-minute edge cache. On upstream failure (rare — only
+when GitHub Releases is down) it returns a fallback shell script that
+prints a helpful error and exits 1.
+
+Explicit shell-installer paths (`/installer.sh`, `/install.sh`,
+`/installer.ps1`) ALWAYS serve the script regardless of Accept
+header — `curl -H 'Accept: text/html, …' | sh` wouldn't be expected
+to suddenly fail, and pipelines like `curl … | sh` rarely set Accept
+anyway. Only the bare `/` path branches on `Accept: text/html`.
 
 ## Tuning
 
@@ -50,8 +67,10 @@ a shell script that prints a helpful error and exits 1.
 After deploy:
 
 ```bash
-curl -fsSL https://get.no-tickets.com | head -5   # shell-script preview
-curl --proto '=https' --tlsv1.2 -LsSf https://get.no-tickets.com | sh   # real install
+curl -fsSL https://get.no-tickets.com | head -5                      # shell-script preview
+curl -fsSL https://get.no-tickets.com/install.sh | head -5            # alias still returns the shell installer
+curl -fsSL -H 'Accept: text/html' https://get.no-tickets.com         # HTML landing
+curl --proto '=https' --tlsv1.2 -LsSf https://get.no-tickets.com | sh # real install
 ```
 
 Local development (Worker runs on `localhost:8787`):

@@ -13,18 +13,19 @@ use serde_json::Value;
 use super::SDK_VERSION;
 
 /// Serialised event envelope. Field declaration order is preserved by
-/// serde derive — `type, data, subject?, source, parentEventId?,
-/// traceId?, dedupeKey?` — matching the TS `eventSchema` emission order.
-/// Every optional field is omitted (not null, not empty string) when
-/// unset, via `skip_serializing_if`. The wire-body field-order tests
-/// pin this.
+/// serde derive — `type, data, source, parentEventId?, traceId?,
+/// dedupeKey?` — matching the canonical emission order. Every optional
+/// field is omitted (not null, not empty string) when unset, via
+/// `skip_serializing_if`. The wire-body field-order tests pin this.
+///
+/// The wire envelope's `subject` slot is retained server-side as a
+/// forward-compat slot but neither the CLI nor MCP populate it today;
+/// the field is not modelled here until subjects re-enter scope.
 #[derive(Serialize)]
 pub(super) struct EventEnvelope<'a> {
     #[serde(rename = "type")]
     pub(super) type_id: &'a str,
     pub(super) data: &'a Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) subject: Option<Subject<'a>>,
     pub(super) source: Source<'a>,
     #[serde(rename = "parentEventId", skip_serializing_if = "Option::is_none")]
     pub(super) parent_event_id: Option<&'a str>,
@@ -32,13 +33,6 @@ pub(super) struct EventEnvelope<'a> {
     pub(super) trace_id: Option<&'a str>,
     #[serde(rename = "dedupeKey", skip_serializing_if = "Option::is_none")]
     pub(super) dedupe_key: Option<&'a str>,
-}
-
-#[derive(Serialize, Debug)]
-pub(super) struct Subject<'a> {
-    #[serde(rename = "type")]
-    pub(super) subject_type: &'a str,
-    pub(super) id: &'a str,
 }
 
 #[derive(Serialize)]
@@ -56,14 +50,13 @@ pub(super) struct Source<'a> {
 }
 
 /// Already-validated metadata for a single event. Construct via
-/// `build_metadata`, which enforces the subject pair invariant and
-/// pre-merges `--source-attribute` flags into `attributes` (project
-/// entry + per-flag overrides, last-wins on duplicate keys).
+/// `build_metadata`, which pre-merges `--source-attribute` flags into
+/// `attributes` (project entry + per-flag overrides, last-wins on
+/// duplicate keys).
 ///
 /// `Debug` is required by `Result::expect_err` in the metadata tests.
 #[derive(Debug)]
 pub(super) struct EventMetadata<'a> {
-    pub(super) subject: Option<Subject<'a>>,
     pub(super) source_name: &'a str,
     pub(super) attributes: BTreeMap<&'a str, &'a str>,
     pub(super) parent: Option<&'a str>,
@@ -91,7 +84,6 @@ pub(super) fn build_envelope<'a>(
     EventEnvelope {
         type_id,
         data,
-        subject: meta.subject,
         source: Source {
             name: meta.source_name,
             sdk_version: SDK_VERSION,
@@ -104,16 +96,15 @@ pub(super) fn build_envelope<'a>(
 }
 
 /// Test-only helper: minimal metadata block for envelope-shape and
-/// publish-orchestration tests. No subject, no flag overrides, default
-/// source.name, `project` as the only source attribute. Mirrors what
-/// `build_metadata` would produce for a `PublishArgs` with only the
-/// three required flags set.
+/// publish-orchestration tests. No flag overrides, default source.name,
+/// `project` as the only source attribute. Mirrors what `build_metadata`
+/// would produce for a `PublishArgs` with only the three required
+/// flags set.
 #[cfg(test)]
 pub(super) fn bare_meta(project: &str) -> EventMetadata<'_> {
     let mut attributes = BTreeMap::new();
     attributes.insert("project", project);
     EventMetadata {
-        subject: None,
         // Read from the const rather than re-hardcoding the literal —
         // DEFAULT_SOURCE_NAME's docstring warns about exactly this kind
         // of duplication causing single-vs-batch path drift.
@@ -181,11 +172,11 @@ mod tests {
     }
 
     #[test]
-    fn build_envelope_source_name_is_no_tickets() {
+    fn build_envelope_source_name_is_no_tickets_cli() {
         let body = serialise_with_neutral_data("demo");
         assert!(
-            body.contains(r#""name":"no-tickets""#),
-            "source.name must be \"no-tickets\"; got {body}",
+            body.contains(r#""name":"no-tickets-cli""#),
+            "source.name must be \"no-tickets-cli\"; got {body}",
         );
     }
 

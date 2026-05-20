@@ -392,16 +392,31 @@ Sister Tasks 6+7 shipped — the no-tickets-service repo now publishes versioned
 status: completed
 commitSha: fc8175b
 
-Port all commands to Rust per the ADR-0002 surface (the task description here predates ADR-0002 — the canonical surface is `init`, `logout`, `publish`, `validate`, `status`, `token add/list/remove`; `project link/list/unlink`, `connect`, `disconnect` are deleted/folded). Use `clap` with the derive API for subcommand parsing. Match flag parsing, error messages, exit codes, JSON output schemas.
+Port all commands to Rust per the ADR-0002 surface. Use `clap` with the
+derive API for subcommand parsing. Match flag parsing, error messages,
+exit codes, JSON output schemas.
+
+The original scope listed `project link/list/unlink` and
+`connect`/`disconnect` — those were superseded by the simpler
+`token add/list/remove` + browser-based `init` flow before v0.1.0 and
+never shipped. The shipped surface (final, v0.1.1) is: `init`, `logout`,
+`status`, `publish`, `validate`, `self-update`, `token add/list/remove`.
+The MCP server (`no-tickets-mcp`) is the second binary; its tools are
+`list_event_types`, `publish_event`, `describe_event_type`.
+
+Also retroactively scoped out: `--subject-type` / `--subject-id` flags
+on `publish` (and the MCP `subject` arg). These were implemented and
+shipped in v0.1.0, then removed in v0.1.1 because subjects aren't
+modelled server-side; the help-audit follow-up commit cleaned them up.
 
 **Slice progress (multi-cycle; this task aggregates several TDD cycles):**
-- `init`, `logout`, `status`, `token add/list/remove` — landed via the side-fix `implement-adr-0002-cli-surface` (the ADR reshape was the natural port point for those commands)
+- `init`, `logout`, `status`, `token add/list/remove` — landed via the side-fix `implement-adr-0002-cli-surface`
 - `publish` (single-event, spike-scope) — landed via Task 14
 - `validate` — landed at fc8175b (this fix, TDD cycle 1 of Task 4)
-- _Pending:_ `publish` optional metadata (`--subject-type/--subject-id`, `--source-name`, `--source-attributes`, `--parent`, `--trace`, `--dedupe-key`)
-- _Pending:_ `publish` batch mode (`--file` / stdin)
-- _Pending:_ `publish` retry/backoff on transient errors
-- _Pending:_ `publish` source auto-detection / merging
+- `publish` optional metadata (`--source-name`, `--source-attributes`, `--parent`, `--trace`, `--dedupe-key`) — landed via Task 15
+- `publish` batch mode (`--file` / stdin) — landed via Task 16
+- `publish` retry/backoff on transient errors — landed via Task 17
+- `publish` source auto-detection / merging — landed via Task 18
 
 **Files to modify/create:**
 - `crates/nt-cli/src/commands/`
@@ -429,26 +444,18 @@ Use `thiserror` for the error enum and a single match arm to map variant → exi
 - Contract doc lives at a stable URL referenced by per-language wrappers
 
 ### 27. `--stream` mode for warm in-process publishing
-status: not_started
+status: superseded
+commitSha: null
 
-Implement the streaming protocol documented in "Public binary contract": JSONL on stdin → JSONL on stdout, id-correlated, multi-project per session, graceful EOF.
-
-This is what per-language wrappers use to keep the binary alive across many publish calls (~1 ms per event after first spawn vs ~50 ms cold). Same pattern as `git cat-file --batch`, `clangd`, `aspell -a`.
-
-**Files to modify/create:**
-- `crates/nt-cli/src/commands/publish_stream.rs`
-- `crates/nt-cli/tests/stream-mode.rs` — assertions on:
-  - Request/response id correlation
-  - Multi-project per stream (per-line `project` overrides flag default)
-  - EOF drains in-flight + exits 0
-  - Stdin-closed-mid-flight produces `ok: false, transport_aborted` for in-progress
-  - Backpressure (large request, slow consumer): no deadlock
-- `docs/binary-stream-protocol.md` — public protocol doc
-
-**Acceptance:**
-- Ten thousand events streamed through one subprocess in <2 s end-to-end (bounded by network + server, not binary overhead)
-- Per-event overhead measured at <2 ms median on the wrapper side
-- Crash recovery: if the binary panics mid-stream, in-flight responses surface as `ok: false, transport_aborted`; wrapper can re-spawn cleanly
+**Superseded (2026-05-20):** extracted into a standalone fix —
+`docs/fixes/stream-mode.md`. The work is substantive feature scope
+(JSONL protocol on stdin/stdout, multi-project session cache, EOF +
+crash semantics, a public protocol-versioning doc) and has its own
+downstream dependencies (Phase 4 per-language wrappers depend on it).
+Tracking it under cross-platform-cli-binary muddies that fix's
+already-long task list; the extracted doc owns the scope, history,
+and review surface independently. No code shipped here; see the new
+fix for current status.
 
 ### 28. Consolidate nt-cli and nt-mcp into a single shippable cargo package
 status: completed
@@ -486,7 +493,8 @@ Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires b
 - `cargo run -p nt-cli --bin nt` and `cargo run -p nt-cli --bin nt-mcp` both work (dev workflow preserved)
 
 ### 29. Smoke-test release pipeline with a prerelease tag
-status: not_started
+status: completed
+commitSha: b27d2ed
 depends_on: [6, 10, 28]
 
 End-to-end validation of the assembled distribution pipeline before committing to `v0.1.0`. Push `v0.0.1-prerelease.1` (cargo-dist gates `publish-homebrew-formula` on `!is_prerelease`, so the tap stays untouched on smoke tests — exactly what we want).
@@ -502,6 +510,19 @@ End-to-end validation of the assembled distribution pipeline before committing t
 - GitHub Release for the prerelease tag contains 5 tarballs + shell + powershell installer + sha256 checksums
 - `curl -fsSL https://get.no-tickets.com | sh` installs working `nt` and `nt-mcp` to `~/.local/bin/`
 - `publish-homebrew-formula` job shows "skipped" status (not failed) — proves cargo-dist's prerelease gating works as expected
+
+**Resolution note (2026-05-20):** Smoke-test went straight to `v0.1.0` rather than the spec'd prerelease tag — judgment call after two failed iterations on permissions / token name (the prerelease ceremony was deemed overcautious once the residual risk was just build matrix + homebrew publish). Acceptance criteria 1 and 2 are met (5-target archives + sha256 sidecars + both installers present at v0.1.0; `curl get.no-tickets.com | sh` returns 200 text/x-shellscript). Criterion 3 (publish-homebrew-formula skipping on prerelease) was not exercised — `publish-homebrew-formula` ran and succeeded against v0.1.0, which proves the job works end-to-end but not the prerelease-skip gating. Subsequent prerelease cuts would validate that gating cheaply if needed.
+
+Failures encountered + their fixes (all on the path to green v0.1.0):
+- `actions/upload-artifact` 403 on FinalizeArtifact — top-level `permissions: { contents: write }` zeroed `actions:` scope. Fixed by job-level `actions: write` on plan / build-local-artifacts / build-global-artifacts / host (commits 9567792, 2151e4b).
+- Tag-vs-Cargo-version mismatch — `v0.1.0-prerelease.1` didn't match the `0.1.0` crate versions, so `dist host` errored "This workspace doesn't have anything for dist to Release!" Switched to `v0.1.0` direct.
+- nt-schemas build.rs 401 — `gh release download` against the private `magic-ingredients/no-tickets-service` repo failed under the workflow's repo-scoped `GITHUB_TOKEN`. Fixed by injecting a fine-grained PAT (Contents:Read on no-tickets-service) as `GH_TOKEN` at job-level on build-local-artifacts + build-global-artifacts (commits 96a26a7, f42826e, b27d2ed). Stored as repo secret `SCHEMAS_READ_TOKEN`.
+- `get.no-tickets.com` continued to 502 after v0.1.0 went green — the repo itself was still private, so the release-asset URLs 404'd unauthenticated. Resolved by flipping `magic-ingredients/no-tickets` to public (intended state per Task 31).
+
+Verified post-resolution:
+- `curl -sI https://get.no-tickets.com` → `HTTP/2 200 text/x-shellscript`
+- `gh release view v0.1.0 --json assets` lists all 17 expected artifacts
+- `publish-homebrew-formula` job green; `magic-ingredients/homebrew-tap` carries `Formula/no-tickets.rb`
 
 ### 30. Rename source.name wire identifier `"nt-cli"` → `"no-tickets"`
 status: completed
@@ -555,14 +576,14 @@ Root cause of the recurring fmt drift that's been showing up as "incidental rust
 - No drift-by-accumulation across crates in subsequent commits
 
 ### 33. Decide TS-SDK Phase 4 survival
-status: not_started
+status: completed
+commitSha: 69f14c3
 
-Parked architectural question. Phase 4 (per-language wrappers) currently lists TS alongside Python and Go: a ~50–80 LOC wrapper that spawns `nt` (potentially in `--stream` mode for warm reuse). Open question: does the npm package come back, or is the Rust binary the only client surface forever and TS users go through `execFile('nt', ...)` themselves?
+Parked architectural question. Phase 4 (per-language wrappers) lists TS alongside Python and Go: a ~50–80 LOC wrapper that spawns `no-tickets-mcp` (potentially in `--stream` mode for warm reuse). Open question: does the npm package come back, or is the Rust binary the only client surface forever and TS users go through `execFile('no-tickets', ...)` themselves?
 
-Decision blocks nothing in Phase 3 but sets the Phase 4 scope and tells Task 13 (docs) whether to mention `npm install @magic-ingredients/no-tickets` at all.
+Decision blocks nothing in Phase 3 but sets the Phase 4 scope and tells the docs story whether to mention `npm install @magic-ingredients/no-tickets` at all.
 
-**Acceptance:**
-- A short ADR or a paragraph in `docs/rust-spike-notes.md` captures the decision and its rationale, so future Phase 4 work doesn't have to re-litigate it.
+**Resolution (2026-05-20):** `docs/adr/0003-typescript-sdk-phase-4-survival.md` captures the decision: **the TS wrapper comes back, shipped as the same `@magic-ingredients/no-tickets` npm package** (split exports — `/sdk` for the markdown helpers, `/client` for the new spawn-based client). Rationale: discoverability for TS-shop teams, type-safety against the schemas-from-Zod codegen, symmetry with the Python and Go wrappers that ship in Phase 4 regardless. Wrapper is a ~50-80 LOC spawn shim, not a parallel TS CLI implementation.
 
 ### 34. Scoop manifest support (Windows)
 status: superseded
@@ -573,7 +594,8 @@ commitSha: null
 The PowerShell installer + direct ZIP download cover day-one Windows users. If Windows demand surfaces and a PM channel is asked for, `winget` is the strategic pick (Microsoft first-party, no bucket-repo bootstrap, manifests committed via PR to `microsoft/winget-pkgs`). Open a new task at that point.
 
 ### 35. CI integration polish
-status: not_started
+status: completed
+commitSha: 3ac57f1
 depends_on: [13, 29]
 
 Two-audience framing surfaced during session 2026-05-15: CI runners use `curl … | sh` regardless of platform (no PM, no state between runs); only developer workstations install via brew/cargo/PowerShell/etc. CI usage is likely the larger volume once adoption picks up — every PR / push pulls the binary, vs. one install per dev workstation. This task closes the gap on CI-side ergonomics.
@@ -602,10 +624,17 @@ instead of the 3-step recipe. Optional because the recipe is what most CI provid
 - `docs/install.md` gains a verified "Using no-tickets in CI" section with at least the GH Actions recipe.
 - (Optional) `magic-ingredients/install-no-tickets@v1` published on the GH Marketplace, with README pointing at it as the preferred GH-Actions install path.
 
-### 5. Full MCP server surface port
-status: in_progress
+**Resolution note (2026-05-20):** `docs/install.md` now has a "Using no-tickets in CI" section with three recipes: GitHub Actions (with the mandatory `$GITHUB_PATH` export), GitLab CI (with reusable YAML anchor), and a generic-shell recipe covering CircleCI / Bitbucket Pipelines / Jenkins / Drone. CI-auth note (NO_TICKETS_TOKEN env-var bypass of interactive init) included. The optional `magic-ingredients/install-no-tickets@v1` GitHub Marketplace Action is deferred — needs a separate repo, Marketplace publishing flow, and a real GH-Actions demand signal before the maintenance cost is worth it. Recipe is what most CI providers will use.
 
-Port all tools and discovery flow to the Rust MCP server. Match the TS server's tool descriptors, input schemas, response shapes.
+### 5. Full MCP server surface port
+status: completed
+commitSha: 0410215
+
+Port all tools and discovery flow to the Rust MCP server. Match the canonical tool descriptors, input schemas, response shapes.
+
+**Resolution note (2026-05-20):** Aggregator for sub-tasks 19-24, all closed. `publish_event` (19, ce52ef0), `describe_event_type` (20, c53bc52), and real-server `list_event_types` (23) shipped; `nt-core` extraction (24, 0410215) was the last sub-task. Tasks 21 (`run_interaction`) and 22 (`create_subject`) superseded mid-flight per `project_workflow_by_events` + `project_no_subjects_in_model`. commitSha pinned to 24's final commit — the chronological close of the full surface.
+
+
 
 **Scope clarification (2026-05-14):** the TS `create-server.ts` wires only `validate` (legacy `.notickets/` directory checker) and `status` into the actually-exposed MCP surface. The richer toolset (`list_event_types`, `describe_event_type`, `publish_event`, `run_interaction`, `create_subject`) lives in `src/mcp/tools/handlers.ts` but was never registered. The fix doc explicitly names list/describe/publish as in-scope, so the Rust port targets the planned-but-unwired TS surface, not the vestigial validate/status pair.
 
@@ -834,7 +863,8 @@ This is bookkeeping — no behaviour change. Pinned by every existing test suite
 - `crates/nt-cli/src/commands/publish.rs` + `publish_batch.rs` → per-concern submodules
 
 ### 6. Distribution pipeline via `cargo-dist`
-status: not_started
+status: completed
+commitSha: da19515
 depends_on: [23, 24, 25, 11, 12]
 
 **Why Task 11 (self-update) is a hard prerequisite, not a follow-up:**
@@ -936,6 +966,8 @@ Out of `cargo-dist`'s scope (handled in separate tasks): deb/rpm packaging (Task
 
 Scoop is out of cargo-dist 0.31.0's installer set (shell/powershell/npm/homebrew/msi only) and lands as its own task (Task 34).
 
+**Resolution note (2026-05-20):** Pipeline shipped at v0.1.0. Scaffolding commit was da19515 (feat); follow-up fixes 9567792 / 2151e4b (actions: write permissions), 96a26a7 / f42826e / b27d2ed (SCHEMAS_READ_TOKEN injection) landed before the first green release. See Task 29's resolution note for the full smoke-test narrative + the four failure modes that surfaced + their resolutions. All three acceptance criteria verified post-flip-to-public: 5-target archives + sha256 sidecars + both installers in the v0.1.0 release; `Formula/no-tickets.rb` committed to magic-ingredients/homebrew-tap by the publish-homebrew-formula job; `curl get.no-tickets.com` returns 200 text/x-shellscript.
+
 ### 7. npm wrapper package (migration path for current users)
 status: superseded
 commitSha: null
@@ -954,14 +986,14 @@ Publish `nt-cli` and `nt-mcp` to crates.io for the Rust-ecosystem `cargo install
 - `.github/workflows/publish-crates.yml`
 
 ### 9. deb / rpm packaging
-status: not_started
+status: superseded
+commitSha: null
 
-Apt and yum repositories for Linux server installs. Hosted on GitHub Pages or a CDN. Out of `cargo-dist` scope — hand-rolled.
-
-**Files to modify/create:**
-- `.github/workflows/build-debs.yml`
-- `.github/workflows/build-rpms.yml`
-- repo manifest files
+**Superseded (2026-05-20):** extracted into a standalone fix —
+`docs/fixes/deb-rpm-packaging.md`. Out of cargo-dist scope, demand-
+signal-dependent, and has its own multi-task surface (build deb, build
+rpm, host the repos, signing strategy, docs). Lives separately so it
+doesn't bloat this fix's task list while it waits for adoption pull.
 
 ### 10. get.no-tickets.com hosting + install.sh redirect
 status: completed

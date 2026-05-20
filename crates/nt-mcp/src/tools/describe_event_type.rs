@@ -21,14 +21,10 @@ use crate::config::EnvConfig;
 use crate::error_map::transport_to_mcp;
 use crate::example_synth::synthesise_example;
 
-// Note on TS parity: unlike `list_event_types` and `publish_event`,
-// this module does NOT carry a `TS_PARITY_DESCRIPTION` constant.
-// rmcp's `#[tool]` macro requires a string literal so the constant
-// can't be referenced from `server.rs` anyway; the test in `mcp.rs`
-// keeps its own byte-for-byte copy. A module-side constant would be
-// a third unverified copy of the same string. Drift between the
-// `#[tool]` attribute and the TS reference is caught by the
-// integration test (adversarial review #6).
+// Description literal lives in the `#[tool]` attribute in
+// `server.rs`. The integration test in `tests/mcp/describe_event_type.rs`
+// keeps a byte-for-byte copy and asserts equality; a module-side
+// constant would be a third unverified copy.
 
 /// camelCase → snake_case rename table for the optional fields on the
 /// describe result envelope. Sourced verbatim from the TS handler's

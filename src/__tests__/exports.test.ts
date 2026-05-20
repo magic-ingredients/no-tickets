@@ -1,21 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import * as types from '../core/types.js';
 import * as schemas from '../core/schemas.js';
-import type {
-  Source,
-  Event,
-  Subject,
-  SubjectRef,
-  InteractionRequest,
-  InteractionResponse,
-  InteractionEventRef,
-  TypeIdParts,
-} from '../core/types.js';
+import type { Source, Event, TypeIdParts } from '../core/types.js';
 
 // -- ./schemas subpath --------------------------------------------------------
 
 const EXPECTED_SCHEMAS_KEYS = [
-  // v1 frontmatter (existing)
+  // v1 frontmatter
   'phaseSchema',
   'entityStatusSchema',
   'taskStatusSchema',
@@ -23,16 +14,11 @@ const EXPECTED_SCHEMAS_KEYS = [
   'epicFrontmatterSchema',
   'featureFrontmatterSchema',
   'taskSchema',
-  // envelope (new)
+  // envelope
   'sourceSchema',
   'mergeSource',
   'SDK_VERSION',
   'eventSchema',
-  'subjectSchema',
-  'subjectRefSchema',
-  'interactionRequestSchema',
-  'interactionResponseSchema',
-  'interactionEventRefSchema',
   'TYPE_ID_REGEX',
   'parseTypeId',
   'formatTypeId',
@@ -110,15 +96,9 @@ describe('@magic-ingredients/no-tickets/types subpath', () => {
     // the runtime check below just keeps the bindings live.
     const source: Source = { name: 'cli', sdkVersion: '0.0.0' };
     const event: Event<{ x: number }> = { type: 'a.b.c.v1', data: { x: 1 }, source };
-    const subjectRef: SubjectRef = { type: 'feature', id: 'f1' };
-    const subject: Subject = { type: 'feature', externalId: 'f1', displayName: 'F1' };
-    const interactionReq: InteractionRequest = { id: 'i1', input: {} };
-    const interactionRes: InteractionResponse = { events: [] };
-    const interactionEvent: InteractionEventRef = { id: 'e1', type: 'a.b.c.v1' };
     const typeIdParts: TypeIdParts = { domain: 'a', entity: 'b', action: 'c', version: 1 };
 
-    expect([source, event, subjectRef, subject, interactionReq, interactionRes, interactionEvent, typeIdParts])
-      .toHaveLength(8);
+    expect([source, event, typeIdParts]).toHaveLength(3);
   });
 });
 

@@ -58,10 +58,4 @@ export const taskSchema = z.object({
 
 export { sourceSchema, mergeSource, SDK_VERSION } from './source.js';
 export { eventSchema } from './event.js';
-export { subjectSchema, subjectRefSchema } from './subject.js';
-export {
-  interactionRequestSchema,
-  interactionResponseSchema,
-  interactionEventRefSchema,
-} from './interaction.js';
 export { TYPE_ID_REGEX, parseTypeId, formatTypeId, isTypeId } from './type-id.js';

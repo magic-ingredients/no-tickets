@@ -166,11 +166,5 @@ export interface NoTicketsConfig {
 
 export type { Source } from './source.js';
 export type { Event } from './event.js';
-export type { Subject, SubjectRef } from './subject.js';
-export type {
-  InteractionRequest,
-  InteractionResponse,
-  InteractionEventRef,
-} from './interaction.js';
 export type { TypeIdParts } from './type-id.js';
 

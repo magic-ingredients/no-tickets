@@ -1,6 +1,12 @@
 # no-tickets
 
-Ticketless project management for AI teams. The `nt` CLI pushes
+[![Release](https://img.shields.io/github/v/release/magic-ingredients/no-tickets)](https://github.com/magic-ingredients/no-tickets/releases/latest)
+[![CI](https://github.com/magic-ingredients/no-tickets/actions/workflows/ci.yml/badge.svg)](https://github.com/magic-ingredients/no-tickets/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/magic-ingredients/no-tickets)](LICENSE)
+[![Install: curl | sh](https://img.shields.io/badge/install-curl%20%7C%20sh-blue)](https://get.no-tickets.com)
+[![Homebrew tap](https://img.shields.io/badge/brew-magic--ingredients%2Ftap%2Fno--tickets-orange)](https://github.com/magic-ingredients/homebrew-tap)
+
+Ticketless project management for AI teams. The `no-tickets` CLI pushes
 project-state events from your repo to a hosted dashboard; AI agents are
 first-class and show up alongside human work.
 
@@ -15,14 +21,11 @@ brew install magic-ingredients/tap/no-tickets
 
 # Windows (PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://get.no-tickets.com/installer.ps1 | iex"
-
-# Rust ecosystem
-cargo install no-tickets --locked
 ```
 
-Ships two binaries: `nt` (the CLI) and `nt-mcp` (the MCP server for use with
-Claude Code and other MCP-capable agents). The single install command lands
-both on your PATH.
+Ships two binaries: `no-tickets` (the CLI) and `no-tickets-mcp` (the MCP
+server for use with Claude Code and other MCP-capable agents). The single
+install command lands both on your PATH.
 
 Full install matrix (per-target tarballs, sha256 verification, self-update
 behaviour per channel) lives at [docs/install.md](docs/install.md).
@@ -30,23 +33,25 @@ behaviour per channel) lives at [docs/install.md](docs/install.md).
 ## Quickstart
 
 ```bash
-nt init                                # browser-based authentication
+no-tickets init                                # browser-based authentication
 
-nt publish --project my-project \
-           --type ai.task.completed.v1 \
-           --data '{"taskId":"123","outcome":"success"}'
+no-tickets publish --project my-project \
+                   --type ai.task.completed.v1 \
+                   --data '{"taskId":"123","outcome":"success"}'
 
-nt status                              # print auth + locally registered tokens as JSON
+no-tickets status                              # print auth + locally registered tokens as JSON
 
 # Validate a single payload against the bundled JSON Schema (no network):
-nt validate --type ai.task.completed.v1 \
-            --data '{"taskId":"123","outcome":"success"}'
+no-tickets validate --type ai.task.completed.v1 \
+                    --data '{"taskId":"123","outcome":"success"}'
 
-nt self-update                         # for install.sh / direct-download installs
+no-tickets self-update                         # for install.sh / direct-download installs
+
+no-tickets logout                              # remove saved session credentials
 ```
 
-`nt init` handles browser-based auth; per-project push tokens are managed
-separately with `nt token add` and `nt token remove`.
+`no-tickets init` handles browser-based auth; per-project push tokens are
+managed separately with `no-tickets token add` and `no-tickets token remove`.
 
 ## What is no-tickets?
 

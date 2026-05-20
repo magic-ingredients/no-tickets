@@ -16,7 +16,7 @@ use predicates::prelude::*;
 use std::path::Path;
 
 fn nt() -> Command {
-    Command::cargo_bin("nt").expect("binary built")
+    Command::cargo_bin("no-tickets").expect("binary built")
 }
 
 /// `nt validate` is local-only. Clear every env var the binary normally

@@ -85,23 +85,23 @@ the per-target tarball from the latest release and extract:
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-aarch64-apple-darwin.tar.xz \
-  | tar -xJ
+curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-aarch64-apple-darwin.tar.gz \
+  | tar -xz
 sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 
 # macOS Intel
-curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-apple-darwin.tar.xz \
-  | tar -xJ
+curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-apple-darwin.tar.gz \
+  | tar -xz
 sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 
 # Linux x86_64 (static musl — runs anywhere)
-curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.xz \
-  | tar -xJ
+curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.gz \
+  | tar -xz
 sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 
 # Linux aarch64 (static musl)
-curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-aarch64-unknown-linux-musl.tar.xz \
-  | tar -xJ
+curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-aarch64-unknown-linux-musl.tar.gz \
+  | tar -xz
 sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 ```
 
@@ -111,14 +111,21 @@ it from wherever you downloaded the tarball:
 
 ```bash
 cd /tmp   # or wherever you want to download
-curl -LO https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.xz
-curl -LO https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.xz.sha256
-shasum -a 256 -c no-tickets-x86_64-unknown-linux-musl.tar.xz.sha256
+curl -LO https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.gz.sha256
+shasum -a 256 -c no-tickets-x86_64-unknown-linux-musl.tar.gz.sha256
 ```
 
-Windows users: replace the `.tar.xz` URL with
+Windows users: replace the `.tar.gz` URL with
 `no-tickets-x86_64-pc-windows-msvc.zip` and extract into a directory on
 your `PATH`.
+
+> **v0.1.2 known-bad `self-update`:** the v0.1.2 release ships
+> `.tar.xz` archives that the bundled `self_update` library can't
+> extract — running `no-tickets self-update` on v0.1.2 leaves a
+> non-executable XZ stream where the binary used to be. Recovery:
+> re-run `curl … | sh` (system `tar` handles `.tar.xz`). v0.1.3 onward
+> ships `.tar.gz` and the updater works as designed.
 
 ## Verifying the install
 

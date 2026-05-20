@@ -166,11 +166,32 @@ checklist that cross-platform-cli-binary's Task 29 resolution
 established.
 
 **Files to modify:**
-- `Cargo.toml` — `[workspace.metadata.dist]` block
-- `.github/workflows/release.yml` — regenerated; re-apply manual
-  permission tweaks
-- `docs/binary-error-contract.md` — if any `.tar.xz` mentions
-- `docs/install.md` — if any per-target file extension mentions
+- `dist-workspace.toml` — `unix-archive = ".tar.gz"` line in `[dist]`
+  block (turned out to be the right location, not `Cargo.toml`'s
+  `[workspace.metadata.dist]`)
+- `crates/nt-cli/Cargo.toml` — `self_update` dep needs explicit
+  `archive-tar`, `compression-flate2`, `archive-zip` features
+  enabled. `default-features = false` strips them by default, which
+  was the actual root cause of the .tar.xz failure — the crate had
+  no archive support at all, .tar.xz was just the first archive
+  format we hit. Without enabling these features the .tar.gz switch
+  would have produced identical corruption.
+- `.github/workflows/release.yml` — verified no regeneration
+  needed; the workflow calls `dist build` which reads config at
+  build time, no hardcoded archive-extension references in the
+  workflow YAML.
+- `docs/install.md` — direct-download recipe URLs + `tar -xJ`
+  commands updated to `.tar.gz` / `tar -xz`; v0.1.2-known-bad
+  callout added pointing users at the re-curl recovery.
+
+**Follow-up noted (out of scope for this fix):** the `self_update`
+crate's atomic-swap-of-the-running-binary model only updates the
+binary that called `update`. For our two-binary distribution
+(`no-tickets` + `no-tickets-mcp`), `no-tickets-mcp` will stay at
+the old version after `no-tickets update`. A separate fix could
+shell out to a sibling-binary update, or migrate to a
+post-`update` reinvocation pattern. Capture as its own issue if
+this surfaces in practice.
 
 ### 2. Rename `Commands::SelfUpdate` to `Commands::Update`
 Mechanical rename across main.rs / commands/mod.rs + file move

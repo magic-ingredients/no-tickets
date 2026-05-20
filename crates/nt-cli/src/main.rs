@@ -98,9 +98,7 @@ enum Commands {
         #[arg(long)]
         data: String,
     },
-    /// Upgrade the running binary in-place (install.sh / direct-download
-    /// users only — package-manager installs are detected and redirected
-    /// to the user's package manager).
+    /// Update the no-tickets binary (install.sh / direct-download installs only).
     SelfUpdate,
 }
 

@@ -30,7 +30,13 @@ nt-mcp = { path = "../nt-mcp" }
 nt-schemas = { path = "../nt-schemas" }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
-self_update = { version = "0.42", default-features = false, features = ["rustls"] }
+# Archive features are load-bearing: cargo-dist publishes Unix targets as
+# `.tar.gz` and Windows targets as `.zip` (see dist-workspace.toml's
+# `unix-archive` setting). Without `archive-tar` + `compression-flate2`
+# the crate has no way to extract a `.tar.gz` — it silently writes the
+# raw archive to the binary path. Same for `archive-zip` on Windows.
+# `rustls` keeps us off OpenSSL for the GH Releases HTTPS fetch.
+self_update = { version = "0.42", default-features = false, features = ["rustls", "archive-tar", "compression-flate2", "archive-zip"] }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

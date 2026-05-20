@@ -8,7 +8,7 @@ Supported platforms:
 | OS | Architectures |
 |----|--------------|
 | macOS | Apple Silicon (aarch64), Intel (x86_64) |
-| Linux | x86_64-musl, aarch64-musl (statically linked — runs on Alpine, distroless, glibc systems) |
+| Linux | x86_64-musl, aarch64-musl (statically linked — runs on Alpine, `distroless/static`, glibc systems. NOT `distroless/base`, which expects libc resolution at runtime) |
 | Windows | x86_64 |
 
 ## Install commands
@@ -58,6 +58,25 @@ directory to the user `PATH`. Restart the shell after install.
 > doesn't ship a working binary today. Use the shell installer or
 > Homebrew above. When Task 8 lands, this section will be replaced
 > with the working `cargo install no-tickets --locked` command.
+
+### Build from source
+
+If you can't `curl … | sh` (air-gapped, restricted runners) and don't
+want to wait for the cargo channel, build from a clone:
+
+```bash
+git clone https://github.com/magic-ingredients/no-tickets.git
+cd no-tickets
+cargo install --path crates/nt-cli --locked
+```
+
+Installs `no-tickets` and `no-tickets-mcp` into `$CARGO_HOME/bin/`
+(defaults to `~/.cargo/bin/`). Requires a Rust toolchain and network
+access to crates.io for transitive dependencies. The build pulls a
+sha256-verified schemas bundle from
+`magic-ingredients/no-tickets-service` releases via `build.rs` — `gh`
+CLI must be on PATH and authenticated to that repo (or the
+`GH_TOKEN` env must be a PAT with `Contents:Read` on it).
 
 ### Direct tarball download
 
@@ -144,8 +163,12 @@ three reasons:
   download all serve the same artifact, so users install via their preferred
   tool.
 
-The npm package now ships the TypeScript SDK only (for programmatic use from
-JS / TS); the CLI and MCP server retired from npm with the binary release.
+The npm package today ships the TypeScript SDK only (for programmatic
+use from JS / TS); the CLI and MCP server retired from npm with the
+binary release. Phase 4 of the client roadmap (per
+[ADR-0003](adr/0003-typescript-sdk-phase-4-survival.md)) reintroduces a
+thin `/client` export that spawns the binary via the `--stream`
+protocol — this sentence will be rewritten then.
 
 ## Using no-tickets in CI
 
@@ -244,12 +267,22 @@ error.
 
 ## Coming soon
 
-- **Scoop** (Windows package manager) — separate from cargo-dist's installer
-  set, currently in progress. Use the PowerShell installer or direct
-  download in the meantime.
-- **deb / rpm** repositories for apt / yum users.
+- **deb / rpm** repositories for apt / yum users (tracked in
+  [`docs/fixes/deb-rpm-packaging.md`](fixes/deb-rpm-packaging.md);
+  waiting on demand signal).
+- **`cargo install no-tickets`** (tracked as Task 8 of
+  [`docs/fixes/cross-platform-cli-binary.md`](fixes/cross-platform-cli-binary.md);
+  the crates.io name is currently a defensive placeholder we own).
 - **Per-language wrappers** (Python, Go, TS) for in-process programmatic
-  publishing without spawning the binary per event.
+  publishing without spawning the binary per event — Phase 4 of the
+  client roadmap; depends on
+  [`docs/fixes/stream-mode.md`](fixes/stream-mode.md).
+
+Windows-side note: a Scoop manifest was considered and ruled out
+(see Task 34 of `cross-platform-cli-binary`). The PowerShell installer
++ direct ZIP download cover day-one Windows users. If a package-manager
+channel is needed, `winget` is the strategic pick — open a task at
+that point.
 
 ## Reporting install issues
 

@@ -13,6 +13,13 @@ installers = ["shell", "powershell", "homebrew"]
 # musl-only on Linux matches the fix doc: musl is the default static target;
 # glibc is a future opt-in artifact, not a shipped-by-default duplicate.
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Unix archive format. Default `.tar.xz` is unparseable by the `self_update`
+# crate v0.42's archive features (tar + gzip + zstd only — no xz), which
+# silently leaves the raw archive at the binary path after `no-tickets
+# update`. `.tar.gz` is handled natively by the crate's default features
+# and stays autodetected by system `tar` in the install.sh path.
+# See docs/fixes/self-update-broken-on-tar-xz.md.
+unix-archive = ".tar.gz"
 # Path that installers should place binaries in. ~/.local/bin works for
 # non-Rust users (XDG-standard, on most modern shells' PATH); CARGO_HOME
 # would only exist on machines that already have Rust installed.

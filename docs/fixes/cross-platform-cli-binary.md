@@ -392,16 +392,31 @@ Sister Tasks 6+7 shipped — the no-tickets-service repo now publishes versioned
 status: completed
 commitSha: fc8175b
 
-Port all commands to Rust per the ADR-0002 surface (the task description here predates ADR-0002 — the canonical surface is `init`, `logout`, `publish`, `validate`, `status`, `token add/list/remove`; `project link/list/unlink`, `connect`, `disconnect` are deleted/folded). Use `clap` with the derive API for subcommand parsing. Match flag parsing, error messages, exit codes, JSON output schemas.
+Port all commands to Rust per the ADR-0002 surface. Use `clap` with the
+derive API for subcommand parsing. Match flag parsing, error messages,
+exit codes, JSON output schemas.
+
+The original scope listed `project link/list/unlink` and
+`connect`/`disconnect` — those were superseded by the simpler
+`token add/list/remove` + browser-based `init` flow before v0.1.0 and
+never shipped. The shipped surface (final, v0.1.1) is: `init`, `logout`,
+`status`, `publish`, `validate`, `self-update`, `token add/list/remove`.
+The MCP server (`no-tickets-mcp`) is the second binary; its tools are
+`list_event_types`, `publish_event`, `describe_event_type`.
+
+Also retroactively scoped out: `--subject-type` / `--subject-id` flags
+on `publish` (and the MCP `subject` arg). These were implemented and
+shipped in v0.1.0, then removed in v0.1.1 because subjects aren't
+modelled server-side; the help-audit follow-up commit cleaned them up.
 
 **Slice progress (multi-cycle; this task aggregates several TDD cycles):**
-- `init`, `logout`, `status`, `token add/list/remove` — landed via the side-fix `implement-adr-0002-cli-surface` (the ADR reshape was the natural port point for those commands)
+- `init`, `logout`, `status`, `token add/list/remove` — landed via the side-fix `implement-adr-0002-cli-surface`
 - `publish` (single-event, spike-scope) — landed via Task 14
 - `validate` — landed at fc8175b (this fix, TDD cycle 1 of Task 4)
-- _Pending:_ `publish` optional metadata (`--subject-type/--subject-id`, `--source-name`, `--source-attributes`, `--parent`, `--trace`, `--dedupe-key`)
-- _Pending:_ `publish` batch mode (`--file` / stdin)
-- _Pending:_ `publish` retry/backoff on transient errors
-- _Pending:_ `publish` source auto-detection / merging
+- `publish` optional metadata (`--source-name`, `--source-attributes`, `--parent`, `--trace`, `--dedupe-key`) — landed via Task 15
+- `publish` batch mode (`--file` / stdin) — landed via Task 16
+- `publish` retry/backoff on transient errors — landed via Task 17
+- `publish` source auto-detection / merging — landed via Task 18
 
 **Files to modify/create:**
 - `crates/nt-cli/src/commands/`

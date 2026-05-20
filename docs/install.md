@@ -1,7 +1,7 @@
 # Installing no-tickets
 
-The `no-tickets` release ships two binaries: `nt` (the CLI) and `nt-mcp`
-(the MCP server). Every channel installs both together.
+The `no-tickets` release ships two binaries: `no-tickets` (the CLI) and
+`no-tickets-mcp` (the MCP server). Every channel installs both together.
 
 Supported platforms:
 
@@ -51,13 +51,13 @@ directory to the user `PATH`. Restart the shell after install.
 
 ### Rust ecosystem — `cargo install`
 
-```bash
-cargo install no-tickets --locked
-```
-
-Installs both binaries to `$CARGO_HOME/bin/` (defaults to `~/.cargo/bin/`).
-Requires a Rust toolchain on your machine and builds from source — the other
-channels ship pre-built binaries and are faster.
+> **Coming soon.** Task 8 of the cross-platform-cli-binary fix
+> (`cargo publish` of `no-tickets`) is not yet shipped. The crate name
+> `no-tickets` on crates.io is currently a placeholder at v0.0.0
+> reserved by an unrelated author; `cargo install no-tickets --locked`
+> will not install this binary today. Use one of the channels above.
+> This section will be replaced with the working command when Task 8
+> lands.
 
 ### Direct tarball download
 
@@ -68,22 +68,22 @@ the per-target tarball from the latest release and extract:
 # macOS Apple Silicon
 curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-aarch64-apple-darwin.tar.xz \
   | tar -xJ
-sudo install -m 755 nt nt-mcp /usr/local/bin/
+sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 
 # macOS Intel
 curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-apple-darwin.tar.xz \
   | tar -xJ
-sudo install -m 755 nt nt-mcp /usr/local/bin/
+sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 
 # Linux x86_64 (static musl — runs anywhere)
 curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-x86_64-unknown-linux-musl.tar.xz \
   | tar -xJ
-sudo install -m 755 nt nt-mcp /usr/local/bin/
+sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 
 # Linux aarch64 (static musl)
 curl -L https://github.com/magic-ingredients/no-tickets/releases/latest/download/no-tickets-aarch64-unknown-linux-musl.tar.xz \
   | tar -xJ
-sudo install -m 755 nt nt-mcp /usr/local/bin/
+sudo install -m 755 no-tickets no-tickets-mcp /usr/local/bin/
 ```
 
 Each tarball ships with an `.sha256` neighbour for checksum verification.
@@ -104,30 +104,30 @@ your `PATH`.
 ## Verifying the install
 
 ```bash
-nt --version       # prints the release version
-nt-mcp --version   # prints the same version — the binaries ship in lockstep
-nt status          # prints auth + locally registered tokens as JSON
+no-tickets --version       # prints the release version
+no-tickets-mcp --version   # prints the same version — the binaries ship in lockstep
+no-tickets status          # prints auth + locally registered tokens as JSON
 ```
 
-`nt status` works without authentication; `nt init` is the next step to
-sign in.
+`no-tickets status` works without authentication; `no-tickets init` is the
+next step to sign in.
 
 ## Updating
 
-How `nt` updates depends on which channel installed it.
+How `no-tickets` updates depends on which channel installed it.
 
 | Channel | Update command |
 |---------|---------------|
-| `curl … \| sh` / direct download | `nt self-update` |
+| `curl … \| sh` / direct download | `no-tickets self-update` |
 | Homebrew | `brew upgrade no-tickets` |
-| `cargo install` | `cargo install --force no-tickets` |
 | Direct tarball | re-download and re-install |
 
-`nt self-update` detects which install channel placed the binary and prints
-the right command for that channel rather than running an in-place swap that
-would conflict with the package manager. After a Homebrew install, for
-example, `nt self-update` prints `nt was installed via Homebrew. Run
-\`brew upgrade no-tickets\` to update.` and exits cleanly.
+`no-tickets self-update` detects which install channel placed the binary
+and prints the right command for that channel rather than running an
+in-place swap that would conflict with the package manager. After a
+Homebrew install, for example, `no-tickets self-update` prints
+`no-tickets was installed via Homebrew. Run \`brew upgrade no-tickets\` to
+update.` and exits cleanly.
 
 ## Why a binary?
 

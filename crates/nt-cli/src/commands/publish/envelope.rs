@@ -97,9 +97,9 @@ pub(super) fn build_envelope<'a>(
 
 /// Test-only helper: minimal metadata block for envelope-shape and
 /// publish-orchestration tests. No flag overrides, default source.name,
-/// `project` as the only source attribute. Mirrors what `build_metadata`
-/// would produce for a `PublishArgs` with only the three required
-/// flags set.
+/// `project` as the only source attribute. Equivalent to what
+/// `build_metadata` produces for a `PublishArgs` with only the three
+/// required flags set.
 #[cfg(test)]
 pub(super) fn bare_meta(project: &str) -> EventMetadata<'_> {
     let mut attributes = BTreeMap::new();

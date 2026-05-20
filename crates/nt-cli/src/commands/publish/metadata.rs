@@ -94,10 +94,9 @@ mod tests {
 
     #[test]
     fn build_metadata_attribute_with_empty_value_is_accepted() {
-        // TS parity (src/cli/lib/source-flags.ts): empty value is fine,
-        // empty key is the only thing rejected. Pin behaviour so a
-        // future "strict mode" doesn't silently drift away from the
-        // wrapper-shared contract.
+        // Empty value is fine; empty key is the only thing rejected.
+        // Pin behaviour so a future "strict mode" doesn't silently
+        // drift away from the wrapper-shared contract.
         let attrs = ["foo=".to_string()];
         let args = args_with_attrs("demo", &attrs);
         let meta = build_metadata(&args, None).expect("empty value must be accepted");

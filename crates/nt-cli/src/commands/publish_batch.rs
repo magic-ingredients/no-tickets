@@ -21,7 +21,6 @@ use serde_json::Value;
 
 use crate::auth::resolve_publish_token;
 use crate::env::Env;
-use crate::error::format_for;
 use crate::source_detect::machine_hash_attribute;
 use crate::transport::{
     post_json_with_retry, Client, HttpClient, RetryPolicy, Sleeper, TokioSleeper,
@@ -119,13 +118,17 @@ pub async fn run(args: PublishBatchArgs<'_>, env: &dyn Env) -> i32 {
     let token = match resolve_publish_token(env, args.project) {
         Ok(t) => t,
         Err(e) => {
-            // Surface as the structured-error contract line for
-            // wrapper parity with single-event publish, even though
-            // this command's `run` still returns plain i32. The
-            // pipe/tty branch flips at this layer so an interactive
-            // shell still sees a readable line.
-            let is_tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
-            eprintln!("{}", format_for(is_tty, &e));
+            // Plain-text rendering matches the rest of this command's
+            // error path (eprintln + non-zero exit). The broader
+            // migration of publish_batch to the structured-error
+            // contract (`Result<(), NtError>` + emit_and_exit_code)
+            // is tracked separately — flagged in main.rs and Task 26's
+            // resolution notes. Mixing structured + unstructured
+            // would be worse than uniform unstructured. Exit code
+            // still comes from the NtError variant so wrappers can at
+            // least distinguish ProjectNotRegistered (6) from Usage
+            // (7) via the code alone.
+            eprintln!("{}", e.to_human());
             return e.exit_code();
         }
     };

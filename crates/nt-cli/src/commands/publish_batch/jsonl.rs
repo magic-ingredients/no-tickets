@@ -51,13 +51,12 @@ pub(super) fn parse_jsonl(input: &str) -> Result<Vec<JsonlEntry>, String> {
 ///
 /// Memory: reads the entire input into a `String` before parsing. For
 /// the canonical batch size (hundreds to low thousands of envelopes,
-/// each a few KB), this fits comfortably in memory. Matches the TS
-/// reference (`src/cli/lib/jsonl.ts::readJsonl` reads the whole file
-/// with `readFileSync`). A future "stream-and-parse line-by-line"
-/// optimisation could land if a real workload pushed the bound, but
-/// the single-POST wire contract already caps a sensible batch size
-/// at whatever the server accepts in one body — so streaming the
-/// input wouldn't change the upper bound on memory anyway.
+/// each a few KB), this fits comfortably in memory. A future
+/// "stream-and-parse line-by-line" optimisation could land if a real
+/// workload pushed the bound, but the single-POST wire contract
+/// already caps a sensible batch size at whatever the server accepts
+/// in one body — so streaming the input wouldn't change the upper
+/// bound on memory anyway.
 pub(super) async fn read_batch_input(batch_path: &str) -> Result<String, String> {
     if batch_path == "-" {
         let mut buf = String::new();

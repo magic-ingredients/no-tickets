@@ -22,14 +22,6 @@ use crate::credentials::{self, LoadOutcome};
 use crate::env::Env;
 use crate::error::NtError;
 
-/// Standard "not authenticated" message for identity-command errors.
-/// `nt publish` no longer uses this (it surfaces `ProjectNotRegistered`
-/// instead, since `publish` doesn't consult session credentials), but
-/// it stays available for future identity commands (e.g. `nt projects
-/// list`) that DO need session auth.
-#[allow(dead_code)]
-pub const NOT_AUTH_MSG: &str = "Not authenticated. Set NO_TICKETS_TOKEN or run `no-tickets init`.";
-
 /// Emits the ADR-0002 stored-session host-mismatch warning to stderr.
 /// Centralised so identity-aware callers (status, publish, future commands)
 /// share one phrasing. Token is never included — the warning is identity-free.
@@ -50,18 +42,11 @@ pub enum AuthSource {
 }
 
 pub struct ResolvedAuth {
-    /// The actual bearer token. Future identity commands (e.g. `nt
-    /// projects list` against a management endpoint) will read this;
-    /// `nt status` reports identity only and doesn't read the field,
-    /// and `nt publish` deliberately uses `resolve_publish_token`
-    /// (push tokens only) rather than this struct.
-    #[allow(dead_code)]
-    pub token: String,
     pub source: AuthSource,
-    /// Set when `source == Credentials`. Surfaced by `no-tickets status` as the
-    /// identity attached to an authenticated session. None for env-supplied
-    /// `NO_TICKETS_TOKEN` — those are transport-level overrides, not
-    /// identity claims.
+    /// Set when `source == Credentials`. Surfaced by `no-tickets status` as
+    /// the identity attached to an authenticated session. `None` for
+    /// env-supplied `NO_TICKETS_TOKEN` — those are transport-level
+    /// overrides, not identity claims.
     pub email: Option<String>,
 }
 
@@ -98,11 +83,20 @@ pub enum AuthOutcome {
 /// surface as `NtError::Usage` since they're caller-environment problems
 /// rather than auth-state problems.
 pub fn resolve_publish_token(env: &dyn Env, project: &str) -> Result<String, NtError> {
-    if let Some(token) = env.var("NO_TICKETS_TOKEN").filter(|t| !t.is_empty()) {
+    // `.trim().is_empty()` rather than `.is_empty()`: a whitespace-only
+    // NO_TICKETS_TOKEN is almost certainly a misconfiguration (rendered
+    // env-var template with a missing value, accidental quote-wrapped
+    // empty string in CI). Treat it as unset rather than as a bearer.
+    if let Some(token) = env.var("NO_TICKETS_TOKEN").filter(|t| !t.trim().is_empty()) {
         return Ok(token);
     }
+    // ConfigError's `Display` already carries the variant context
+    // (HomeUnresolvable / Io / Json) so we just propagate it verbatim.
+    // Mapping to `NtError::Usage` reflects the cause: a caller-side
+    // environment problem (malformed file / missing config dir), not
+    // an auth-state failure.
     let cfg = config::read(env).map_err(|e| NtError::Usage {
-        message: format!("read config.json: {e}"),
+        message: format!("{e}"),
     })?;
     if let Some(entry) = cfg.projects.get(project) {
         return Ok(entry.push_token.clone());
@@ -114,18 +108,17 @@ pub fn resolve_publish_token(env: &dyn Env, project: &str) -> Result<String, NtE
 }
 
 pub fn resolve_auth(env: &dyn Env, current_api_url: &str) -> AuthOutcome {
-    if let Some(token) = env.var("NO_TICKETS_TOKEN") {
-        if !token.is_empty() {
-            return AuthOutcome::Resolved(ResolvedAuth {
-                token,
-                source: AuthSource::Env,
-                email: None,
-            });
-        }
+    if env
+        .var("NO_TICKETS_TOKEN")
+        .is_some_and(|t| !t.trim().is_empty())
+    {
+        return AuthOutcome::Resolved(ResolvedAuth {
+            source: AuthSource::Env,
+            email: None,
+        });
     }
     match credentials::load(env, current_api_url) {
         LoadOutcome::Valid(stored) => AuthOutcome::Resolved(ResolvedAuth {
-            token: stored.token,
             source: AuthSource::Credentials,
             email: Some(stored.email),
         }),
@@ -151,19 +144,32 @@ mod tests {
     const API_URL_STAGING: &str = "https://api-staging.no-tickets.com";
 
     #[test]
-    fn resolve_auth_reads_token_from_injected_env() {
+    fn resolve_auth_classifies_injected_env_token_as_env_source() {
         let env = HashMapEnv::with(&[("NO_TICKETS_TOKEN", TEST_TOKEN)]);
         let outcome = resolve_auth(&env, API_URL_PROD);
         match outcome {
             AuthOutcome::Resolved(r) => {
-                assert_eq!(
-                    r.token, TEST_TOKEN,
-                    "resolve_auth must read NO_TICKETS_TOKEN from the injected env",
-                );
                 assert!(matches!(r.source, AuthSource::Env));
+                assert_eq!(r.email, None, "env-supplied tokens carry no identity");
             }
             _ => panic!("expected Resolved; got something else"),
         }
+    }
+
+    #[test]
+    fn resolve_auth_treats_whitespace_only_env_var_as_unset() {
+        // Point NO_TICKETS_HOME at an empty tempdir so credentials::load
+        // can't fall back to the host's real ~/.notickets when the
+        // whitespace env-var is correctly rejected. Without this the
+        // test fails non-hermetically on machines with real session
+        // credentials on disk.
+        let tmp = tempfile::tempdir().unwrap();
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_HOME", tmp.path().to_str().unwrap()),
+            ("NO_TICKETS_TOKEN", "   \t  "),
+        ]);
+        let outcome = resolve_auth(&env, API_URL_PROD);
+        assert!(matches!(outcome, AuthOutcome::None));
     }
 
     // ─── resolve_publish_token ────────────────────────────────────────
@@ -201,6 +207,22 @@ mod tests {
         let env = HashMapEnv::with(&[
             ("NO_TICKETS_HOME", tmp.path().to_str().unwrap()),
             ("NO_TICKETS_TOKEN", ""), // empty must NOT win
+        ]);
+        let token = resolve_publish_token(&env, "demo").expect("resolves");
+        assert_eq!(token, "nt_push_from_config");
+    }
+
+    #[test]
+    fn resolve_publish_token_treats_whitespace_only_env_var_as_unset() {
+        // Whitespace-only NO_TICKETS_TOKEN must NOT be sent as a
+        // bearer — it's almost always a CI misconfiguration (rendered
+        // env-var template with a missing value). Behave as if unset
+        // and fall through to the config.json registry.
+        let tmp = tempfile::tempdir().unwrap();
+        write_test_config(tmp.path(), "demo", "nt_push_from_config");
+        let env = HashMapEnv::with(&[
+            ("NO_TICKETS_HOME", tmp.path().to_str().unwrap()),
+            ("NO_TICKETS_TOKEN", "   \t  "),
         ]);
         let token = resolve_publish_token(&env, "demo").expect("resolves");
         assert_eq!(token, "nt_push_from_config");
@@ -255,10 +277,44 @@ mod tests {
                 known_projects,
             } => {
                 assert_eq!(project, "demo");
-                // BTreeMap iteration order is deterministic (alpha).
-                assert_eq!(known_projects, vec!["other-a", "other-b"]);
+                // Assert by set membership rather than vec equality so
+                // the test doesn't bake in BTreeMap iteration order
+                // (currently alpha, but treating that as a load-bearing
+                // contract is a footgun for a future map-impl swap).
+                let names: std::collections::HashSet<&str> =
+                    known_projects.iter().map(|s| s.as_str()).collect();
+                assert_eq!(
+                    names,
+                    ["other-a", "other-b"].into_iter().collect(),
+                    "knownProjects must contain exactly the registered names; got: {known_projects:?}",
+                );
             }
             other => panic!("expected ProjectNotRegistered; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_publish_token_surfaces_malformed_config_as_usage_error() {
+        // A corrupted config.json (truncated JSON, manual edit gone
+        // wrong, etc.) must surface as `NtError::Usage` (caller-env
+        // problem) — NOT silently masked as "no projects registered"
+        // which would mislead the user into running `token add` again
+        // when the real issue is a parse error they need to fix.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".notickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), "{ not valid json").unwrap();
+        let env = HashMapEnv::with(&[("NO_TICKETS_HOME", tmp.path().to_str().unwrap())]);
+
+        let err = resolve_publish_token(&env, "demo").expect_err("must error");
+        match err {
+            NtError::Usage { message } => {
+                assert!(
+                    message.to_lowercase().contains("config"),
+                    "Usage message must name config; got: {message:?}",
+                );
+            }
+            other => panic!("expected Usage; got {other:?}"),
         }
     }
 

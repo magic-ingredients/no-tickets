@@ -14,10 +14,13 @@
 //! Out of scope (separate cleanup tickets):
 //! - `nt init`, `nt logout`, `nt status`, `nt token …`
 //!
-//! The `update` submodule pins the rename of `self-update` → `update`
-//! (Task 2 of `docs/fixes/self-update-broken-on-tar-xz.md`) — it's
-//! not a structured-error test per se, but uses the same harness and
-//! the rename is contemporaneous, so it lives here for now.
+//! The `update` submodule lives here because it shares the same
+//! subprocess-spawning harness (hermetic NO_TICKETS_HOME, piped
+//! stderr) and the same wire-contract concerns (exit-code pins,
+//! stderr-text pins). It's not a structured-error-payload test, but
+//! the test-tooling overlap is total — splitting it into a separate
+//! `cli_contract` integration test binary would duplicate harness
+//! infrastructure for no gain. Keep here.
 //!
 //! Test surface organisation: one submodule per command, with a thin
 //! shared `common` harness that spawns the binary against an isolated

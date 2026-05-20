@@ -13,6 +13,7 @@ resolution:
     - Settings beyond original spec - linear history required, enforce_admins=true, required_conversation_resolution=true
     - One deviation from original spec - required_approving_review_count set to 0 (solo maintainer; bump to 1 when collaborators added) rather than 1
   filesModified: []
+archived: true
 ---
 
 # Fix: Add branch protection rules to main

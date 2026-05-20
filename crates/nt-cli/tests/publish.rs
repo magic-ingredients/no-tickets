@@ -9,8 +9,11 @@
 //!   wire-body capture, batch-file builder)
 //! - `happy_path`: basic POST + wire-shape + field order
 //! - `metadata`: Task 15 optional flags + Task 18 machine-hash attribute
-//! - `error_handling`: auth, error response mapping, network failure,
-//!   malformed JSON, host-mismatch warning
+//! - `auth`: push-token-from-config.json resolution + env-var escape
+//!   hatch + the architectural pin that session credentials never
+//!   reach `/v1/events` (`docs/fixes/publish-uses-push-token.md`)
+//! - `error_handling`: server error response mapping, network failure,
+//!   malformed JSON
 //! - `retry`: Task 17 retry/backoff on transient failures
 //! - `batch`: Task 16 `--file` / stdin batch mode
 //!
@@ -22,6 +25,8 @@
 #[path = "publish/common.rs"]
 mod common;
 
+#[path = "publish/auth.rs"]
+mod auth;
 #[path = "publish/batch.rs"]
 mod batch;
 #[path = "publish/error_handling.rs"]

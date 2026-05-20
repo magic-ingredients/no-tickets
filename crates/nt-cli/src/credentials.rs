@@ -30,6 +30,14 @@ use crate::paths;
 /// issued against. See ADR-0002 — sessions don't carry across envs.
 #[derive(Deserialize)]
 pub struct StoredCredentials {
+    /// On-disk persistence only — written by `init`, currently not
+    /// surfaced anywhere on parse. `nt publish` uses push tokens (see
+    /// `auth::resolve_publish_token`); `nt status` reads email and
+    /// host but not the token. Kept on the struct so the deserializer
+    /// validates the field's presence + string shape against malformed
+    /// credential files; future identity commands that need to use the
+    /// session token as a management-API Bearer can read it directly.
+    #[allow(dead_code)]
     pub token: String,
     /// Surfaced by `nt status` as the authenticated identity when the
     /// session is valid. Part of the shape contract — serde requires it

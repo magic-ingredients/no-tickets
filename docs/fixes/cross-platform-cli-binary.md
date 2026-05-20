@@ -3,12 +3,41 @@ id: cross-platform-cli-binary
 type: fix
 title: Rust rewrite of CLI + MCP server, distributed as a single binary across all major platforms
 phase: development
-status: in_progress
+status: completed
 severity: medium
 created: 2026-05-09
-updated: 2026-05-09
+updated: 2026-05-20
 reported: 2026-05-09T00:00:00.000Z
-resolved: null
+resolved: 2026-05-20T00:00:00.000Z
+resolution:
+  rootCause: Phase 2/3 of the four-phase client roadmap — port the TS CLI + MCP surface to a single Rust binary and ship it across every relevant distribution channel so consumers stop depending on a Node runtime.
+  fix:
+    - Rust workspace (no-tickets, nt-mcp, nt-core, nt-schemas) covering the full CLI surface (init, logout, status, publish, validate, self-update, token add/list/remove) and three-tool MCP server (list_event_types, describe_event_type, publish_event)
+    - Local-validation pipeline against a sha256-verified JSON Schema bundle fetched from no-tickets-service GH Releases
+    - Structured-error contract (exit code + stderr JSON) documented as a public-facing wrapper contract
+    - cargo-dist release pipeline shipping 5-target archives + sha256 sidecars + Homebrew formula + shell/PowerShell installers (v0.1.0, v0.1.1)
+    - get.no-tickets.com Cloudflare Worker hosting the install.sh redirect (captured as IaC under infra/get-no-tickets/)
+    - nt self-update on the install.sh / direct-download channel; package-manager paths redirect to the manager
+    - TS CLI + MCP source retired; npm package retired from this repo (no backcompat per project_no_v1_backcompat)
+    - Public-repo polish (SECURITY.md, CONTRIBUTING.md considered, install docs incl. CI recipes)
+    - Tasks 7 (npm migration shim), 8 (cargo publish), 9 (deb/rpm), 27 (--stream mode), 34 (Scoop) marked superseded — extracted to follow-up fix docs where there's real demand, dropped where there isn't
+  filesModified:
+    - Cargo.toml
+    - crates/nt-cli/**
+    - crates/nt-mcp/**
+    - crates/nt-core/**
+    - crates/nt-schemas/**
+    - .github/workflows/release.yml
+    - .github/workflows/ci.yml
+    - infra/get-no-tickets/**
+    - docs/install.md
+    - docs/binary-error-contract.md
+    - docs/adr/0002-cli-surface.md
+    - docs/adr/0003-typescript-sdk-phase-4-survival.md
+    - docs/rust-spike-notes.md
+    - README.md
+    - SECURITY.md
+archived: true
 ---
 
 # Fix: Rust rewrite of CLI + MCP, multi-channel binary distribution
@@ -977,13 +1006,35 @@ commitSha: null
 A TS wrapper for *new* programmatic-from-JS use cases is deferred to **Phase 4** alongside Python + Go wrappers — built on demand, not for migration.
 
 ### 8. cargo publish
-status: not_started
+status: superseded
+commitSha: null
 
-Publish `nt-cli` and `nt-mcp` to crates.io for the Rust-ecosystem `cargo install` channel.
+**Superseded (2026-05-20):** `cargo install no-tickets` is not a viable
+public channel given the schemas-bundle architecture. `nt-schemas`'s
+`build.rs` fetches the JSON Schema bundle from
+`magic-ingredients/no-tickets-service` GH Releases — a repo that will
+**always** be private (it owns the canonical Zod source-of-truth +
+internal server code). When a downstream user runs `cargo install` from
+crates.io, cargo compiles `nt-schemas` from source, executes that
+`build.rs`, and the unauthenticated fetch 404s. Making this work would
+require nontrivial vendoring of the schemas bundle into the published
+`.crate` file, breaking the single-source-of-truth pattern the build.rs
+was designed around.
 
-**Files to modify/create:**
-- crate metadata in `Cargo.toml`
-- `.github/workflows/publish-crates.yml`
+The fix's own "Lessons / Open Questions" section flags `cargo install`
+as "useful for Rust-ecosystem users but not the primary path. Don't
+optimize the binary for this." Given the permanent private-repo
+constraint and the absence of any cargo-install demand signal, the
+right move is to defer the channel rather than build vendoring scaffold
+for a hypothetical audience.
+
+Practical impact: zero. Rust-ecosystem users install via
+`brew install magic-ingredients/no-tickets/no-tickets`,
+`curl -fsSL https://get.no-tickets.com | sh`, the PowerShell installer,
+or direct tarball download — same channels as everyone else. If real
+demand for `cargo install` surfaces (e.g., a request from a Rust-shop
+adopter who can't use any of those channels), open a fresh fix that
+designs the vendoring strategy with concrete requirements in hand.
 
 ### 9. deb / rpm packaging
 status: superseded
@@ -1237,16 +1288,16 @@ What remains from the TS reference: the **opt-in machine-hash attribute** when `
 
 ## Acceptance Criteria
 
-- [ ] Rust binary built for all 5 targets via cargo + cross/zigbuild
-- [ ] Feature-equivalence smoke matrix passes (CLI commands match TS outputs)
-- [ ] MCP server passes Anthropic spec compliance suite
-- [ ] All distribution channels deliver the same binary checksums
-- [ ] `npm install -g @magic-ingredients/no-tickets` transparently switches users to the Rust binary
-- [ ] `curl -fsSL https://get.no-tickets.com | sh` produces a working `nt` on Linux/macOS
-- [ ] `brew install magic-ingredients/tap/nt` works on macOS + Linux
-- [ ] `scoop install nt` works on Windows
-- [ ] `cargo install nt-cli` works from crates.io
-- [ ] TS CLI + MCP source removed; TS package contains SDK only
+- [x] Rust binary built for all 5 targets via cargo + cross/zigbuild (Task 6 / Task 29)
+- [x] Feature-equivalence smoke matrix passes (CLI commands match TS outputs) (Task 4 sub-tasks)
+- [x] MCP server passes wire-shape compatibility against the TS reference (Task 5 sub-tasks 19/20/23; stdout-purity test from Task 2)
+- [x] All distribution channels deliver the same binary checksums (cargo-dist publishes sha256 sidecars per target — Task 6 / Task 29)
+- [x] `curl -fsSL https://get.no-tickets.com | sh` produces a working `no-tickets` on Linux/macOS (Task 10 + Task 29)
+- [x] `brew install magic-ingredients/no-tickets/no-tickets` works on macOS + Linux (Task 6's publish-homebrew-formula job; verified post-v0.1.0)
+- [x] TS CLI + MCP source removed; TS package retired from this repo (Task 12)
+- [~] `npm install -g @magic-ingredients/no-tickets` transparently switches users to the Rust binary — **superseded** (Task 7: no backcompat per `project_no_v1_backcompat`; npm package retired entirely)
+- [~] `scoop install nt` works on Windows — **superseded** (Task 34: premature for v0.1.0; PowerShell installer covers day-one Windows users; revisit with demand signal, likely as `winget` not Scoop)
+- [~] `cargo install no-tickets` works from crates.io — **superseded** (Task 8: `nt-schemas` build.rs depends on the permanently-private `no-tickets-service` repo; vendoring is non-trivial and there's no cargo-install demand signal)
 
 ## Repo layout
 

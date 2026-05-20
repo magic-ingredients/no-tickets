@@ -33,8 +33,15 @@ behaviour per channel) lives at [docs/install.md](docs/install.md).
 ## Quickstart
 
 ```bash
-no-tickets init                                # browser-based authentication
+# 1. Authenticate to the web UI (browser-based; mints session creds for
+#    management commands).
+no-tickets init
 
+# 2. Register a project's push token locally. Mint the push token from
+#    the project's settings page in the web UI, then:
+no-tickets token add my-project nt_push_…
+
+# 3. Publish — uses the push token registered for --project.
 no-tickets publish --project my-project \
                    --type ai.task.completed.v1 \
                    --data '{"taskId":"123","outcome":"success"}'
@@ -50,8 +57,12 @@ no-tickets self-update                         # for install.sh / direct-downloa
 no-tickets logout                              # remove saved session credentials
 ```
 
-`no-tickets init` handles browser-based auth; per-project push tokens are
-managed separately with `no-tickets token add` and `no-tickets token remove`.
+**Auth model:** `init` mints session credentials for management (browse
+projects, mint push tokens via the web UI). `token add` registers the
+per-project push token used as the Bearer on every `publish` — these
+are distinct credentials with distinct purposes. Publish never falls
+back to session credentials, so `--project` must reference a registered
+token (or `NO_TICKETS_TOKEN` must be exported as a CI escape hatch).
 
 ## What is no-tickets?
 

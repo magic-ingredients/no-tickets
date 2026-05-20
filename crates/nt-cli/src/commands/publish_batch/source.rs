@@ -75,9 +75,9 @@ pub(super) fn merge_source(cli_source: &Value, jsonl_source: Option<&Value>) -> 
     Value::Object(merged)
 }
 
-/// Build a `no-tickets`-base source value from the CLI inputs. Mirrors
-/// the per-event source the single-event path constructs in
-/// `commands::publish::build_metadata` plus the machine-hash
+/// Build a `no-tickets`-base source value from the CLI inputs.
+/// Constructs the same per-event source the single-event path builds
+/// in `commands::publish::build_metadata`, plus the machine-hash
 /// attribute when opted in. Pure given its inputs.
 pub(super) fn build_cli_base_source(
     source_name: Option<&str>,

@@ -1229,7 +1229,7 @@ dependencies = [
 
 [[package]]
 name = "no-tickets"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1262,7 +1262,7 @@ checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
 
 [[package]]
 name = "nt-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "percent-encoding",
  "reqwest",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "nt-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "nt-core",
@@ -1293,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "nt-schemas"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "flate2",
  "jsonschema",

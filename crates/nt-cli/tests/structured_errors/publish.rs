@@ -3,7 +3,12 @@
 //! Exercises every server-side and client-side error class documented
 //! in `docs/binary-error-contract.md`:
 //!
-//! - `not_authenticated` (exit 5) — no `NO_TICKETS_TOKEN`
+//! - `project_not_registered` (exit 6) — no `NO_TICKETS_TOKEN` AND
+//!   no `--project <name>` entry in `config.json`. Post the
+//!   `publish-uses-push-token` fix this is the "missing auth" class,
+//!   not `not_authenticated`. The latter is reserved for server-side
+//!   401 (server rejected a token we DID send).
+//! - `not_authenticated` (exit 5) — server returns 401
 //! - `permission_denied` (exit 3) — server returns 403
 //! - `validation_error` (exit 1) — local schema validation issues
 //! - `unknown_event_type` (exit 2) — type id not in the local registry
@@ -12,7 +17,7 @@
 //!
 //! Each test spawns the binary against a wiremock server (when the
 //! error class involves the server) or no server at all (for purely
-//! client-side errors like usage / not_authenticated / validation).
+//! client-side errors like usage / project_not_registered / validation).
 
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -23,11 +28,14 @@ const TYPE: &str = "ai.task.completed.v1";
 const DATA: &str = r#"{"taskId":"task-1","sessionId":"session-1","startedAt":"2026-05-01T00:00:00.000Z","completedAt":"2026-05-01T00:00:01.000Z","durationMs":1000,"outcome":"success","callCount":1}"#;
 
 #[tokio::test]
-async fn publish_without_token_is_not_authenticated_exit_5() {
+async fn publish_without_token_or_project_is_project_not_registered_exit_6() {
     let home = tempdir();
     // No NO_TICKETS_TOKEN; harness defaults strip it from the env.
-    // Still need NO_TICKETS_API_URL so url resolution doesn't trip on
-    // its own contract first (that's a separate usage-class error).
+    // No config.json either (tempdir is empty). --project demo is
+    // unregistered → project_not_registered (exit 6). Pre-fix this
+    // was not_authenticated (exit 5); the new class is sharper —
+    // the CLI knows the user needs `no-tickets token add demo …`,
+    // not a generic "auth failure".
     let out = run_nt(
         home.path(),
         &[
@@ -50,14 +58,16 @@ async fn publish_without_token_is_not_authenticated_exit_5() {
     .await;
 
     assert_eq!(
-        out.code, 5,
-        "missing token must surface as not_authenticated exit 5"
+        out.code, 6,
+        "unregistered --project must surface as project_not_registered exit 6"
     );
     let v = out.stderr_json();
-    assert_eq!(v["error"], "not_authenticated");
+    assert_eq!(v["error"], "project_not_registered");
+    assert_eq!(v["project"], "demo");
+    // No registered projects → empty knownProjects array (not null).
     assert!(
-        v["message"].as_str().is_some_and(|m| !m.is_empty()),
-        "not_authenticated must include a message, got: {v:?}"
+        v["knownProjects"].as_array().is_some_and(|a| a.is_empty()),
+        "knownProjects must be [] when no projects are registered, got: {v:?}"
     );
 }
 
@@ -100,10 +110,77 @@ async fn publish_with_403_surfaces_permission_denied_exit_3() {
 }
 
 #[tokio::test]
-async fn publish_with_401_surfaces_not_authenticated_exit_5() {
+async fn publish_with_401_surfaces_token_rejected_exit_8() {
+    // After the publish-uses-push-token fix, `publish` always carries
+    // a Bearer (env-var or registered push token). A 401 means the
+    // server rejected the token we sent — token_rejected (exit 8),
+    // NOT not_authenticated (exit 5, which is reserved for "no token
+    // to send" by future management commands).
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(401).set_body_string(r#"{"error":"unauthorized"}"#))
+        .mount(&server)
+        .await;
+
+    let home = tempdir();
+    let out = run_nt(
+        home.path(),
+        &[
+            ("NO_TICKETS_TOKEN", "nt_push_test"),
+            ("NO_TICKETS_API_URL", &server.uri()),
+            ("NO_TICKETS_AUTH_URL", "https://unused.example/auth"),
+        ],
+        &[
+            "publish",
+            "--type",
+            TYPE,
+            "--data",
+            DATA,
+            "--project",
+            "demo",
+        ],
+    )
+    .await;
+
+    assert_eq!(out.code, 8, "401 must surface as token_rejected exit 8");
+    let v = out.stderr_json();
+    assert_eq!(v["error"], "token_rejected");
+    assert!(
+        v["message"].as_str().is_some_and(|m| m.contains("401")),
+        "token_rejected message must reference the 401, got: {v:?}",
+    );
+    // Shape pin: token_rejected has exactly {error, message} — no
+    // storedHost/currentHost (those belonged to the deleted
+    // NotAuthenticated variant) and no domain (that's
+    // permission_denied). Catches drift if a future change
+    // accidentally widens the payload.
+    assert!(
+        v.get("storedHost").is_none(),
+        "token_rejected must not carry storedHost; got: {v:?}",
+    );
+    assert!(
+        v.get("currentHost").is_none(),
+        "token_rejected must not carry currentHost; got: {v:?}",
+    );
+    assert!(
+        v.get("domain").is_none(),
+        "token_rejected must not carry domain; got: {v:?}",
+    );
+}
+
+#[tokio::test]
+async fn publish_with_401_empty_body_still_surfaces_token_rejected() {
+    // Servers may return 401 with an empty body (rare, but valid
+    // HTTP). The mapping code has an explicit `if body.is_empty()`
+    // branch producing a distinct message; this end-to-end test
+    // covers that branch which the wire-byte snapshot can't reach
+    // (the snapshot constructs an NtError directly, bypassing
+    // map_transport_error).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        // No body — wiremock defaults to Content-Length: 0.
         .respond_with(ResponseTemplate::new(401))
         .mount(&server)
         .await;
@@ -128,9 +205,16 @@ async fn publish_with_401_surfaces_not_authenticated_exit_5() {
     )
     .await;
 
-    assert_eq!(out.code, 5, "401 must surface as not_authenticated exit 5");
+    assert_eq!(out.code, 8, "empty-body 401 must still be exit 8");
     let v = out.stderr_json();
-    assert_eq!(v["error"], "not_authenticated");
+    assert_eq!(v["error"], "token_rejected");
+    let message = v["message"].as_str().expect("message present");
+    assert!(message.contains("401"), "got: {message}");
+    // Body-was-empty branch must NOT append a "body:" suffix.
+    assert!(
+        !message.contains(": "),
+        "empty-body branch must not have a body suffix; got: {message}",
+    );
 }
 
 #[tokio::test]
@@ -297,70 +381,13 @@ async fn publish_with_422_preserves_server_body_in_transport_message() {
     );
 }
 
-#[tokio::test]
-async fn publish_host_mismatch_surfaces_stored_and_current_host_fields() {
-    // ADR-0002 stored-session host mismatch maps to NotAuthenticated
-    // with dedicated `storedHost` / `currentHost` fields (the contract
-    // forbids wrappers from parsing `message`). Pinned here against
-    // the binary's outside.
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/events"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0)
-        .mount(&server)
-        .await;
-
-    let home = tempdir();
-    let dir = home.path().join(".notickets");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("credentials"),
-        r#"{"token":"nt_session_staging","email":"a@b.com","expiresAt":"2099-01-01T00:00:00.000Z","host":"https://api-staging.no-tickets.com"}"#,
-    )
-    .unwrap();
-
-    let out = run_nt(
-        home.path(),
-        &[
-            ("NO_TICKETS_API_URL", &server.uri()),
-            ("NO_TICKETS_AUTH_URL", "https://unused.example/auth"),
-        ],
-        &[
-            "publish",
-            "--type",
-            TYPE,
-            "--data",
-            DATA,
-            "--project",
-            "demo",
-        ],
-    )
-    .await;
-
-    assert_eq!(
-        out.code, 5,
-        "host mismatch must surface as not_authenticated"
-    );
-    let v = out.stderr_json();
-    assert_eq!(v["error"], "not_authenticated");
-    assert_eq!(
-        v["storedHost"], "https://api-staging.no-tickets.com",
-        "storedHost field must be on the payload: {v:?}"
-    );
-    let current = v["currentHost"]
-        .as_str()
-        .expect("currentHost must be string");
-    assert!(
-        current.starts_with("http://127.0.0.1:") || current.starts_with("http://[::1]:"),
-        "currentHost must resolve to the wiremock URI, got: {current}"
-    );
-    assert!(
-        !out.stderr.contains("nt_session_staging"),
-        "token MUST NOT leak into the error payload, got: {}",
-        out.stderr
-    );
-}
+// `publish_host_mismatch_surfaces_stored_and_current_host_fields`
+// removed — publish no longer consults the credentials file, so the
+// session-host-mismatch path doesn't exist on this command. The host-
+// mismatch storedHost/currentHost contract still applies to `nt
+// status` (the identity command); its dedicated structured-error
+// test lives in tests/structured_errors/status.rs. See
+// docs/fixes/publish-uses-push-token.md.
 
 // Local pre-flight `unknown_event_type` and `validation_error` for
 // `nt publish` are out of scope for Task 26: today `nt publish` ships

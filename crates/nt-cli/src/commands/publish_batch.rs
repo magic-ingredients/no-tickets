@@ -1,14 +1,17 @@
 //! `nt publish --file <path>` — batch publish from JSONL.
 //!
-//! Mirrors `src/cli/commands/publish/batch.ts::runPublishBatch` from the
-//! TS reference. Reads JSONL (one JSON object per line) from a file path
-//! (or stdin when path is `-`), validates each line locally, builds
-//! one envelope per line with a per-line source override on top of the
-//! CLI base source, and sends the lot as a single POST to `/v1/events`.
+//! Reads JSONL (one JSON object per line) from a file path (or stdin
+//! when path is `-`), validates each line locally, builds one envelope
+//! per line with a per-line source override on top of the CLI base
+//! source, and sends the lot as a single POST to `/v1/events`.
 //!
-//! Distinct from Task 4b (`--stream` mode): batch is one finite read
-//! → one HTTP call → exit. Stream is a long-lived subprocess with
-//! JSONL on stdin AND stdout.
+//! Distinct from `--stream` mode: batch is one finite read → one HTTP
+//! call → exit. Stream is a long-lived subprocess with JSONL on stdin
+//! AND stdout (separate fix).
+//!
+//! Auth model: same as single-event publish — token comes from
+//! `auth::resolve_publish_token(env, --project)`, never session
+//! credentials. See `docs/fixes/publish-uses-push-token.md`.
 
 mod envelope;
 mod jsonl;
@@ -16,7 +19,8 @@ mod source;
 
 use serde_json::Value;
 
-use crate::auth::{emit_host_mismatch_warning, resolve_auth, AuthOutcome, NOT_AUTH_MSG};
+use crate::auth::resolve_publish_token;
+use crate::commands::publish::map_transport_error;
 use crate::env::Env;
 use crate::source_detect::machine_hash_attribute;
 use crate::transport::{
@@ -102,7 +106,9 @@ pub async fn run(args: PublishBatchArgs<'_>, env: &dyn Env) -> i32 {
         }
     }
 
-    // 6. Resolve URLs + auth (same shape as single-event run()).
+    // 6. Resolve URLs + push token (same as single-event run()).
+    //    Session credentials are NEVER consulted here — token comes
+    //    from the project registry or NO_TICKETS_TOKEN env var.
     let urls = match resolve_urls(env) {
         Ok(u) => u,
         Err(e) => {
@@ -110,22 +116,24 @@ pub async fn run(args: PublishBatchArgs<'_>, env: &dyn Env) -> i32 {
             return 1;
         }
     };
-    let auth = match resolve_auth(env, &urls.api_url) {
-        AuthOutcome::Resolved(a) => a,
-        AuthOutcome::SessionHostMismatch {
-            stored_host,
-            current_host,
-        } => {
-            emit_host_mismatch_warning(&stored_host, &current_host);
-            eprintln!("{NOT_AUTH_MSG}");
-            return 1;
-        }
-        AuthOutcome::None => {
-            eprintln!("{NOT_AUTH_MSG}");
-            return 1;
+    let token = match resolve_publish_token(env, args.project) {
+        Ok(t) => t,
+        Err(e) => {
+            // Plain-text rendering matches the rest of this command's
+            // error path (eprintln + non-zero exit). The broader
+            // migration of publish_batch to the structured-error
+            // contract (`Result<(), NtError>` + emit_and_exit_code)
+            // is tracked separately — flagged in main.rs and Task 26's
+            // resolution notes. Mixing structured + unstructured
+            // would be worse than uniform unstructured. Exit code
+            // still comes from the NtError variant so wrappers can at
+            // least distinguish ProjectNotRegistered (6) from Usage
+            // (7) via the code alone.
+            eprintln!("{}", e.to_human());
+            return e.exit_code();
         }
     };
-    let client = match Client::new(urls.api_url, auth.token) {
+    let client = match Client::new(urls.api_url, token) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
@@ -160,8 +168,18 @@ async fn publish_envelopes<C: HttpClient, S: Sleeper>(
             0
         }
         Err(e) => {
-            eprintln!("{e}");
-            1
+            // Route through the same mapping the single-event path
+            // uses so batch publishes share the structured-error
+            // contract — 401 → token_rejected (8), 403 →
+            // permission_denied (3), 429/5xx → transport_error (4),
+            // etc. Plain-text human render matches the rest of this
+            // command's surface (eprintln + non-zero exit); broader
+            // migration to `Result<(), NtError>` + `emit_and_exit_code`
+            // is tracked separately, but exit codes are wrapper-
+            // parseable today regardless.
+            let nt_err = map_transport_error(e);
+            eprintln!("{}", nt_err.to_human());
+            nt_err.exit_code()
         }
     }
 }

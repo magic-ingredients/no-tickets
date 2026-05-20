@@ -12,25 +12,29 @@ use crate::transport::{post_json_with_retry, HttpClient, RetryPolicy, Sleeper, T
 use super::envelope::{build_envelope, EventMetadata};
 
 /// Map the transport's untyped errors onto the structured-error
-/// contract. The mapping is intentionally narrow at this layer: 401
-/// → NotAuthenticated, 403 → PermissionDenied, 5xx → Transport
-/// retriable=true, other 4xx → Transport retriable=false. The 4xx
-/// body is preserved verbatim in the `message` field so server-side
-/// validation context survives to wrappers without us having to parse
-/// the server's error shape here (that's a follow-up if/when the
-/// server starts returning a stable structured error body).
+/// contract. The mapping is intentionally narrow at this layer. The
+/// 4xx body is preserved verbatim in the `message` field so server-
+/// side validation context survives to wrappers without us having to
+/// parse the server's error shape here (that's a follow-up if/when
+/// the server starts returning a stable structured error body).
 ///
 /// Status mapping:
-/// - 401 → NotAuthenticated (token absent / rejected)
+/// - 401 → TokenRejected (publish always carries a Bearer post-fix,
+///   so 401 categorically means "server rejected the token we sent",
+///   not "no token to send" — that pre-flight path is
+///   ProjectNotRegistered instead. Wrappers distinguish exit 8 (re-
+///   mint-token-and-retry) from exit 5 (re-auth flow).)
 /// - 403 → PermissionDenied (domain = "events" today; the wire layer
 ///   only touches `/v1/events` so we don't need to discriminate further
 ///   until a second domain lands)
+/// - 429 → Transport { retriable: true } (rate-limited; the server is
+///   asking us to back off, not refusing on merits)
 /// - 5xx → Transport { retriable: true } (transient; the retry budget
 ///   has been exhausted by the time this maps)
 /// - other 4xx → Transport { retriable: false } (terminal, caller
 ///   should not retry; the body is preserved in the message so server
 ///   validation context survives verbatim to wrappers)
-fn map_transport_error(e: TransportError) -> NtError {
+pub(crate) fn map_transport_error(e: TransportError) -> NtError {
     match e {
         TransportError::Config(msg) => NtError::Usage {
             message: format!("client configuration error: {msg}"),
@@ -40,14 +44,12 @@ fn map_transport_error(e: TransportError) -> NtError {
             retriable: true,
         },
         TransportError::HttpStatus { status, body } => match status {
-            401 => NtError::NotAuthenticated {
+            401 => NtError::TokenRejected {
                 message: if body.is_empty() {
                     "server rejected the bearer token (401)".to_string()
                 } else {
                     format!("server rejected the bearer token (401): {body}")
                 },
-                stored_host: None,
-                current_host: None,
             },
             // 429 — rate-limited. The server is asking us to back off,
             // not refusing the request on its merits. retriable=true so
@@ -286,7 +288,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_event_maps_http_401_to_not_authenticated() {
+    async fn publish_event_maps_http_401_to_token_rejected() {
+        // Post the publish-uses-push-token fix, `publish` always has a
+        // token to send (env-var or registered push token; missing
+        // case is the pre-flight ProjectNotRegistered path). A 401
+        // here means the server rejected the token we DID send. The
+        // sharper class `token_rejected` (exit 8) signals that to
+        // wrappers — distinct from `not_authenticated` (exit 5) which
+        // is reserved for "no token to send" management-command
+        // failures.
         let fake = FakeHttpClient::with_response(Err(TransportError::HttpStatus {
             status: 401,
             body: r#"{"error":"unauthorized"}"#.to_string(),
@@ -301,8 +311,8 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(result, Err(NtError::NotAuthenticated { .. })),
-            "401 must map to NtError::NotAuthenticated, got: {result:?}"
+            matches!(result, Err(NtError::TokenRejected { .. })),
+            "401 must map to NtError::TokenRejected, got: {result:?}"
         );
     }
 

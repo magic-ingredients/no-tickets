@@ -1,6 +1,14 @@
 /**
  * Smoke test for `publish()` against a real server.
  *
+ * This exercises the TS SDK's `publish()` — distinct from the Rust
+ * binary's `no-tickets publish`. The two read DIFFERENT config
+ * locations: this TS path uses `~/.notickets/config.json` (legacy
+ * location, untouched by the Rust port); the Rust binary uses the
+ * platform-native dir resolved via the `directories` crate
+ * (`~/Library/Application Support/com.magic-ingredients.no-tickets/`
+ * on macOS). Don't conflate them when debugging.
+ *
  * Auth/URL resolution — mutually exclusive shapes:
  *   1. --project <name>
  *        Reads token + URL from ~/.notickets/config.json via resolveProjectAuth.

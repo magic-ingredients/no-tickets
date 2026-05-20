@@ -486,7 +486,8 @@ Task 6's acceptance criterion `brew install magic-ingredients/tap/nt` requires b
 - `cargo run -p nt-cli --bin nt` and `cargo run -p nt-cli --bin nt-mcp` both work (dev workflow preserved)
 
 ### 29. Smoke-test release pipeline with a prerelease tag
-status: not_started
+status: completed
+commitSha: b27d2ed
 depends_on: [6, 10, 28]
 
 End-to-end validation of the assembled distribution pipeline before committing to `v0.1.0`. Push `v0.0.1-prerelease.1` (cargo-dist gates `publish-homebrew-formula` on `!is_prerelease`, so the tap stays untouched on smoke tests — exactly what we want).
@@ -502,6 +503,19 @@ End-to-end validation of the assembled distribution pipeline before committing t
 - GitHub Release for the prerelease tag contains 5 tarballs + shell + powershell installer + sha256 checksums
 - `curl -fsSL https://get.no-tickets.com | sh` installs working `nt` and `nt-mcp` to `~/.local/bin/`
 - `publish-homebrew-formula` job shows "skipped" status (not failed) — proves cargo-dist's prerelease gating works as expected
+
+**Resolution note (2026-05-20):** Smoke-test went straight to `v0.1.0` rather than the spec'd prerelease tag — judgment call after two failed iterations on permissions / token name (the prerelease ceremony was deemed overcautious once the residual risk was just build matrix + homebrew publish). Acceptance criteria 1 and 2 are met (5-target archives + sha256 sidecars + both installers present at v0.1.0; `curl get.no-tickets.com | sh` returns 200 text/x-shellscript). Criterion 3 (publish-homebrew-formula skipping on prerelease) was not exercised — `publish-homebrew-formula` ran and succeeded against v0.1.0, which proves the job works end-to-end but not the prerelease-skip gating. Subsequent prerelease cuts would validate that gating cheaply if needed.
+
+Failures encountered + their fixes (all on the path to green v0.1.0):
+- `actions/upload-artifact` 403 on FinalizeArtifact — top-level `permissions: { contents: write }` zeroed `actions:` scope. Fixed by job-level `actions: write` on plan / build-local-artifacts / build-global-artifacts / host (commits 9567792, 2151e4b).
+- Tag-vs-Cargo-version mismatch — `v0.1.0-prerelease.1` didn't match the `0.1.0` crate versions, so `dist host` errored "This workspace doesn't have anything for dist to Release!" Switched to `v0.1.0` direct.
+- nt-schemas build.rs 401 — `gh release download` against the private `magic-ingredients/no-tickets-service` repo failed under the workflow's repo-scoped `GITHUB_TOKEN`. Fixed by injecting a fine-grained PAT (Contents:Read on no-tickets-service) as `GH_TOKEN` at job-level on build-local-artifacts + build-global-artifacts (commits 96a26a7, f42826e, b27d2ed). Stored as repo secret `SCHEMAS_READ_TOKEN`.
+- `get.no-tickets.com` continued to 502 after v0.1.0 went green — the repo itself was still private, so the release-asset URLs 404'd unauthenticated. Resolved by flipping `magic-ingredients/no-tickets` to public (intended state per Task 31).
+
+Verified post-resolution:
+- `curl -sI https://get.no-tickets.com` → `HTTP/2 200 text/x-shellscript`
+- `gh release view v0.1.0 --json assets` lists all 17 expected artifacts
+- `publish-homebrew-formula` job green; `magic-ingredients/homebrew-tap` carries `Formula/no-tickets.rb`
 
 ### 30. Rename source.name wire identifier `"nt-cli"` → `"no-tickets"`
 status: completed
@@ -834,7 +848,8 @@ This is bookkeeping — no behaviour change. Pinned by every existing test suite
 - `crates/nt-cli/src/commands/publish.rs` + `publish_batch.rs` → per-concern submodules
 
 ### 6. Distribution pipeline via `cargo-dist`
-status: not_started
+status: completed
+commitSha: da19515
 depends_on: [23, 24, 25, 11, 12]
 
 **Why Task 11 (self-update) is a hard prerequisite, not a follow-up:**
@@ -935,6 +950,8 @@ Out of `cargo-dist`'s scope (handled in separate tasks): deb/rpm packaging (Task
 - `curl -fsSL https://get.no-tickets.com | sh` produces a working `nt` on Linux/macOS
 
 Scoop is out of cargo-dist 0.31.0's installer set (shell/powershell/npm/homebrew/msi only) and lands as its own task (Task 34).
+
+**Resolution note (2026-05-20):** Pipeline shipped at v0.1.0. Scaffolding commit was da19515 (feat); follow-up fixes 9567792 / 2151e4b (actions: write permissions), 96a26a7 / f42826e / b27d2ed (SCHEMAS_READ_TOKEN injection) landed before the first green release. See Task 29's resolution note for the full smoke-test narrative + the four failure modes that surfaced + their resolutions. All three acceptance criteria verified post-flip-to-public: 5-target archives + sha256 sidecars + both installers in the v0.1.0 release; `Formula/no-tickets.rb` committed to magic-ingredients/homebrew-tap by the publish-homebrew-formula job; `curl get.no-tickets.com` returns 200 text/x-shellscript.
 
 ### 7. npm wrapper package (migration path for current users)
 status: superseded

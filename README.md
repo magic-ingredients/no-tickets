@@ -1,5 +1,11 @@
 # no-tickets
 
+[![Release](https://img.shields.io/github/v/release/magic-ingredients/no-tickets)](https://github.com/magic-ingredients/no-tickets/releases/latest)
+[![CI](https://github.com/magic-ingredients/no-tickets/actions/workflows/ci.yml/badge.svg)](https://github.com/magic-ingredients/no-tickets/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/magic-ingredients/no-tickets)](LICENSE)
+[![Install: curl | sh](https://img.shields.io/badge/install-curl%20%7C%20sh-blue)](https://get.no-tickets.com)
+[![Homebrew tap](https://img.shields.io/badge/brew-magic--ingredients%2Ftap%2Fno--tickets-orange)](https://github.com/magic-ingredients/homebrew-tap)
+
 Ticketless project management for AI teams. The `nt` CLI pushes
 project-state events from your repo to a hosted dashboard; AI agents are
 first-class and show up alongside human work.

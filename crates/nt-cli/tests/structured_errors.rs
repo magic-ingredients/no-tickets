@@ -12,7 +12,12 @@
 //! - `nt validate`
 //!
 //! Out of scope (separate cleanup tickets):
-//! - `nt init`, `nt logout`, `nt status`, `nt token …`, `nt self-update`
+//! - `nt init`, `nt logout`, `nt status`, `nt token …`
+//!
+//! The `update` submodule pins the rename of `self-update` → `update`
+//! (Task 2 of `docs/fixes/self-update-broken-on-tar-xz.md`) — it's
+//! not a structured-error test per se, but uses the same harness and
+//! the rename is contemporaneous, so it lives here for now.
 //!
 //! Test surface organisation: one submodule per command, with a thin
 //! shared `common` harness that spawns the binary against an isolated
@@ -23,6 +28,9 @@ mod common;
 
 #[path = "structured_errors/publish.rs"]
 mod publish;
+
+#[path = "structured_errors/update.rs"]
+mod update;
 
 #[path = "structured_errors/validate.rs"]
 mod validate;

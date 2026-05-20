@@ -603,7 +603,7 @@ The PowerShell installer + direct ZIP download cover day-one Windows users. If W
 
 ### 35. CI integration polish
 status: completed
-commitSha: 5857e37
+commitSha: 3ac57f1
 depends_on: [13, 29]
 
 Two-audience framing surfaced during session 2026-05-15: CI runners use `curl … | sh` regardless of platform (no PM, no state between runs); only developer workstations install via brew/cargo/PowerShell/etc. CI usage is likely the larger volume once adoption picks up — every PR / push pulls the binary, vs. one install per dev workstation. This task closes the gap on CI-side ergonomics.

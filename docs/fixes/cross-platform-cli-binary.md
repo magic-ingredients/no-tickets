@@ -444,26 +444,18 @@ Use `thiserror` for the error enum and a single match arm to map variant → exi
 - Contract doc lives at a stable URL referenced by per-language wrappers
 
 ### 27. `--stream` mode for warm in-process publishing
-status: not_started
+status: superseded
+commitSha: null
 
-Implement the streaming protocol documented in "Public binary contract": JSONL on stdin → JSONL on stdout, id-correlated, multi-project per session, graceful EOF.
-
-This is what per-language wrappers use to keep the binary alive across many publish calls (~1 ms per event after first spawn vs ~50 ms cold). Same pattern as `git cat-file --batch`, `clangd`, `aspell -a`.
-
-**Files to modify/create:**
-- `crates/nt-cli/src/commands/publish_stream.rs`
-- `crates/nt-cli/tests/stream-mode.rs` — assertions on:
-  - Request/response id correlation
-  - Multi-project per stream (per-line `project` overrides flag default)
-  - EOF drains in-flight + exits 0
-  - Stdin-closed-mid-flight produces `ok: false, transport_aborted` for in-progress
-  - Backpressure (large request, slow consumer): no deadlock
-- `docs/binary-stream-protocol.md` — public protocol doc
-
-**Acceptance:**
-- Ten thousand events streamed through one subprocess in <2 s end-to-end (bounded by network + server, not binary overhead)
-- Per-event overhead measured at <2 ms median on the wrapper side
-- Crash recovery: if the binary panics mid-stream, in-flight responses surface as `ok: false, transport_aborted`; wrapper can re-spawn cleanly
+**Superseded (2026-05-20):** extracted into a standalone fix —
+`docs/fixes/stream-mode.md`. The work is substantive feature scope
+(JSONL protocol on stdin/stdout, multi-project session cache, EOF +
+crash semantics, a public protocol-versioning doc) and has its own
+downstream dependencies (Phase 4 per-language wrappers depend on it).
+Tracking it under cross-platform-cli-binary muddies that fix's
+already-long task list; the extracted doc owns the scope, history,
+and review surface independently. No code shipped here; see the new
+fix for current status.
 
 ### 28. Consolidate nt-cli and nt-mcp into a single shippable cargo package
 status: completed
@@ -584,14 +576,14 @@ Root cause of the recurring fmt drift that's been showing up as "incidental rust
 - No drift-by-accumulation across crates in subsequent commits
 
 ### 33. Decide TS-SDK Phase 4 survival
-status: not_started
+status: completed
+commitSha: HEAD
 
-Parked architectural question. Phase 4 (per-language wrappers) currently lists TS alongside Python and Go: a ~50–80 LOC wrapper that spawns `nt` (potentially in `--stream` mode for warm reuse). Open question: does the npm package come back, or is the Rust binary the only client surface forever and TS users go through `execFile('nt', ...)` themselves?
+Parked architectural question. Phase 4 (per-language wrappers) lists TS alongside Python and Go: a ~50–80 LOC wrapper that spawns `no-tickets-mcp` (potentially in `--stream` mode for warm reuse). Open question: does the npm package come back, or is the Rust binary the only client surface forever and TS users go through `execFile('no-tickets', ...)` themselves?
 
-Decision blocks nothing in Phase 3 but sets the Phase 4 scope and tells Task 13 (docs) whether to mention `npm install @magic-ingredients/no-tickets` at all.
+Decision blocks nothing in Phase 3 but sets the Phase 4 scope and tells the docs story whether to mention `npm install @magic-ingredients/no-tickets` at all.
 
-**Acceptance:**
-- A short ADR or a paragraph in `docs/rust-spike-notes.md` captures the decision and its rationale, so future Phase 4 work doesn't have to re-litigate it.
+**Resolution (2026-05-20):** `docs/adr/0003-typescript-sdk-phase-4-survival.md` captures the decision: **the TS wrapper comes back, shipped as the same `@magic-ingredients/no-tickets` npm package** (split exports — `/sdk` for the markdown helpers, `/client` for the new spawn-based client). Rationale: discoverability for TS-shop teams, type-safety against the schemas-from-Zod codegen, symmetry with the Python and Go wrappers that ship in Phase 4 regardless. Wrapper is a ~50-80 LOC spawn shim, not a parallel TS CLI implementation.
 
 ### 34. Scoop manifest support (Windows)
 status: superseded
@@ -994,14 +986,14 @@ Publish `nt-cli` and `nt-mcp` to crates.io for the Rust-ecosystem `cargo install
 - `.github/workflows/publish-crates.yml`
 
 ### 9. deb / rpm packaging
-status: not_started
+status: superseded
+commitSha: null
 
-Apt and yum repositories for Linux server installs. Hosted on GitHub Pages or a CDN. Out of `cargo-dist` scope — hand-rolled.
-
-**Files to modify/create:**
-- `.github/workflows/build-debs.yml`
-- `.github/workflows/build-rpms.yml`
-- repo manifest files
+**Superseded (2026-05-20):** extracted into a standalone fix —
+`docs/fixes/deb-rpm-packaging.md`. Out of cargo-dist scope, demand-
+signal-dependent, and has its own multi-task surface (build deb, build
+rpm, host the repos, signing strategy, docs). Lives separately so it
+doesn't bloat this fix's task list while it waits for adoption pull.
 
 ### 10. get.no-tickets.com hosting + install.sh redirect
 status: completed

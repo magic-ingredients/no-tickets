@@ -52,12 +52,12 @@ directory to the user `PATH`. Restart the shell after install.
 ### Rust ecosystem — `cargo install`
 
 > **Coming soon.** Task 8 of the cross-platform-cli-binary fix
-> (`cargo publish` of `no-tickets`) is not yet shipped. The crate name
-> `no-tickets` on crates.io is currently a placeholder at v0.0.0
-> reserved by an unrelated author; `cargo install no-tickets --locked`
-> will not install this binary today. Use one of the channels above.
-> This section will be replaced with the working command when Task 8
-> lands.
+> (`cargo publish` of the real binary) hasn't shipped yet. The crate
+> name `no-tickets` on crates.io is currently a defensive placeholder
+> at v0.0.0 — we own it so nobody else can squat the name; it just
+> doesn't ship a working binary today. Use the shell installer or
+> Homebrew above. When Task 8 lands, this section will be replaced
+> with the working `cargo install no-tickets --locked` command.
 
 ### Direct tarball download
 

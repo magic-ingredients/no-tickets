@@ -118,43 +118,62 @@ pub fn resolve(
     flags: &ActorFlags<'_>,
     api_url: &str,
 ) -> Resolved {
+    // `--actor-type` constrains the set of branches eligible to
+    // produce a non-`None` actor. When omitted, every branch is
+    // eligible (the original free-form precedence chain). When set,
+    // mismatched branches are skipped — `--actor-type=human` forces
+    // the credentials/unattributed sub-chain even if a session file
+    // is present; `--actor-type=agent` skips the credentials branch
+    // even when credentials would otherwise resolve. The flag thus
+    // becomes a *constraint* the caller can use to opt out of the
+    // wrong identity surface (e.g. a CI runner with `init`-creds
+    // sitting around but wanting to publish under its `agent` label).
+    let agent_ok = flags.actor_type.is_none_or(|t| t == "agent");
+    let human_ok = flags.actor_type.is_none_or(|t| t == "human");
+
     // Branch 1: identity flags (--agent-id present) → flags win.
-    if let Some(agent_id) = flags.agent_id {
-        let actor = build_agent_from_flags(agent_id, flags);
-        return Resolved {
-            actor: Some(Actor::Agent(actor)),
-            source: ResolutionSource::Flags,
-        };
+    if agent_ok {
+        if let Some(agent_id) = flags.agent_id {
+            let actor = build_agent_from_flags(agent_id, flags);
+            return Resolved {
+                actor: Some(Actor::Agent(actor)),
+                source: ResolutionSource::Flags,
+            };
+        }
     }
 
     // Branch 2: alternate session-file path via flag or env var. The
     // flag wins over the env var when both are set; the env var alone
     // is sufficient when no flag is given.
-    let alt_path: Option<String> = flags
-        .session_file
-        .map(str::to_string)
-        .or_else(|| env.var("NO_TICKETS_SESSION_FILE").filter(|s| !s.is_empty()));
-    if let Some(path) = alt_path {
-        if let Some(actor) = read_session_actor(Path::new(&path), clock) {
-            let actor = layer_per_call(actor, flags);
-            return Resolved {
-                actor: Some(Actor::Agent(actor)),
-                source: ResolutionSource::SessionFileEnv,
-            };
+    if agent_ok {
+        let alt_path: Option<String> = flags
+            .session_file
+            .map(str::to_string)
+            .or_else(|| env.var("NO_TICKETS_SESSION_FILE").filter(|s| !s.is_empty()));
+        if let Some(path) = alt_path {
+            if let Some(actor) = read_session_actor(Path::new(&path), clock) {
+                let actor = layer_per_call(actor, flags);
+                return Resolved {
+                    actor: Some(Actor::Agent(actor)),
+                    source: ResolutionSource::SessionFileEnv,
+                };
+            }
+            // Stale / missing / corrupt alt file → fall through to
+            // lower-priority branches. Stays consistent with the "no
+            // errors, only outcomes" contract.
         }
-        // Stale / missing alt file → fall through to lower-priority
-        // branches. Stays consistent with the "no errors, only
-        // outcomes" contract.
     }
 
     // Branch 3: `<config-dir>/active-session.json`.
-    if let Ok(Some(sf)) = session::read(env) {
-        if !session::is_expired(&sf.started_at, sf.max_age_hours, clock.now()) {
-            let actor = layer_per_call(sf.actor, flags);
-            return Resolved {
-                actor: Some(Actor::Agent(actor)),
-                source: ResolutionSource::ActiveSessionFile,
-            };
+    if agent_ok {
+        if let Ok(Some(sf)) = session::read(env) {
+            if !session::is_expired(&sf.started_at, sf.max_age_hours, clock.now()) {
+                let actor = layer_per_call(sf.actor, flags);
+                return Resolved {
+                    actor: Some(Actor::Agent(actor)),
+                    source: ResolutionSource::ActiveSessionFile,
+                };
+            }
         }
     }
 
@@ -163,16 +182,25 @@ pub fn resolve(
     // `userId` field, but per the user-story "userId + email attached
     // automatically from session credentials" the credentials' email
     // is the canonical identity surface today.
-    if let LoadOutcome::Valid(c) = credentials::load(env, api_url) {
-        let actor = HumanActor {
-            actor_type: "human".to_string(),
-            user_id: c.email.clone(),
-            email: Some(c.email),
-        };
-        return Resolved {
-            actor: Some(Actor::Human(actor)),
-            source: ResolutionSource::Credentials,
-        };
+    //
+    // Per-call enrichment flags (`--call-id`, token counts, latency)
+    // are intentionally NOT layered onto the human actor — the
+    // canonical `humanActorSchema` carries only `userId` + optional
+    // `email`. A human-attributed publish that supplies per-call
+    // flags silently drops them; that's a documented limitation, not
+    // an error.
+    if human_ok {
+        if let LoadOutcome::Valid(c) = credentials::load(env, api_url) {
+            let actor = HumanActor {
+                actor_type: "human".to_string(),
+                user_id: c.email.clone(),
+                email: Some(c.email),
+            };
+            return Resolved {
+                actor: Some(Actor::Human(actor)),
+                source: ResolutionSource::Credentials,
+            };
+        }
     }
 
     // Branch 5: unattributed.
@@ -406,7 +434,10 @@ mod tests {
     #[test]
     fn resolve_with_credentials_returns_human_actor() {
         // Branch 4: no session, but session credentials exist + match
-        // the api_url. Builds a HumanActor.
+        // the api_url. Builds a HumanActor. Pin that `userId` is set to
+        // the credentials' email — the credentials file doesn't carry
+        // a dedicated userId field today, so the email is the canonical
+        // identity surface.
         let tmp = tempfile::tempdir().unwrap();
         write_credentials(tmp.path(), "alice@example.com", FAR_FUTURE, PROD_API);
         let env = env_with(tmp.path(), &[]);
@@ -417,9 +448,9 @@ mod tests {
         assert_eq!(r.source, ResolutionSource::Credentials);
         match r.actor {
             Some(Actor::Human(h)) => {
-                assert!(
-                    !h.user_id.is_empty(),
-                    "human actor must carry a non-empty userId",
+                assert_eq!(
+                    h.user_id, "alice@example.com",
+                    "human actor's userId must match the credentials' email",
                 );
                 assert_eq!(h.email.as_deref(), Some("alice@example.com"));
             }
@@ -528,19 +559,152 @@ mod tests {
 
     #[test]
     fn resolve_per_call_flags_alone_do_not_construct_an_actor() {
-        // --call-id without --agent-id (or session/credentials) must NOT
-        // synthesise an actor. Enrichment is overlay, not identity.
+        // Every per-call enrichment + session-context flag, supplied
+        // WITHOUT --agent-id and without a session/credentials, must
+        // NOT synthesise an actor. Enrichment is overlay, not identity.
+        // Pinning all four enrichment fields (and a couple of
+        // session-context fields) closes the door on a regression
+        // where any single optional flag accidentally became an
+        // identity trigger.
         let tmp = tempfile::tempdir().unwrap();
         let env = env_with(tmp.path(), &[]);
         let clock = FixedClock(dt("2026-05-21T10:00:00.000Z"));
         let flags = ActorFlags {
             call_id: Some("call-xyz"),
+            prompt_tokens: Some(1234),
+            completion_tokens: Some(567),
+            latency_ms: Some(812),
+            model: Some("claude-opus-4-7"),
+            provider: Some("anthropic"),
+            session_id: Some("sess-1"),
+            thinking_effort: Some("high"),
             ..Default::default()
         };
 
         let r = resolve(&env, &clock, &flags, PROD_API);
         assert_eq!(r.source, ResolutionSource::Unattributed);
+        assert!(r.actor.is_none(), "got unexpected actor: {:?}", r.actor);
+    }
+
+    #[test]
+    fn resolve_per_call_flags_with_credentials_silently_drop_for_human_actor() {
+        // Per-call enrichment fields (callId, tokens, latency) belong
+        // to the agent actor schema. They have no equivalent on the
+        // human variant, so a credentials-attributed publish that
+        // supplies them silently drops them. Pin that the human actor
+        // is still produced and that no `callId` key sneaks onto the
+        // serialised wire shape.
+        let tmp = tempfile::tempdir().unwrap();
+        write_credentials(tmp.path(), "alice@example.com", FAR_FUTURE, PROD_API);
+        let env = env_with(tmp.path(), &[]);
+        let clock = FixedClock(dt("2026-05-21T10:00:00.000Z"));
+        let flags = ActorFlags {
+            call_id: Some("call-xyz"),
+            prompt_tokens: Some(1234),
+            ..Default::default()
+        };
+
+        let r = resolve(&env, &clock, &flags, PROD_API);
+        assert_eq!(r.source, ResolutionSource::Credentials);
+        let Some(Actor::Human(_)) = r.actor.clone() else {
+            panic!("expected human, got {:?}", r.actor);
+        };
+        let json: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&r.actor.unwrap()).unwrap()).unwrap();
+        assert!(
+            json.get("callId").is_none(),
+            "per-call flags must not bleed onto human-actor wire shape; got {json}",
+        );
+        assert!(json.get("promptTokens").is_none());
+    }
+
+    #[test]
+    fn resolve_active_session_corrupt_file_falls_through_to_unattributed() {
+        // active-session.json exists but is unparseable JSON. The
+        // resolver must NOT panic and must fall through to the next
+        // branch (credentials → unattributed here).
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_with(tmp.path(), &[]);
+        let dir = tmp.path().join(".notickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("active-session.json"), b"not json at all").unwrap();
+        let clock = FixedClock(dt("2026-05-21T11:00:00.000Z"));
+
+        let r = resolve(&env, &clock, &ActorFlags::default(), PROD_API);
+        assert_eq!(r.source, ResolutionSource::Unattributed);
         assert!(r.actor.is_none());
+    }
+
+    // ─── --actor-type constrains branch eligibility ────────────────────────
+
+    #[test]
+    fn resolve_with_actor_type_human_skips_agent_session_file() {
+        // Session file is present (would normally win at branch 3) but
+        // the caller explicitly says `--actor-type=human`. The agent
+        // branch must be skipped. With no credentials on disk either,
+        // we fall through to unattributed.
+        let tmp = tempfile::tempdir().unwrap();
+        let env = env_with(tmp.path(), &[]);
+        write_session(&env, "2026-05-21T10:00:00.000Z", agent_actor("claude"));
+        let clock = FixedClock(dt("2026-05-21T11:00:00.000Z"));
+        let flags = ActorFlags {
+            actor_type: Some("human"),
+            ..Default::default()
+        };
+
+        let r = resolve(&env, &clock, &flags, PROD_API);
+        assert_eq!(
+            r.source,
+            ResolutionSource::Unattributed,
+            "--actor-type=human must skip the active-session agent branch",
+        );
+        assert!(r.actor.is_none());
+    }
+
+    #[test]
+    fn resolve_with_actor_type_agent_skips_human_credentials() {
+        // Credentials are present (would normally land at branch 4) but
+        // the caller says `--actor-type=agent`. With no agent-producing
+        // input either (no agent-id, no session), we fall through to
+        // unattributed rather than misattributing as the human.
+        let tmp = tempfile::tempdir().unwrap();
+        write_credentials(tmp.path(), "alice@example.com", FAR_FUTURE, PROD_API);
+        let env = env_with(tmp.path(), &[]);
+        let clock = FixedClock(dt("2026-05-21T10:00:00.000Z"));
+        let flags = ActorFlags {
+            actor_type: Some("agent"),
+            ..Default::default()
+        };
+
+        let r = resolve(&env, &clock, &flags, PROD_API);
+        assert_eq!(
+            r.source,
+            ResolutionSource::Unattributed,
+            "--actor-type=agent must skip the credentials human branch",
+        );
+        assert!(r.actor.is_none());
+    }
+
+    #[test]
+    fn resolve_with_actor_type_human_resolves_to_credentials_when_present() {
+        // --actor-type=human + credentials present → human actor.
+        // Symmetric with the default-flag credentials path; just pins
+        // that the constraint doesn't accidentally over-block.
+        let tmp = tempfile::tempdir().unwrap();
+        write_credentials(tmp.path(), "bob@example.com", FAR_FUTURE, PROD_API);
+        let env = env_with(tmp.path(), &[]);
+        let clock = FixedClock(dt("2026-05-21T10:00:00.000Z"));
+        let flags = ActorFlags {
+            actor_type: Some("human"),
+            ..Default::default()
+        };
+
+        let r = resolve(&env, &clock, &flags, PROD_API);
+        assert_eq!(r.source, ResolutionSource::Credentials);
+        match r.actor {
+            Some(Actor::Human(h)) => assert_eq!(h.user_id, "bob@example.com"),
+            other => panic!("expected human, got {other:?}"),
+        }
     }
 
     // ─── wire-shape of the resolved actor (serialisation) ──────────────────

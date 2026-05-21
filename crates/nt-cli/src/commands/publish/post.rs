@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::error::NtError;
 use crate::transport::{post_json_with_retry, HttpClient, RetryPolicy, Sleeper, TransportError};
 
-use super::envelope::{build_envelope, EventMetadata};
+use super::envelope::{build_envelope, EnvelopeInputs};
 
 /// Map the transport's untyped errors onto the structured-error
 /// contract. The mapping is intentionally narrow at this layer. The
@@ -102,7 +102,7 @@ pub(super) async fn publish_event<C: HttpClient, S: Sleeper>(
     sleeper: &S,
     type_id: &str,
     data: &Value,
-    meta: EventMetadata<'_>,
+    meta: EnvelopeInputs<'_>,
 ) -> Result<(), NtError> {
     let body = vec![build_envelope(type_id, data, meta)];
     // serde_json::to_vec on `Vec<EventEnvelope>` cannot fail — every

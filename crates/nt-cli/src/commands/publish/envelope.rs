@@ -57,19 +57,19 @@ pub(super) struct Source<'a> {
     pub(super) attributes: Option<BTreeMap<&'a str, &'a str>>,
 }
 
-/// Already-validated metadata for a single event. Construct via
-/// `build_metadata`, which pre-merges `--source-attribute` flags into
-/// `attributes` (project entry + per-flag overrides, last-wins on
-/// duplicate keys).
+/// Pre-validated *inputs* for building one event envelope. Distinct
+/// from the wire-level `metadata` field — the name `EnvelopeInputs`
+/// avoids confusion with `crate::actor::EventMetadata`, which is the
+/// canonical wire-shape carrying `{ actor }` between `data` and
+/// `source`.
 ///
-/// The `actor` field starts as `None` in `build_metadata` and is set
-/// after the resolver runs in `publish::run`. Naming note: the type is
-/// the publish-flow's *staging* metadata; the `actor` payload becomes
-/// the wire envelope's `metadata` field — see `WireMetadata`.
+/// `build_metadata` (see `metadata.rs`) constructs these inputs from
+/// the parsed flags; `actor` starts as `None` and is set after
+/// `actor::resolve` runs in `publish::run`.
 ///
 /// `Debug` is required by `Result::expect_err` in the metadata tests.
 #[derive(Debug)]
-pub(super) struct EventMetadata<'a> {
+pub(super) struct EnvelopeInputs<'a> {
     pub(super) source_name: &'a str,
     pub(super) attributes: BTreeMap<&'a str, &'a str>,
     pub(super) parent: Option<&'a str>,
@@ -87,7 +87,7 @@ pub(super) struct EventMetadata<'a> {
 pub(super) fn build_envelope<'a>(
     type_id: &'a str,
     data: &'a Value,
-    meta: EventMetadata<'a>,
+    meta: EnvelopeInputs<'a>,
 ) -> EventEnvelope<'a> {
     // `attributes` is always non-empty here — `build_metadata` seeds it
     // with the `project` entry on construction and every test path
@@ -116,10 +116,10 @@ pub(super) fn build_envelope<'a>(
 /// `build_metadata` produces for a `PublishArgs` with only the three
 /// required flags set.
 #[cfg(test)]
-pub(super) fn bare_meta(project: &str) -> EventMetadata<'_> {
+pub(super) fn bare_meta(project: &str) -> EnvelopeInputs<'_> {
     let mut attributes = BTreeMap::new();
     attributes.insert("project", project);
-    EventMetadata {
+    EnvelopeInputs {
         // Read from the const rather than re-hardcoding the literal —
         // DEFAULT_SOURCE_NAME's docstring warns about exactly this kind
         // of duplication causing single-vs-batch path drift.
@@ -158,6 +158,60 @@ mod tests {
         assert!(
             t < d && d < s,
             "wire field order must be type, data, source — got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_field_order_places_metadata_between_data_and_source() {
+        // Pin the metadata wire position via a unit-level test that
+        // uses deliberately neutral `data` (no `type`/`data`/`metadata`
+        // /`source` substrings) so the integration position pin in
+        // `tests/actor-resolution.rs` can rely on this contract holding
+        // at the type-level, not just per-fixture. A regression that
+        // reorders `metadata` after `source` (or before `data`) fires
+        // here even when the integration fixture happens to be benign.
+        let data = json!({ "neutralKey": "neutralValue" });
+        let actor = Actor::Agent(crate::session::AgentActor {
+            actor_type: "agent".to_string(),
+            agent_id: "claude".to_string(),
+            model: None,
+            provider: None,
+            session_id: None,
+            thinking_effort: None,
+            call_id: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+            latency_ms: None,
+        });
+        let mut meta = bare_meta("demo");
+        meta.actor = Some(actor);
+        let envelope = build_envelope("ai.task.completed.v1", &data, meta);
+        let body = serde_json::to_string(&envelope).expect("serialises");
+
+        let t = body.find(r#""type":"#).expect("type key");
+        let d = body.find(r#""data":"#).expect("data key");
+        let m = body.find(r#""metadata":"#).expect("metadata key");
+        let s = body.find(r#""source":"#).expect("source key");
+        assert!(
+            t < d && d < m && m < s,
+            "wire field order must be type, data, metadata, source — got {body}",
+        );
+    }
+
+    #[test]
+    fn build_envelope_omits_metadata_key_entirely_when_actor_is_none() {
+        // Companion to the above — the absent-actor case must NOT
+        // produce a `"metadata":null` literal on the wire. This is the
+        // server's contract guarantee: `metadata` is optional, never
+        // `null`.
+        let body = serialise_with_neutral_data("demo");
+        assert!(
+            !body.contains(r#""metadata":"#),
+            "metadata key must be absent when actor is None; got {body}",
+        );
+        assert!(
+            !body.contains(r#""metadata":null"#),
+            "no `\"metadata\":null` on the wire; got {body}",
         );
     }
 

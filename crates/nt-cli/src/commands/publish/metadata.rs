@@ -1,18 +1,18 @@
 //! Usage validation + `--source-attribute` parsing for `nt publish`.
 //!
-//! Pure: no I/O. Returns the assembled `EventMetadata` or a user-facing
+//! Pure: no I/O. Returns the assembled `EnvelopeInputs` or a user-facing
 //! error string. Borrows from `args`, so the returned metadata's
 //! lifetime is bounded by the caller's `args`.
 
 use std::collections::BTreeMap;
 
-use super::envelope::EventMetadata;
+use super::envelope::EnvelopeInputs;
 use super::{PublishArgs, DEFAULT_SOURCE_NAME};
 
 pub(super) fn build_metadata<'a>(
     args: &'a PublishArgs<'a>,
     machine_hash: Option<&'a str>,
-) -> Result<EventMetadata<'a>, String> {
+) -> Result<EnvelopeInputs<'a>, String> {
     let mut attributes: BTreeMap<&'a str, &'a str> = BTreeMap::new();
     attributes.insert("project", args.project);
     // Insert the auto-computed machine hash BEFORE the flag-derived
@@ -27,7 +27,7 @@ pub(super) fn build_metadata<'a>(
         attributes.insert(key, value);
     }
 
-    Ok(EventMetadata {
+    Ok(EnvelopeInputs {
         source_name: args.source_name.unwrap_or(DEFAULT_SOURCE_NAME),
         attributes,
         parent: args.parent,

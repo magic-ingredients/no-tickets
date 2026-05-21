@@ -127,6 +127,14 @@ fn state_path(home: &Path) -> PathBuf {
     home.join(".notickets").join("state.json")
 }
 
+/// Seed a session file with a deterministic, fixed `startedAt` and a
+/// `maxAgeHours` window of ~100 years. Tests stay in-window regardless
+/// of wall-clock skew or CI suspension; the actor-resolution path is
+/// no longer coupled to `OffsetDateTime::now_utc()` from the test side.
+///
+/// The hour count is well below `u32::MAX` so `Duration::hours` doesn't
+/// panic on overflow — the time crate's `Duration::hours(i64)` rejects
+/// values that would saturate. 100y ≈ 876,000h is comfortably in range.
 fn write_session_file(path: &Path, started_at: &str, agent_id: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
@@ -134,26 +142,16 @@ fn write_session_file(path: &Path, started_at: &str, agent_id: &str) {
     fs::write(
         path,
         format!(
-            r#"{{"version":1,"actor":{{"type":"agent","agentId":"{agent_id}"}},"startedAt":"{started_at}","pid":1,"maxAgeHours":24}}"#,
+            r#"{{"version":1,"actor":{{"type":"agent","agentId":"{agent_id}"}},"startedAt":"{started_at}","pid":1,"maxAgeHours":876000}}"#,
         ),
     )
     .unwrap();
 }
 
-/// Recent UTC timestamp string in the wire millisecond-Z form. Always
-/// "now" within the 24h default session window — used to seed a fresh
-/// session for tests that need an attributed publish.
+/// Deterministic fixture timestamp. Always in-window thanks to the
+/// large `maxAgeHours` seeding in `write_session_file`.
 fn fresh_started_at() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.000Z",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        now.hour(),
-        now.minute(),
-        now.second(),
-    )
+    "2026-01-01T00:00:00.000Z".to_string()
 }
 
 // Drive a sequence of N publishes against one wiremock server; record
@@ -387,6 +385,88 @@ async fn publish_second_unattributed_does_not_re_fire_hint() {
 }
 
 #[tokio::test]
+async fn publish_no_tickets_quiet_env_var_suppresses_stderr_but_still_sets_marker() {
+    // Per PRD: NO_TICKETS_QUIET=<non-empty> is equivalent to --quiet
+    // for the hint emit, but the marker is still written so the env
+    // var doesn't have to stay set forever after the operator's
+    // initial opt-out.
+    let server = MockServer::start().await;
+    let _ = capture_body(&server).await;
+
+    let home = tempfile::tempdir().unwrap();
+    let mut cmd = nt_publish_cmd();
+    cmd.env("NO_TICKETS_HOME", home.path())
+        .env_remove("NO_TICKETS_TOKEN")
+        .env_remove("NO_TICKETS_ENV")
+        .env_remove("NO_TICKETS_SESSION_FILE")
+        .env("NO_TICKETS_QUIET", "1")
+        .env("NO_TICKETS_API_URL", server.uri())
+        .env("NO_TICKETS_AUTH_URL", "https://unused.example/auth")
+        .env("NO_TICKETS_TOKEN", PUSH_TOKEN)
+        .env("NT_RETRY_BASE_DELAY_MS", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .arg("publish");
+    for a in base_args() {
+        cmd.arg(a);
+    }
+    let out = cmd.output().await.expect("spawn");
+    assert!(out.status.success(), "stderr={:?}", out.stderr);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("no-tickets session start"),
+        "NO_TICKETS_QUIET must suppress stderr hint; got {stderr:?}",
+    );
+    assert!(
+        state_path(home.path()).exists(),
+        "state.json must be created even under NO_TICKETS_QUIET",
+    );
+    let parsed: Value =
+        serde_json::from_str(&fs::read_to_string(state_path(home.path())).unwrap()).unwrap();
+    assert_eq!(parsed["firstPublishHintShown"], true);
+}
+
+#[tokio::test]
+async fn publish_failure_does_not_fire_hint_and_does_not_create_state_json() {
+    // The structured-error contract requires stderr to be a single-
+    // line JSON object on failure. Mixing the multi-line hint into
+    // that surface would break any wrapper parsing stderr. Pin that
+    // a 4xx publish (a) emits ONLY the structured-error JSON on
+    // stderr, and (b) does NOT create state.json — the marker write
+    // happens only on the success path.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(ResponseTemplate::new(401).set_body_string(r#"{"error":"unauthorized"}"#))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = tempfile::tempdir().unwrap();
+    assert!(!state_path(home.path()).exists());
+
+    let out = run_publish(&server.uri(), home.path(), &base_args()).await;
+    assert_ne!(out.code, 0, "401 must surface a failure exit code");
+
+    let stderr = out.stderr.trim();
+    assert!(
+        !stderr.contains("no-tickets session start"),
+        "failed publish must not emit hint; got stderr={stderr:?}",
+    );
+    // Stderr is the structured-error envelope: a single-line JSON
+    // object. Pin that by parsing the trimmed line.
+    let _: Value = serde_json::from_str(stderr)
+        .unwrap_or_else(|e| panic!("stderr must be valid JSON: {e} — got {stderr:?}"));
+
+    assert!(
+        !state_path(home.path()).exists(),
+        "publish failure must NOT create state.json — marker writes are gated on success",
+    );
+}
+
+#[tokio::test]
 async fn publish_quiet_flag_suppresses_stderr_but_still_sets_marker() {
     let server = MockServer::start().await;
     let _ = capture_body(&server).await;
@@ -500,13 +580,19 @@ async fn publish_with_active_session_does_not_modify_existing_state_json() {
 
 #[tokio::test]
 async fn unattributed_publish_resolves_actor_once_per_invocation() {
-    // Single-event publish proxies for the "once per CLI invocation"
-    // contract. The state.json open count + marker write count must be
-    // exactly 1 per binary invocation, regardless of how many envelopes
-    // ultimately land. Pin via file-existence + size on a one-shot
-    // publish; the batch variant lives in `publish/batch.rs` follow-up.
-    // Two sequential publishes against the same home. Mount a mock that
-    // serves both without a per-call expectation.
+    // Property: the marker write happens at most ONCE per binary
+    // invocation, even on the unattributed branch. After the first
+    // publish flips `firstPublishHintShown` to true, every subsequent
+    // unattributed publish on the same home must NOT re-write
+    // state.json. Pinned via byte-identity on state.json across
+    // invocations. The batch-mode "once per batch, not per event"
+    // variant of this property is a follow-up — Task 5's PRD file list
+    // excludes `publish_batch.rs`, so the batch path doesn't yet wire
+    // through the resolver.
+    //
+    // Setup: mount a single `Mock` configured to satisfy both
+    // sequential `POST /v1/events` calls so neither invocation
+    // accidentally fails on the transport layer.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/events"))

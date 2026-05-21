@@ -12,6 +12,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 
 use crate::env::Env;
@@ -71,15 +72,37 @@ impl From<serde_json::Error> for StateError {
     }
 }
 
-#[allow(dead_code)] // consumed by Task 4 commands + Task 5 publish resolver
-pub fn read(_env: &dyn Env) -> Result<Option<State>, StateError> {
-    // RED stub.
-    Ok(None)
+#[allow(dead_code)] // consumed by Task 5 publish resolver
+pub fn read(env: &dyn Env) -> Result<Option<State>, StateError> {
+    let path = state_path(env).ok_or(StateError::HomeUnresolvable)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)?;
+    Ok(Some(serde_json::from_str(&raw)?))
 }
 
-#[allow(dead_code)]
-pub fn write(_env: &dyn Env, _state: &State) -> Result<(), StateError> {
-    // RED stub.
+#[allow(dead_code)] // consumed by Task 5 publish resolver
+pub fn write(env: &dyn Env, state: &State) -> Result<(), StateError> {
+    let path = state_path(env).ok_or(StateError::HomeUnresolvable)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = path.with_extension(format!("json.tmp.{pid}.{nanos}"));
+    let body = serde_json::to_string_pretty(state)?;
+    if let Err(e) = fs::write(&tmp, body.as_bytes()) {
+        let _ = fs::remove_file(&tmp);
+        return Err(StateError::Io(e));
+    }
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(StateError::Io(e));
+    }
     Ok(())
 }
 
@@ -88,13 +111,14 @@ pub fn write(_env: &dyn Env, _state: &State) -> Result<(), StateError> {
 /// Per PRD: do NOT create `state.json` just to write `firstPublishHintShown:
 /// false`. If the file is missing entirely, no-op. If it exists, set the
 /// flag to `false` and write back (preserving any other state).
-#[allow(dead_code)]
-pub fn clear_hint_marker(_env: &dyn Env) -> Result<(), StateError> {
-    // RED stub.
-    Ok(())
+pub fn clear_hint_marker(env: &dyn Env) -> Result<(), StateError> {
+    let Some(mut s) = read(env)? else {
+        return Ok(());
+    };
+    s.first_publish_hint_shown = false;
+    write(env, &s)
 }
 
-#[allow(dead_code)]
 pub fn state_path(env: &dyn Env) -> Option<PathBuf> {
     paths::config_dir(env).map(|d| d.join(STATE_FILE))
 }

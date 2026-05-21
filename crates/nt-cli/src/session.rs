@@ -17,14 +17,15 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
-use time::OffsetDateTime;
+use time::format_description::well_known::Iso8601;
+use time::{Duration, OffsetDateTime};
 
 use crate::env::Env;
 use crate::paths;
 
 pub const SESSION_FILE: &str = "active-session.json";
-#[allow(dead_code)] // consumed by Task 4 commands::session::run_start (GREEN)
 pub const SESSION_VERSION: u32 = 1;
 
 /// Agent variant of the actor block. Only `agent_id` is mandatory; every
@@ -94,34 +95,62 @@ impl From<serde_json::Error> for SessionError {
     }
 }
 
-#[allow(dead_code)] // consumed by Task 4 commands + Task 5 publish resolver
-pub fn read(_env: &dyn Env) -> Result<Option<SessionFile>, SessionError> {
-    // RED stub: returns None so write-then-read tests fail on the round-trip.
-    Ok(None)
+pub fn read(env: &dyn Env) -> Result<Option<SessionFile>, SessionError> {
+    let path = session_path(env).ok_or(SessionError::HomeUnresolvable)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)?;
+    Ok(Some(serde_json::from_str(&raw)?))
 }
 
-#[allow(dead_code)]
-pub fn write(_env: &dyn Env, _sf: &SessionFile) -> Result<(), SessionError> {
-    // RED stub: does not write anything.
+pub fn write(env: &dyn Env, sf: &SessionFile) -> Result<(), SessionError> {
+    let path = session_path(env).ok_or(SessionError::HomeUnresolvable)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // Atomic write: PID+nanos-suffixed temp in the same directory as the
+    // destination, fsync-then-rename. POSIX rename is atomic within the
+    // same filesystem — readers either see the old file or the new file,
+    // never a half-written one. PID + nanos guards against two concurrent
+    // writers stomping on each other's tmp.
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = path.with_extension(format!("json.tmp.{pid}.{nanos}"));
+    let body = serde_json::to_string_pretty(sf)?;
+    if let Err(e) = fs::write(&tmp, body.as_bytes()) {
+        let _ = fs::remove_file(&tmp);
+        return Err(SessionError::Io(e));
+    }
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(SessionError::Io(e));
+    }
     Ok(())
 }
 
-#[allow(dead_code)]
-pub fn delete(_env: &dyn Env) -> Result<(), SessionError> {
-    // RED stub.
+pub fn delete(env: &dyn Env) -> Result<(), SessionError> {
+    let path = session_path(env).ok_or(SessionError::HomeUnresolvable)?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
     Ok(())
 }
 
 /// Whether the session is past its expiry window. A malformed `started_at`
 /// counts as expired (defensive — better to refuse a corrupt session than
-/// to authenticate against garbage).
-#[allow(dead_code)]
-pub fn is_expired(_started_at: &str, _max_age_hours: u32, _now: OffsetDateTime) -> bool {
-    // RED stub: returns false unconditionally so expiry tests fail.
-    false
+/// to authenticate against garbage). Boundary semantics are strict-greater:
+/// `now == started_at + max_age_hours` is still in-window.
+pub fn is_expired(started_at: &str, max_age_hours: u32, now: OffsetDateTime) -> bool {
+    let Ok(parsed) = OffsetDateTime::parse(started_at, &Iso8601::DEFAULT) else {
+        return true;
+    };
+    now > parsed + Duration::hours(i64::from(max_age_hours))
 }
 
-#[allow(dead_code)]
 pub fn session_path(env: &dyn Env) -> Option<PathBuf> {
     paths::config_dir(env).map(|d| d.join(SESSION_FILE))
 }

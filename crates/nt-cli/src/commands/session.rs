@@ -14,11 +14,10 @@
 //! operations succeed when the target is already absent).
 
 use serde_json::json;
-use time::format_description::well_known::Iso8601;
 
 use crate::clock::Clock;
 use crate::env::Env;
-use crate::session::{self, AgentActor, SessionFile, SESSION_VERSION};
+use crate::session::{self, format_iso8601_ms, AgentActor, SessionFile, SESSION_VERSION};
 use crate::state;
 
 pub struct StartArgs<'a> {
@@ -39,10 +38,7 @@ pub fn run_start(env: &dyn Env, clock: &dyn Clock, args: StartArgs<'_>) -> i32 {
         session_id: args.session_id.map(str::to_string),
         thinking_effort: args.thinking_effort.map(str::to_string),
     };
-    let started_at = clock
-        .now()
-        .format(&Iso8601::DEFAULT)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00.000000000Z".to_string());
+    let started_at = format_iso8601_ms(clock.now());
     let sf = SessionFile {
         version: SESSION_VERSION,
         actor,

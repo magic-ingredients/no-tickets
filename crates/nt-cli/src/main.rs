@@ -1,3 +1,4 @@
+mod atomic_write;
 mod auth;
 mod auth_server;
 mod clock;
@@ -136,8 +137,12 @@ enum SessionAction {
         #[arg(long = "session-id")]
         session_id: Option<String>,
         /// Max age of the session before `show`/publish treat it as
-        /// expired. Default 24, hard cap 168 (7 days).
-        #[arg(long = "max-age-hours", default_value_t = 24)]
+        /// expired. Default 24, valid range 1..=168 (7-day hard cap).
+        #[arg(
+            long = "max-age-hours",
+            default_value_t = 24,
+            value_parser = clap::value_parser!(u32).range(1..=168)
+        )]
         max_age_hours: u32,
     },
     /// Print the active session as JSON, or `{"active":false}`.

@@ -37,6 +37,15 @@ fn parse_stdout_json(output: &std::process::Output) -> Value {
     serde_json::from_str(stdout.trim()).expect("valid JSON")
 }
 
+fn contains_null_value(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Object(m) => m.values().any(contains_null_value),
+        Value::Array(a) => a.iter().any(contains_null_value),
+        _ => false,
+    }
+}
+
 // ─── session start ──────────────────────────────────────────────────────────
 
 #[test]
@@ -130,6 +139,70 @@ fn session_start_requires_agent_flag() {
 }
 
 #[test]
+fn session_start_rejects_max_age_hours_above_seven_days() {
+    // PRD: hard cap 168h (7 days). clap must reject anything above.
+    let temp = tempfile::tempdir().unwrap();
+    let output = isolate(&mut nt(), temp.path())
+        .args([
+            "session",
+            "start",
+            "--agent",
+            "claude",
+            "--max-age-hours",
+            "169",
+        ])
+        .output()
+        .expect("spawn");
+    assert!(
+        !output.status.success(),
+        "--max-age-hours 169 must be rejected; stderr={}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn session_start_accepts_max_age_hours_at_seven_day_boundary() {
+    // 168h = 7 days exactly — the documented cap, still valid.
+    let temp = tempfile::tempdir().unwrap();
+    isolate(&mut nt(), temp.path())
+        .args([
+            "session",
+            "start",
+            "--agent",
+            "claude",
+            "--max-age-hours",
+            "168",
+        ])
+        .assert()
+        .success();
+    let parsed: Value =
+        serde_json::from_str(&fs::read_to_string(session_path(temp.path())).unwrap()).unwrap();
+    assert_eq!(parsed["maxAgeHours"], 168);
+}
+
+#[test]
+fn session_start_rejects_zero_max_age_hours() {
+    // A zero-hour session would be insta-expired and is useless;
+    // clap's `range(1..=168)` must reject it at parse time.
+    let temp = tempfile::tempdir().unwrap();
+    let output = isolate(&mut nt(), temp.path())
+        .args([
+            "session",
+            "start",
+            "--agent",
+            "claude",
+            "--max-age-hours",
+            "0",
+        ])
+        .output()
+        .expect("spawn");
+    assert!(
+        !output.status.success(),
+        "--max-age-hours 0 must be rejected"
+    );
+}
+
+#[test]
 fn session_start_rejects_invalid_thinking_effort() {
     let temp = tempfile::tempdir().unwrap();
     let output = isolate(&mut nt(), temp.path())
@@ -215,6 +288,50 @@ fn session_show_reports_active_after_start() {
         Value::Bool(false),
         "freshly-started session is not expired",
     );
+    // The serialised `session show` output must mirror the on-disk
+    // "no nulls" pin — optional actor fields that weren't supplied
+    // (provider, thinkingEffort, sessionId) stay absent rather than
+    // showing up as JSON null.
+    assert!(
+        !contains_null_value(&v),
+        "session show JSON must not contain null values; got {v}",
+    );
+}
+
+#[test]
+fn session_show_startedat_uses_millisecond_z_wire_format() {
+    // The startedAt stamp written by `session start` must match the
+    // schema doc-comment shape: YYYY-MM-DDTHH:mm:ss.sssZ (millisecond
+    // precision, literal `Z`). Pinned by length + per-position checks
+    // so consumers can rely on the format without a tolerance window.
+    let temp = tempfile::tempdir().unwrap();
+    isolate(&mut nt(), temp.path())
+        .args(["session", "start", "--agent", "claude"])
+        .assert()
+        .success();
+    let parsed: Value =
+        serde_json::from_str(&fs::read_to_string(session_path(temp.path())).unwrap()).unwrap();
+    let started_at = parsed["startedAt"].as_str().expect("startedAt is string");
+    assert_matches_millisecond_z(started_at);
+}
+
+/// Asserts `s` is shaped exactly `YYYY-MM-DDTHH:mm:ss.sssZ` (24 ASCII
+/// bytes; digits in every numeric slot; `-`/`T`/`:`/`.`/`Z` separators
+/// in fixed positions).
+fn assert_matches_millisecond_z(s: &str) {
+    assert_eq!(s.len(), 24, "wrong length for ISO-ms-Z; got {s:?}");
+    let b = s.as_bytes();
+    let digit_at = |i: usize| b[i].is_ascii_digit();
+    for i in [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 22] {
+        assert!(digit_at(i), "expected digit at {i} in {s:?}");
+    }
+    assert_eq!(b[4], b'-', "expected `-` at 4 in {s:?}");
+    assert_eq!(b[7], b'-', "expected `-` at 7 in {s:?}");
+    assert_eq!(b[10], b'T', "expected `T` at 10 in {s:?}");
+    assert_eq!(b[13], b':', "expected `:` at 13 in {s:?}");
+    assert_eq!(b[16], b':', "expected `:` at 16 in {s:?}");
+    assert_eq!(b[19], b'.', "expected `.` at 19 in {s:?}");
+    assert_eq!(b[23], b'Z', "expected `Z` at 23 in {s:?}");
 }
 
 #[test]
@@ -278,6 +395,12 @@ fn session_end_is_idempotent_when_nothing_to_clean_up() {
         .args(["session", "end"])
         .assert()
         .success();
+    // Must NOT have created active-session.json — `end` on an absent
+    // session is a no-op, not a create-then-delete dance.
+    assert!(
+        !session_path(temp.path()).exists(),
+        "active-session.json must not be created by `end`",
+    );
     // Must NOT have created state.json just to write a false flag.
     assert!(
         !state_path(temp.path()).exists(),

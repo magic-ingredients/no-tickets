@@ -85,24 +85,8 @@ pub fn read(env: &dyn Env) -> Result<Option<State>, StateError> {
 #[allow(dead_code)] // consumed by Task 5 publish resolver
 pub fn write(env: &dyn Env, state: &State) -> Result<(), StateError> {
     let path = state_path(env).ok_or(StateError::HomeUnresolvable)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let pid = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = path.with_extension(format!("json.tmp.{pid}.{nanos}"));
     let body = serde_json::to_string_pretty(state)?;
-    if let Err(e) = fs::write(&tmp, body.as_bytes()) {
-        let _ = fs::remove_file(&tmp);
-        return Err(StateError::Io(e));
-    }
-    if let Err(e) = fs::rename(&tmp, &path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(StateError::Io(e));
-    }
+    crate::atomic_write::write_atomic(&path, body.as_bytes())?;
     Ok(())
 }
 

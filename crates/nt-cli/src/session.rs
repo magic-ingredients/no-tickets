@@ -106,29 +106,8 @@ pub fn read(env: &dyn Env) -> Result<Option<SessionFile>, SessionError> {
 
 pub fn write(env: &dyn Env, sf: &SessionFile) -> Result<(), SessionError> {
     let path = session_path(env).ok_or(SessionError::HomeUnresolvable)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    // Atomic write: PID+nanos-suffixed temp in the same directory as the
-    // destination, fsync-then-rename. POSIX rename is atomic within the
-    // same filesystem — readers either see the old file or the new file,
-    // never a half-written one. PID + nanos guards against two concurrent
-    // writers stomping on each other's tmp.
-    let pid = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = path.with_extension(format!("json.tmp.{pid}.{nanos}"));
     let body = serde_json::to_string_pretty(sf)?;
-    if let Err(e) = fs::write(&tmp, body.as_bytes()) {
-        let _ = fs::remove_file(&tmp);
-        return Err(SessionError::Io(e));
-    }
-    if let Err(e) = fs::rename(&tmp, &path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(SessionError::Io(e));
-    }
+    crate::atomic_write::write_atomic(&path, body.as_bytes())?;
     Ok(())
 }
 
@@ -149,6 +128,33 @@ pub fn is_expired(started_at: &str, max_age_hours: u32, now: OffsetDateTime) -> 
         return true;
     };
     now > parsed + Duration::hours(i64::from(max_age_hours))
+}
+
+/// Format an instant as `YYYY-MM-DDTHH:mm:ss.sssZ` — millisecond
+/// precision, literal `Z` for UTC. Pinned for the `startedAt` wire
+/// shape on `active-session.json` so the file stays canonical across
+/// platforms.
+///
+/// `Iso8601::DEFAULT` (what the `time` crate emits via `.format()`)
+/// uses nanosecond precision and `+00:00:00` offset, which is valid
+/// ISO 8601 but inconsistent with the schema doc-comment example
+/// and harder for downstream consumers to pin against.
+///
+/// Input is converted to UTC before formatting, so a non-UTC clock
+/// (only possible via tests) still produces a `Z`-suffixed string
+/// representing the same instant.
+pub fn format_iso8601_ms(t: OffsetDateTime) -> String {
+    let utc = t.to_offset(time::UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        utc.year(),
+        u8::from(utc.month()),
+        utc.day(),
+        utc.hour(),
+        utc.minute(),
+        utc.second(),
+        utc.millisecond()
+    )
 }
 
 pub fn session_path(env: &dyn Env) -> Option<PathBuf> {
@@ -238,8 +244,10 @@ mod tests {
     #[test]
     fn write_omits_optional_actor_fields_from_serialised_json() {
         // Wire-format pin: omitted Option fields MUST NOT serialise as
-        // `null` and MUST NOT serialise as sentinel strings. This is the
-        // PRD's "no n/a values anywhere" rule.
+        // `null` keys and MUST NOT serialise as sentinel strings. We
+        // walk the parsed JSON tree rather than substring-match on the
+        // raw text — substring matches would false-positive if any
+        // value happened to contain "null" or "model" as a fragment.
         let tmp = tempfile::tempdir().unwrap();
         let env = env_with_home(tmp.path());
         let sf = sample_session(minimal_actor());
@@ -247,13 +255,36 @@ mod tests {
 
         let path = session_path(&env).expect("path resolves");
         let raw = std::fs::read_to_string(&path).expect("file exists");
-        assert!(!raw.contains("null"), "no null literals; got {raw}");
-        assert!(!raw.contains("\"model\""), "model omitted; got {raw}");
-        assert!(!raw.contains("\"provider\""), "provider omitted; got {raw}",);
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+
+        assert!(
+            !contains_null_value(&parsed),
+            "no Value::Null anywhere; got {raw}",
+        );
+        let actor = &parsed["actor"];
+        assert!(actor.get("model").is_none(), "model omitted; got {raw}");
+        assert!(
+            actor.get("provider").is_none(),
+            "provider omitted; got {raw}",
+        );
+        assert!(actor.get("thinkingEffort").is_none());
+        assert!(actor.get("sessionId").is_none());
+
+        // `"n/a"` is a forbidden literal — substring is sound here
+        // because we never legitimately emit that string anywhere.
         assert!(
             !raw.contains("\"n/a\""),
             "no n/a sentinel anywhere; got {raw}",
         );
+    }
+
+    fn contains_null_value(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::Null => true,
+            serde_json::Value::Object(m) => m.values().any(contains_null_value),
+            serde_json::Value::Array(a) => a.iter().any(contains_null_value),
+            _ => false,
+        }
     }
 
     #[test]
@@ -367,9 +398,9 @@ mod tests {
         // Garbage `startedAt` → defensively treat as expired so the
         // resolver falls through to the credentials branch instead of
         // emitting a corrupt actor.
-        let _now = dt("2026-05-21T20:00:00.000Z");
-        assert!(is_expired("not-a-date", 24, _now));
-        assert!(is_expired("", 24, _now));
+        let now = dt("2026-05-21T20:00:00.000Z");
+        assert!(is_expired("not-a-date", 24, now));
+        assert!(is_expired("", 24, now));
     }
 
     // ─── session_path ───────────────────────────────────────────────────────
@@ -387,5 +418,65 @@ mod tests {
         // Pins the on-disk filename — changing this is a breaking change
         // for any agent harness that already wrote a session file.
         assert_eq!(SESSION_FILE, "active-session.json");
+    }
+
+    // ─── format_iso8601_ms ──────────────────────────────────────────────────
+
+    #[test]
+    fn format_iso8601_ms_emits_millisecond_z_form() {
+        // Pin the canonical wire shape: 4-digit year, 2-digit each of
+        // month/day/hour/minute/second, 3-digit subsecond, literal `Z`.
+        let t = OffsetDateTime::new_utc(
+            time::Date::from_calendar_date(2026, time::Month::May, 21).unwrap(),
+            time::Time::from_hms_milli(10, 0, 0, 123).unwrap(),
+        );
+        assert_eq!(format_iso8601_ms(t), "2026-05-21T10:00:00.123Z");
+    }
+
+    #[test]
+    fn format_iso8601_ms_pads_single_digit_components() {
+        // January, day 3, 04:05:06.007 — every field exercises padding.
+        let t = OffsetDateTime::new_utc(
+            time::Date::from_calendar_date(2026, time::Month::January, 3).unwrap(),
+            time::Time::from_hms_milli(4, 5, 6, 7).unwrap(),
+        );
+        assert_eq!(format_iso8601_ms(t), "2026-01-03T04:05:06.007Z");
+    }
+
+    #[test]
+    fn format_iso8601_ms_truncates_to_milliseconds() {
+        // Anything finer than ms must not leak through.
+        let t = OffsetDateTime::new_utc(
+            time::Date::from_calendar_date(2026, time::Month::May, 21).unwrap(),
+            time::Time::from_hms_nano(10, 0, 0, 999_888_777).unwrap(),
+        );
+        // 999_888_777 ns = 999 ms 888 us 777 ns → ".999"
+        assert_eq!(format_iso8601_ms(t), "2026-05-21T10:00:00.999Z");
+    }
+
+    #[test]
+    fn format_iso8601_ms_normalises_non_utc_input_to_z() {
+        // A non-UTC clock (test-only scenario) must still emit a `Z`-
+        // suffixed string at the equivalent UTC instant.
+        let utc_dt = OffsetDateTime::new_utc(
+            time::Date::from_calendar_date(2026, time::Month::May, 21).unwrap(),
+            time::Time::from_hms_milli(10, 0, 0, 0).unwrap(),
+        );
+        let plus_two = utc_dt.to_offset(time::UtcOffset::from_hms(2, 0, 0).unwrap());
+        assert_eq!(format_iso8601_ms(plus_two), "2026-05-21T10:00:00.000Z");
+    }
+
+    #[test]
+    fn format_iso8601_ms_output_round_trips_through_iso8601_parse() {
+        // is_expired() uses Iso8601::DEFAULT to parse `startedAt`. Pin
+        // that anything format_iso8601_ms produces is parseable by the
+        // same path — emitter and parser must agree.
+        let t = OffsetDateTime::new_utc(
+            time::Date::from_calendar_date(2026, time::Month::May, 21).unwrap(),
+            time::Time::from_hms_milli(10, 0, 0, 123).unwrap(),
+        );
+        let s = format_iso8601_ms(t);
+        let parsed = OffsetDateTime::parse(&s, &Iso8601::DEFAULT).expect("parseable");
+        assert_eq!(parsed, t);
     }
 }

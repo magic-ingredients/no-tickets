@@ -30,22 +30,28 @@ pub struct HintDecision {
     pub set_marker: bool,
 }
 
-#[allow(dead_code, unused_variables)] // wired by GREEN
 pub fn decide(resolved: &Resolved, state: Option<&State>, quiet: bool) -> HintDecision {
-    // RED stub: never fires, never sets.
+    let unattributed = resolved.actor.is_none();
+    let marker_unset = state.is_none_or(|s| !s.first_publish_hint_shown);
+    let fire = unattributed && marker_unset;
     HintDecision {
-        emit_stderr: false,
-        set_marker: false,
+        emit_stderr: fire && !quiet,
+        set_marker: fire,
     }
 }
 
 /// User-facing hint text. Static — no caller info or env-sniffed
 /// agent name (the PRD calls out that the hint is "deliberately
 /// generic; declaration is the caller's explicit choice").
-#[allow(dead_code)] // wired by GREEN
 pub fn render() -> &'static str {
-    // RED stub: empty.
-    ""
+    "Tip: this event was published without an actor. Events without actor metadata\n\
+     are not attributable in the UI or activity feed.\n\
+     \n\
+     To attach actor info to every publish in this shell, run once:\n  \
+       no-tickets session start --agent <your-agent-id>\n\
+     \n\
+     (This hint shows only once. `no-tickets session end` clears it so it can fire\n\
+     again next time you're in the no-session state.)"
 }
 
 #[cfg(test)]

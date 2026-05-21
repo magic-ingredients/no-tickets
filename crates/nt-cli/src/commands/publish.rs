@@ -30,7 +30,9 @@ use crate::auth::resolve_publish_token;
 use crate::clock::Clock;
 use crate::env::Env;
 use crate::error::NtError;
+use crate::hint;
 use crate::source_detect::machine_hash_attribute;
+use crate::state;
 use crate::transport::{Client, RetryPolicy, TokioSleeper};
 use crate::urls::resolve_urls;
 
@@ -110,13 +112,13 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env, clock: &dyn Clock) -> Res
     let token = resolve_publish_token(env, args.project)?;
 
     // Opt-in actor attribution. resolve() walks the precedence chain
-    // exactly once per invocation. fire_hint_if_needed observes the
-    // result, prints the one-time hint to stderr when warranted, and
-    // sets the state.json marker. Session-attributed branches (1–4)
-    // short-circuit before any state.json IO.
+    // exactly once per invocation. The hint mechanic runs AFTER a
+    // successful publish — emitting before would mix the hint line
+    // with the structured-error JSON on stderr when the publish itself
+    // fails (auth / 4xx / 5xx). Session-attributed branches (1–4)
+    // short-circuit `fire_hint_if_needed` before any state.json IO.
     let resolved = actor::resolve(env, clock, &args.actor, &urls.api_url);
-    fire_hint_if_needed(env, &resolved, args.quiet);
-    meta.actor = resolved.actor;
+    meta.actor = resolved.actor.clone();
 
     // --data must be valid JSON. Parsing inside run() means the contract
     // owns the full input-handling path. Local *schema* validation is
@@ -136,7 +138,12 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env, clock: &dyn Clock) -> Res
     // Edge done. Delegate to the testable core.
     let policy = RetryPolicy::default_publish();
     let sleeper = TokioSleeper;
-    publish_event(&client, &policy, &sleeper, args.type_id, &parsed_data, meta).await
+    publish_event(&client, &policy, &sleeper, args.type_id, &parsed_data, meta).await?;
+    // First-publish hint runs only on the success path. Failures route
+    // through the structured-error contract (single-line JSON on
+    // stderr); mixing the hint into that surface would break parsers.
+    fire_hint_if_needed(env, &resolved, args.quiet);
+    Ok(())
 }
 
 /// Run the first-publish hint mechanic. On the no-actor branch with the
@@ -144,6 +151,29 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env, clock: &dyn Clock) -> Res
 /// atomically updates `state.json` to set the marker. On any branch
 /// with a resolved actor, performs ZERO `state.json` IO — pinned by
 /// the integration tests in `tests/actor-resolution.rs`.
-fn fire_hint_if_needed(_env: &dyn Env, _resolved: &actor::Resolved, _quiet: bool) {
-    // RED stub: no IO, no stderr output.
+fn fire_hint_if_needed(env: &dyn Env, resolved: &actor::Resolved, quiet_flag: bool) {
+    // Short-circuit: session-attributed paths do not touch state.json.
+    if resolved.actor.is_some() {
+        return;
+    }
+    // NO_TICKETS_QUIET=anything-non-empty also suppresses stderr (per
+    // PRD), so the operator doesn't have to keep the flag set forever
+    // after an initial opt-out. The flag remains authoritative when set.
+    let env_quiet = env.var("NO_TICKETS_QUIET").is_some_and(|v| !v.is_empty());
+    let quiet = quiet_flag || env_quiet;
+
+    let current = state::read(env).ok().flatten();
+    let decision = hint::decide(resolved, current.as_ref(), quiet);
+    if decision.emit_stderr {
+        eprintln!("{}", hint::render());
+    }
+    if decision.set_marker {
+        let mut new_state = current.unwrap_or_default();
+        new_state.first_publish_hint_shown = true;
+        // Best-effort: a failed marker write would re-fire the hint
+        // next invocation, which is more annoying than a silent
+        // failure — but the publish itself already succeeded, so a
+        // hard error here would mis-classify the outcome.
+        let _ = state::write(env, &new_state);
+    }
 }

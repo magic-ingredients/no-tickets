@@ -18,9 +18,12 @@
 //! whatever the precedence chain resolves — they're never identity
 //! fields by themselves.
 
+use std::path::Path;
+
 use crate::clock::Clock;
+use crate::credentials::{self, LoadOutcome};
 use crate::env::Env;
-use crate::session::AgentActor;
+use crate::session::{self, AgentActor, SessionFile};
 
 /// Variant of the wire actor block produced by `no-tickets init`-derived
 /// human credentials. `userId` is the only mandatory field; `email` is
@@ -105,18 +108,126 @@ pub struct ActorFlags<'a> {
 /// staleness checks on the session file), the parsed flags, and the
 /// already-resolved `api_url` (used by the credentials branch to
 /// host-check the stored credentials).
-#[allow(dead_code, unused_variables)] // wired by GREEN
+///
+/// Returns `Resolved { actor: None, source: Unattributed }` when no
+/// branch produces an actor. There is no error branch — missing actor
+/// is a permanent valid state.
 pub fn resolve(
     env: &dyn Env,
     clock: &dyn Clock,
     flags: &ActorFlags<'_>,
     api_url: &str,
 ) -> Resolved {
-    // RED stub: always unattributed.
+    // Branch 1: identity flags (--agent-id present) → flags win.
+    if let Some(agent_id) = flags.agent_id {
+        let actor = build_agent_from_flags(agent_id, flags);
+        return Resolved {
+            actor: Some(Actor::Agent(actor)),
+            source: ResolutionSource::Flags,
+        };
+    }
+
+    // Branch 2: alternate session-file path via flag or env var. The
+    // flag wins over the env var when both are set; the env var alone
+    // is sufficient when no flag is given.
+    let alt_path: Option<String> = flags
+        .session_file
+        .map(str::to_string)
+        .or_else(|| env.var("NO_TICKETS_SESSION_FILE").filter(|s| !s.is_empty()));
+    if let Some(path) = alt_path {
+        if let Some(actor) = read_session_actor(Path::new(&path), clock) {
+            let actor = layer_per_call(actor, flags);
+            return Resolved {
+                actor: Some(Actor::Agent(actor)),
+                source: ResolutionSource::SessionFileEnv,
+            };
+        }
+        // Stale / missing alt file → fall through to lower-priority
+        // branches. Stays consistent with the "no errors, only
+        // outcomes" contract.
+    }
+
+    // Branch 3: `<config-dir>/active-session.json`.
+    if let Ok(Some(sf)) = session::read(env) {
+        if !session::is_expired(&sf.started_at, sf.max_age_hours, clock.now()) {
+            let actor = layer_per_call(sf.actor, flags);
+            return Resolved {
+                actor: Some(Actor::Agent(actor)),
+                source: ResolutionSource::ActiveSessionFile,
+            };
+        }
+    }
+
+    // Branch 4: session credentials → human actor. Use email as the
+    // identity carrier; the credentials file doesn't carry a separate
+    // `userId` field, but per the user-story "userId + email attached
+    // automatically from session credentials" the credentials' email
+    // is the canonical identity surface today.
+    if let LoadOutcome::Valid(c) = credentials::load(env, api_url) {
+        let actor = HumanActor {
+            actor_type: "human".to_string(),
+            user_id: c.email.clone(),
+            email: Some(c.email),
+        };
+        return Resolved {
+            actor: Some(Actor::Human(actor)),
+            source: ResolutionSource::Credentials,
+        };
+    }
+
+    // Branch 5: unattributed.
     Resolved {
         actor: None,
         source: ResolutionSource::Unattributed,
     }
+}
+
+fn build_agent_from_flags(agent_id: &str, flags: &ActorFlags<'_>) -> AgentActor {
+    AgentActor {
+        actor_type: "agent".to_string(),
+        agent_id: agent_id.to_string(),
+        model: flags.model.map(str::to_string),
+        provider: flags.provider.map(str::to_string),
+        session_id: flags.session_id.map(str::to_string),
+        thinking_effort: flags.thinking_effort.map(str::to_string),
+        call_id: flags.call_id.map(str::to_string),
+        prompt_tokens: flags.prompt_tokens,
+        completion_tokens: flags.completion_tokens,
+        latency_ms: flags.latency_ms,
+    }
+}
+
+/// Layer per-call enrichment flags on top of an actor resolved from a
+/// session. Identity + session-context fields are preserved; only the
+/// per-call fields (`callId`, `promptTokens`, `completionTokens`,
+/// `latencyMs`) are overwritten when the corresponding flag is set.
+fn layer_per_call(mut actor: AgentActor, flags: &ActorFlags<'_>) -> AgentActor {
+    if let Some(c) = flags.call_id {
+        actor.call_id = Some(c.to_string());
+    }
+    if let Some(p) = flags.prompt_tokens {
+        actor.prompt_tokens = Some(p);
+    }
+    if let Some(c) = flags.completion_tokens {
+        actor.completion_tokens = Some(c);
+    }
+    if let Some(l) = flags.latency_ms {
+        actor.latency_ms = Some(l);
+    }
+    actor
+}
+
+/// Read a session file at an arbitrary path and return its actor block
+/// when present and fresh. Returns `None` for any failure mode (missing
+/// file, malformed JSON, expired session) so the caller can fall
+/// through to lower-priority branches without an explicit error.
+fn read_session_actor(path: &Path, clock: &dyn Clock) -> Option<AgentActor> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let sf: SessionFile = serde_json::from_str(&raw).ok()?;
+    if session::is_expired(&sf.started_at, sf.max_age_hours, clock.now()) {
+        return None;
+    }
+    Some(sf.actor)
 }
 
 #[cfg(test)]

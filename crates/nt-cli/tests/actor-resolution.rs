@@ -505,8 +505,17 @@ async fn unattributed_publish_resolves_actor_once_per_invocation() {
     // exactly 1 per binary invocation, regardless of how many envelopes
     // ultimately land. Pin via file-existence + size on a one-shot
     // publish; the batch variant lives in `publish/batch.rs` follow-up.
+    // Two sequential publishes against the same home. Mount a mock that
+    // serves both without a per-call expectation.
     let server = MockServer::start().await;
-    let _ = capture_body(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/v1/events"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(HAPPY_RESPONSE.as_bytes(), "application/json"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
 
     let home = tempfile::tempdir().unwrap();
     let _ = run_publish(&server.uri(), home.path(), &base_args()).await;

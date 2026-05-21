@@ -358,3 +358,156 @@ No HTTP client crate — `gh` does the download.
 - `crates/nt-schemas/schemas/event-types.bundle.json` — deleted (was vendored; now fetched per build)
 - `bundle_version_matches_installed_schemas_package` test — replaced by `bundle_version_matches_pinned_metadata` (asserts the downloaded bundle's `version` matches `NT_SCHEMAS_VERSION` env var set by `build.rs`)
 
+
+
+---
+
+# Phase 1 follow-up — `event-actor-metadata` Tasks 4 + 5
+
+Appended notes from the actor-attribution work that built on the
+Phase 0 scaffolding above. **Commits:** `f31c9a5` (RED) → `ddaac08`
+(GREEN) → `fdaded8` (refactor) → `44e535c` (chore: mutation tests) for
+Task 4 (session subcommands); `b43e24b` → `7de873e` → `2414480` for
+Task 5 (publish actor wiring).
+
+## What landed
+
+- **`crates/nt-cli/src/session.rs`** — `active-session.json` reader /
+  writer / staleness check. `AgentActor` is the canonical agent
+  variant; sole mandatory field is `agent_id`. Per-call enrichment
+  fields (`call_id`, `prompt_tokens`, `completion_tokens`,
+  `latency_ms`) live on the struct as optionals but are NEVER stored
+  on the session file — `session start` leaves them `None`. They're
+  layered on at publish time.
+- **`crates/nt-cli/src/state.rs`** — `state.json` for the one-time
+  hint marker (`firstPublishHintShown`). Extensible via
+  `#[serde(flatten)] extras` for future CLI state. Unknown keys
+  survive read → write.
+- **`crates/nt-cli/src/atomic_write.rs`** — shared atomic write helper
+  (temp + fsync + rename). Used by session/state; `config.rs` keeps
+  its own copy because the secret-file path needs Unix mode `0o600`
+  set at-create-time.
+- **`crates/nt-cli/src/clock.rs`** — `Clock` trait + `SystemClock`.
+  Injection point for time-dependent code (expiry checks, `startedAt`
+  stamping).
+- **`crates/nt-cli/src/commands/session.rs`** — clap-bound `start /
+  show / end` handlers.
+- **`crates/nt-cli/src/actor.rs`** — actor types (`HumanActor`,
+  `Actor` untagged enum, `EventMetadata` wire shape,
+  `ResolutionSource`, `Resolved`, `ActorFlags`) + the precedence-chain
+  resolver.
+- **`crates/nt-cli/src/hint.rs`** — pure `decide(resolved, state,
+  quiet) → HintDecision` plus the static hint template.
+- **`crates/nt-cli/src/commands/publish.rs`** — calls `actor::resolve`
+  after URL resolution; runs `fire_hint_if_needed` after
+  `publish_event` succeeds.
+
+## Surprises + lessons
+
+### `Iso8601::DEFAULT` emits nanoseconds + offset, not `.sssZ`
+
+The `time` crate's `Iso8601::DEFAULT` format produces
+`2026-05-21T10:00:00.123456789+00:00:00`. Both valid ISO 8601, but
+the schema doc-comment example and the consumers who pin against it
+expect `2026-05-21T10:00:00.123Z` — millisecond precision, literal
+`Z`. The default format is harder for downstream consumers to anchor
+against and inconsistent with what JS `Date.toISOString()` produces.
+
+Added a `format_iso8601_ms` helper in `session.rs` that builds the
+string component-by-component (year/month/…/millisecond) and pins
+the literal `Z`. The reader-side `is_expired` continues to use
+`Iso8601::DEFAULT` for parsing — that format is permissive enough to
+accept the millisecond+Z output. The emit/parse asymmetry is
+deliberate: emit narrow, accept broad.
+
+### `time::Duration::hours(i64)` panics on saturation
+
+Seeding a "very large" `maxAgeHours` to side-step real-clock skew in
+integration tests by passing `u32::MAX` triggered a panic in
+`is_expired` — `Duration::hours` rejects values that would overflow
+its internal i64 representation when multiplied out. 100 years
+(876,000 hours) sits comfortably in range. Pin used in the test
+fixtures.
+
+### `#[serde(untagged)]` enum needs each variant to be self-discriminating
+
+`Actor::Agent(AgentActor) | Actor::Human(HumanActor)` serialised
+untagged works because each inner struct carries its own `type` field
+(`"agent"` / `"human"`). If a future variant doesn't have a natural
+discriminator field, the untagged approach would silently fall back
+to "try variants in order" — fragile. Document the assumption in the
+enum's doc-comment so future contributors don't add a third variant
+without one.
+
+### Atomic-write helper: `sync_all` matters
+
+The first cut of `session::write` advertised "fsync-then-rename" in
+its comment but the code only called `fs::write` (no `sync_all`). A
+mid-write crash would have left an incomplete tmp on disk but the
+destination uncorrupted — the atomicity claim held at the
+destination-file level, but the durability claim implied by "fsync"
+didn't. Extracted `atomic_write::write_atomic` that opens the tmp via
+`fs::File`, writes, calls `sync_all` explicitly, then renames. The
+comment and the code now agree.
+
+### State-file false flags shouldn't serialise
+
+`state.json` was at risk of writing `{"firstPublishHintShown":false}`
+after `session end` cleared the flag, which is noise — the
+default-when-absent semantic means a false flag should serialise as
+`{}`. Added `#[serde(skip_serializing_if = "is_false")]` plus a unit
+test that pins the empty-object shape on disk.
+
+### Hint emission must wait for publish success
+
+The first GREEN had `fire_hint_if_needed` running **before**
+`publish_event`. Tests passed locally, but the structured-errors
+integration suite caught a regression: on a 4xx response, stderr
+contained the multi-line hint text followed by the structured-error
+JSON envelope — breaking the single-line-JSON contract that wrappers
+depend on. Moved the hint emission to after `publish_event?` so it
+only fires on the success path. The marker write is also gated on
+success, which is the desired semantic: failed publishes don't
+"count" as a first publish.
+
+### `cargo-mutants` over `Stryker` for Rust
+
+The repo's pipeline runs Stryker as the mutation reviewer, but
+Stryker is TS/JS-only — it silently reports clean on Rust changes.
+Real mutation coverage on the new Rust modules came from running
+`cargo-mutants` directly (with `--in-place`, scoped to the changed
+files). Caught two surviving mutants in Task 4's `Display` impls
+(error messages could be stubbed to `Ok(())` without any test
+noticing) and zero in Task 5's resolver / hint paths.
+
+The split is documented as a project memory; the pipeline reviewer
+returns `clean` for Rust commits, and `cargo-mutants` runs as a
+separate verification step before closing each task.
+
+### `--actor-type` as a constraint, not a preference
+
+First cut had `--actor-type` validated by clap but never read by the
+resolver — pure dead flag. Adversarial review caught it. Made it
+meaningful by treating it as a *constraint* on branch eligibility:
+`--actor-type=human` skips the agent branches even when a session
+file exists; `--actor-type=agent` skips the credentials branch even
+when credentials are present. The flag now lets a CI box with stray
+`init` credentials publish under its `github-actions` agent label
+without misattributing to the developer who once ran `init` locally.
+
+## Test-discipline notes
+
+- **One refactor commit per cycle.** The pipeline state machine
+  closes after the first clean post-feat review. Subsequent fixes
+  need `chore:` prefixes — `refactor:` is rejected by the commit-msg
+  hook. Bundling all adversarial findings into a single refactor
+  commit is the discipline; if `cargo-mutants` surfaces survivors
+  after that, they ship as `chore:`.
+- **Address every finding.** The review-driven refactor commits in
+  Tasks 4 + 5 each took every adversarial finding (high, medium,
+  low). The medium / low items are usually the ones that expose the
+  most surprising regressions later.
+- **No TS references in Rust touched in Tasks 4+/5.** TS is being
+  retired; comments and identifiers pointing at TS source files
+  become dangling references. New modules describe the wire contract
+  directly rather than "matches the TS port".

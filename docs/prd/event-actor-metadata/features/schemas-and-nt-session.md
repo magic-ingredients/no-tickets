@@ -107,7 +107,8 @@ Add the `session` command group to `nt-cli`. `start` resolves and atomically wri
 - Tests: round-trip `start → show → publish-stamp → end`; stale detection; concurrent `start` replaces atomically; `show` on no-session prints `{"active":false}`; `end` clears the hint marker so a subsequent unattributed publish re-prints the hint
 
 ### 5. Add actor resolution + `metadata` emission + first-publish hint to `no-tickets publish`
-status: not_started
+status: completed
+commitSha: 7de873e
 
 `no-tickets publish` resolves the actor block per the precedence chain (flags > `NO_TICKETS_SESSION_FILE` > `active-session.json` > credentials > unattributed). The resolved actor — when there is one — is serialised into the envelope's `metadata` field between `data` and `source`. When there isn't one, the field is omitted entirely and the first-publish hint mechanic runs.
 
@@ -129,7 +130,7 @@ status: not_started
 - Table-driven precedence tests cover all five branches of the chain, plus hint-marker write + clear + idempotent-set semantics
 
 ### 6. Document the public binary contract for `metadata`
-status: not_started
+status: completed
 
 Add a section to the publish reference describing the `--actor-*` flags, the `no-tickets session` lifecycle, the resolution precedence, and the first-publish hint. Include a short cookbook for the common harness shapes (single agent boot, multi-agent host with `NO_TICKETS_SESSION_FILE`, human-CLI default, deliberately-unattributed publish with `--quiet`).
 

@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::actor::{Actor, EventMetadata as WireMetadata};
+
 use super::SDK_VERSION;
 
 /// Serialised event envelope. Field declaration order is preserved by
@@ -26,6 +28,12 @@ pub(super) struct EventEnvelope<'a> {
     #[serde(rename = "type")]
     pub(super) type_id: &'a str,
     pub(super) data: &'a Value,
+    /// Opt-in actor attribution. When present, serialises **between**
+    /// `data` and `source` per the canonical wire order. When `None`,
+    /// the entire `metadata` key is omitted from the wire body — no
+    /// `"metadata": null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) metadata: Option<WireMetadata>,
     pub(super) source: Source<'a>,
     #[serde(rename = "parentEventId", skip_serializing_if = "Option::is_none")]
     pub(super) parent_event_id: Option<&'a str>,
@@ -54,6 +62,11 @@ pub(super) struct Source<'a> {
 /// `attributes` (project entry + per-flag overrides, last-wins on
 /// duplicate keys).
 ///
+/// The `actor` field starts as `None` in `build_metadata` and is set
+/// after the resolver runs in `publish::run`. Naming note: the type is
+/// the publish-flow's *staging* metadata; the `actor` payload becomes
+/// the wire envelope's `metadata` field — see `WireMetadata`.
+///
 /// `Debug` is required by `Result::expect_err` in the metadata tests.
 #[derive(Debug)]
 pub(super) struct EventMetadata<'a> {
@@ -62,6 +75,7 @@ pub(super) struct EventMetadata<'a> {
     pub(super) parent: Option<&'a str>,
     pub(super) trace: Option<&'a str>,
     pub(super) dedupe_key: Option<&'a str>,
+    pub(super) actor: Option<Actor>,
 }
 
 /// Pure builder for a single event envelope.
@@ -84,6 +98,7 @@ pub(super) fn build_envelope<'a>(
     EventEnvelope {
         type_id,
         data,
+        metadata: meta.actor.map(|actor| WireMetadata { actor }),
         source: Source {
             name: meta.source_name,
             sdk_version: SDK_VERSION,
@@ -113,6 +128,7 @@ pub(super) fn bare_meta(project: &str) -> EventMetadata<'_> {
         parent: None,
         trace: None,
         dedupe_key: None,
+        actor: None,
     }
 }
 

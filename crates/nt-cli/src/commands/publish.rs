@@ -25,7 +25,9 @@ use serde_json::Value;
 // transport failures. See `publish_batch::publish_envelopes`.
 pub(crate) use post::map_transport_error;
 
+use crate::actor::{self, ActorFlags};
 use crate::auth::resolve_publish_token;
+use crate::clock::Clock;
 use crate::env::Env;
 use crate::error::NtError;
 use crate::source_detect::machine_hash_attribute;
@@ -73,9 +75,17 @@ pub struct PublishArgs<'a> {
     pub parent: Option<&'a str>,
     pub trace: Option<&'a str>,
     pub dedupe_key: Option<&'a str>,
+    /// Actor-resolution inputs sourced from the `--actor-*` /
+    /// `--call-id` / `--prompt-tokens` / etc. flag family. The resolver
+    /// (`actor::resolve`) combines them with session and credentials
+    /// state to produce the optional `metadata.actor` block.
+    pub actor: ActorFlags<'a>,
+    /// `--quiet` — suppresses the first-publish hint on stderr. Does
+    /// NOT suppress the marker write to `state.json` (per PRD).
+    pub quiet: bool,
 }
 
-pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
+pub async fn run(args: PublishArgs<'_>, env: &dyn Env, clock: &dyn Clock) -> Result<(), NtError> {
     // Compute the optional machine-hash attribute first so its String
     // borrow has a stable run-local lifetime that `build_metadata` can
     // weave into the attributes BTreeMap alongside flag-derived
@@ -87,7 +97,7 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
     // resolution — so a bad flag combo doesn't leak credentials state
     // or surface a confusing "not authenticated" message when the real
     // fault is a malformed argv.
-    let meta = build_metadata(&args, machine_hash_owned.as_deref())
+    let mut meta = build_metadata(&args, machine_hash_owned.as_deref())
         .map_err(|message| NtError::Usage { message })?;
 
     let urls = resolve_urls(env).map_err(|e| NtError::Usage {
@@ -98,6 +108,15 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
     // env-var escape hatch). NEVER session credentials — see module
     // docstring.
     let token = resolve_publish_token(env, args.project)?;
+
+    // Opt-in actor attribution. resolve() walks the precedence chain
+    // exactly once per invocation. fire_hint_if_needed observes the
+    // result, prints the one-time hint to stderr when warranted, and
+    // sets the state.json marker. Session-attributed branches (1–4)
+    // short-circuit before any state.json IO.
+    let resolved = actor::resolve(env, clock, &args.actor, &urls.api_url);
+    fire_hint_if_needed(env, &resolved, args.quiet);
+    meta.actor = resolved.actor;
 
     // --data must be valid JSON. Parsing inside run() means the contract
     // owns the full input-handling path. Local *schema* validation is
@@ -118,4 +137,13 @@ pub async fn run(args: PublishArgs<'_>, env: &dyn Env) -> Result<(), NtError> {
     let policy = RetryPolicy::default_publish();
     let sleeper = TokioSleeper;
     publish_event(&client, &policy, &sleeper, args.type_id, &parsed_data, meta).await
+}
+
+/// Run the first-publish hint mechanic. On the no-actor branch with the
+/// marker unset, prints the hint to stderr (unless `quiet`) and
+/// atomically updates `state.json` to set the marker. On any branch
+/// with a resolved actor, performs ZERO `state.json` IO — pinned by
+/// the integration tests in `tests/actor-resolution.rs`.
+fn fire_hint_if_needed(_env: &dyn Env, _resolved: &actor::Resolved, _quiet: bool) {
+    // RED stub: no IO, no stderr output.
 }

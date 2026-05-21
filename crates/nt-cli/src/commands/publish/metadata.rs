@@ -33,6 +33,10 @@ pub(super) fn build_metadata<'a>(
         parent: args.parent,
         trace: args.trace,
         dedupe_key: args.dedupe_key,
+        // Actor is layered on later, after `actor::resolve` runs in
+        // `publish::run`. `build_metadata` doesn't read any actor flags
+        // — it's the source/attributes builder, not the actor resolver.
+        actor: None,
     })
 }
 
@@ -64,6 +68,8 @@ mod tests {
             parent: None,
             trace: None,
             dedupe_key: None,
+            actor: crate::actor::ActorFlags::default(),
+            quiet: false,
         }
     }
 

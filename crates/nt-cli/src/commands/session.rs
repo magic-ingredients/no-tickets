@@ -37,6 +37,11 @@ pub fn run_start(env: &dyn Env, clock: &dyn Clock, args: StartArgs<'_>) -> i32 {
         provider: args.provider.map(str::to_string),
         session_id: args.session_id.map(str::to_string),
         thinking_effort: args.thinking_effort.map(str::to_string),
+        // Per-call enrichment is publish-time concern; never on the session file.
+        call_id: None,
+        prompt_tokens: None,
+        completion_tokens: None,
+        latency_ms: None,
     };
     let started_at = format_iso8601_ms(clock.now());
     let sf = SessionFile {

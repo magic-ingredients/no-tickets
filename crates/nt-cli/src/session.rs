@@ -31,6 +31,13 @@ pub const SESSION_VERSION: u32 = 1;
 /// Agent variant of the actor block. Only `agent_id` is mandatory; every
 /// other field is `Option` and omitted from the serialised form when
 /// `None` (no sentinel strings like `"n/a"`).
+///
+/// Session-context fields (`model`, `provider`, `session_id`,
+/// `thinking_effort`) are set by `no-tickets session start`. Per-call
+/// enrichment fields (`call_id`, `prompt_tokens`, `completion_tokens`,
+/// `latency_ms`) are NEVER stored on the session file — `session start`
+/// leaves them `None`. They're layered on at publish time from per-call
+/// flags by the actor resolver.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentActor {
     /// Discriminator — always `"agent"` for session-start-produced actors.
@@ -50,6 +57,22 @@ pub struct AgentActor {
         default
     )]
     pub thinking_effort: Option<String>,
+    #[serde(rename = "callId", skip_serializing_if = "Option::is_none", default)]
+    pub call_id: Option<String>,
+    #[serde(
+        rename = "promptTokens",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub prompt_tokens: Option<u64>,
+    #[serde(
+        rename = "completionTokens",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub completion_tokens: Option<u64>,
+    #[serde(rename = "latencyMs", skip_serializing_if = "Option::is_none", default)]
+    pub latency_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +202,10 @@ mod tests {
             provider: Some("anthropic".to_string()),
             session_id: Some("sess-abc123".to_string()),
             thinking_effort: Some("high".to_string()),
+            call_id: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+            latency_ms: None,
         }
     }
 
@@ -190,6 +217,10 @@ mod tests {
             provider: None,
             session_id: None,
             thinking_effort: None,
+            call_id: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+            latency_ms: None,
         }
     }
 

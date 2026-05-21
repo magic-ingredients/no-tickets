@@ -1,3 +1,4 @@
+mod actor;
 mod atomic_write;
 mod auth;
 mod auth_server;
@@ -7,6 +8,7 @@ mod config;
 mod credentials;
 mod env;
 mod error;
+mod hint;
 mod paths;
 mod session;
 mod source_detect;
@@ -33,6 +35,12 @@ struct Cli {
     command: Commands,
 }
 
+// `Publish` carries ~20 optional flag fields after Task 5's actor wiring,
+// making it dominate the enum's variant size. Boxing every field would
+// add noise without changing dispatch ergonomics (this enum is matched
+// once at startup), and the trade is acceptable for the readability of
+// a flat flag layout in `main.rs`.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Commands {
     /// Authenticate via the browser and save session credentials.
@@ -87,6 +95,54 @@ enum Commands {
         /// Idempotency key (`dedupeKey` on the wire).
         #[arg(long)]
         dedupe_key: Option<String>,
+
+        // ─── opt-in actor attribution (event-actor-metadata PRD) ──────
+        //
+        // Each flag is optional. `--agent-id` (with `--actor-type=agent`)
+        // is the primary identity-source flag; everything else either
+        // enriches that identity or is a per-call layer that piggy-backs
+        // on whatever identity the resolver finds (session or flags).
+        /// Override the actor type: `agent` or `human`. Defaults to
+        /// whatever the resolver picks via the precedence chain.
+        #[arg(long = "actor-type", value_parser = ["human", "agent"])]
+        actor_type: Option<String>,
+        /// Agent id when `--actor-type=agent`. Presence triggers the
+        /// flag-driven actor branch (skips session lookup).
+        #[arg(long = "agent-id")]
+        agent_id: Option<String>,
+        /// LLM model identifier for an agent actor.
+        #[arg(long)]
+        model: Option<String>,
+        /// LLM provider identifier for an agent actor.
+        #[arg(long)]
+        provider: Option<String>,
+        /// Thinking-effort hint for an agent actor.
+        #[arg(long = "thinking-effort", value_parser = ["low", "medium", "high"])]
+        thinking_effort: Option<String>,
+        /// Opaque session id grouping events from one harness run.
+        #[arg(long = "session-id")]
+        actor_session_id: Option<String>,
+        /// Per-call id stamped on this single publish only.
+        #[arg(long = "call-id")]
+        call_id: Option<String>,
+        /// Prompt-token count for this single publish.
+        #[arg(long = "prompt-tokens")]
+        prompt_tokens: Option<u64>,
+        /// Completion-token count for this single publish.
+        #[arg(long = "completion-tokens")]
+        completion_tokens: Option<u64>,
+        /// Wall-clock latency in milliseconds for this single publish.
+        #[arg(long = "latency-ms")]
+        latency_ms: Option<u64>,
+        /// Alternate session-file path. Equivalent to setting
+        /// `NO_TICKETS_SESSION_FILE` in the environment.
+        #[arg(long = "session-file")]
+        session_file: Option<String>,
+        /// Suppress the one-time first-publish hint on stderr. The
+        /// state.json marker is still written, so the env-var doesn't
+        /// have to stay set forever after the first opt-out.
+        #[arg(long)]
+        quiet: bool,
     },
     /// Manage locally-registered push tokens (paste from the web UI).
     Token {
@@ -196,6 +252,18 @@ async fn main() {
             parent,
             trace,
             dedupe_key,
+            actor_type,
+            agent_id,
+            model,
+            provider,
+            thinking_effort,
+            actor_session_id,
+            call_id,
+            prompt_tokens,
+            completion_tokens,
+            latency_ms,
+            session_file,
+            quiet,
         } => {
             let is_tty = std::io::stderr().is_terminal();
             if let Some(batch_path) = file.as_deref() {
@@ -232,6 +300,7 @@ async fn main() {
                 // both --type and --data are Some when --file is None.
                 let r#type = r#type.expect("clap required_unless_present");
                 let data = data.expect("clap required_unless_present");
+                let clock = SystemClock;
                 let result = commands::publish::run(
                     commands::publish::PublishArgs {
                         type_id: &r#type,
@@ -242,8 +311,23 @@ async fn main() {
                         parent: parent.as_deref(),
                         trace: trace.as_deref(),
                         dedupe_key: dedupe_key.as_deref(),
+                        actor: actor::ActorFlags {
+                            actor_type: actor_type.as_deref(),
+                            agent_id: agent_id.as_deref(),
+                            model: model.as_deref(),
+                            provider: provider.as_deref(),
+                            thinking_effort: thinking_effort.as_deref(),
+                            session_id: actor_session_id.as_deref(),
+                            call_id: call_id.as_deref(),
+                            prompt_tokens,
+                            completion_tokens,
+                            latency_ms,
+                            session_file: session_file.as_deref(),
+                        },
+                        quiet,
                     },
                     &env,
+                    &clock,
                 )
                 .await;
                 emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)

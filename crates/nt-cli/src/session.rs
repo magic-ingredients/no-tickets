@@ -420,6 +420,45 @@ mod tests {
         assert_eq!(SESSION_FILE, "active-session.json");
     }
 
+    // ─── SessionError Display ───────────────────────────────────────────────
+
+    #[test]
+    fn session_error_display_home_unresolvable_names_the_problem() {
+        // Pins the user-facing message. Without this, a mutant could
+        // silently empty the Display impl and we'd lose diagnostic value
+        // — `eprintln!("{e}")` in run_show/run_end would print nothing.
+        let s = format!("{}", SessionError::HomeUnresolvable);
+        assert!(
+            s.contains("config directory"),
+            "must mention config directory; got {s:?}",
+        );
+    }
+
+    #[test]
+    fn session_error_display_io_includes_inner_error() {
+        let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "boom");
+        let s = format!("{}", SessionError::Io(inner));
+        assert!(
+            s.contains("active-session.json"),
+            "must mention the file; got {s:?}",
+        );
+        assert!(
+            s.contains("boom"),
+            "must surface the underlying io error; got {s:?}",
+        );
+    }
+
+    #[test]
+    fn session_error_display_json_includes_parse_failure() {
+        let inner = serde_json::from_str::<SessionFile>("not json").unwrap_err();
+        let s = format!("{}", SessionError::Json(inner));
+        assert!(
+            s.contains("active-session.json"),
+            "must mention the file; got {s:?}",
+        );
+        assert!(s.contains("parse"), "must say `parse`; got {s:?}");
+    }
+
     // ─── format_iso8601_ms ──────────────────────────────────────────────────
 
     #[test]

@@ -83,7 +83,8 @@ Extend the Rust validator with `validate_metadata(metadata: &Value) -> Option<Ve
 - Parity fixtures: at least 7 cases — valid agent (agentId only, no model), valid agent (agentId + model + extras), valid human, missing `agentId`, missing `userId`, wrong discriminator, extra field. The two agent-valid cases pin that `model` is optional in both bindings.
 
 ### 4. Implement `no-tickets session start / show / end` subcommands
-status: not_started
+status: completed
+commitSha: ddaac08
 
 Add the `session` command group to `nt-cli`. `start` resolves and atomically writes `<config-dir>/active-session.json`. `show` prints the active session as JSON or `{"active": false}`; flags staleness explicitly. `end` deletes the active-session file **and** clears the `firstPublishHintShown` flag in `<config-dir>/state.json`, both idempotently.
 

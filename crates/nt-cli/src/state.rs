@@ -267,4 +267,34 @@ mod tests {
     fn state_file_filename_pin() {
         assert_eq!(STATE_FILE, "state.json");
     }
+
+    // ─── StateError Display ─────────────────────────────────────────────────
+
+    #[test]
+    fn state_error_display_home_unresolvable_names_the_problem() {
+        let s = format!("{}", StateError::HomeUnresolvable);
+        assert!(
+            s.contains("config directory"),
+            "must mention config directory; got {s:?}",
+        );
+    }
+
+    #[test]
+    fn state_error_display_io_includes_inner_error() {
+        let inner = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "kaboom");
+        let s = format!("{}", StateError::Io(inner));
+        assert!(s.contains("state.json"), "must mention the file; got {s:?}",);
+        assert!(
+            s.contains("kaboom"),
+            "must surface the underlying io error; got {s:?}",
+        );
+    }
+
+    #[test]
+    fn state_error_display_json_includes_parse_failure() {
+        let inner = serde_json::from_str::<State>("not json").unwrap_err();
+        let s = format!("{}", StateError::Json(inner));
+        assert!(s.contains("state.json"), "must mention the file; got {s:?}",);
+        assert!(s.contains("parse"), "must say `parse`; got {s:?}");
+    }
 }

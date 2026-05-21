@@ -1,12 +1,15 @@
 mod auth;
 mod auth_server;
+mod clock;
 mod commands;
 mod config;
 mod credentials;
 mod env;
 mod error;
 mod paths;
+mod session;
 mod source_detect;
+mod state;
 mod transport;
 mod urls;
 
@@ -14,6 +17,7 @@ use std::io::IsTerminal;
 
 use clap::{Parser, Subcommand};
 
+use crate::clock::SystemClock;
 use crate::env::SystemEnv;
 use crate::error::emit_and_exit_code;
 
@@ -100,6 +104,47 @@ enum Commands {
     },
     /// Update the no-tickets binary (install.sh / direct-download installs only).
     Update,
+    /// Declare an agent-harness identity for opt-in actor attribution.
+    ///
+    /// `start` writes <config-dir>/active-session.json so subsequent
+    /// `no-tickets publish` invocations stamp `metadata.actor` automatically.
+    /// `show` prints the active session as JSON. `end` deletes the session
+    /// file and clears the first-publish hint marker.
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SessionAction {
+    /// Declare an agent identity. Only `--agent` is required.
+    Start {
+        /// Agent id (e.g., `claude`, `codex`, `tiny-brain`, `github-actions`).
+        #[arg(long)]
+        agent: String,
+        /// LLM model name (omit for non-LLM systems).
+        #[arg(long)]
+        model: Option<String>,
+        /// LLM provider (e.g., `anthropic`, `openai`).
+        #[arg(long)]
+        provider: Option<String>,
+        /// Thinking-effort hint: `low`, `medium`, or `high`.
+        #[arg(long = "thinking-effort", value_parser = ["low", "medium", "high"])]
+        thinking_effort: Option<String>,
+        /// Opaque session id for grouping events from one harness run.
+        #[arg(long = "session-id")]
+        session_id: Option<String>,
+        /// Max age of the session before `show`/publish treat it as
+        /// expired. Default 24, hard cap 168 (7 days).
+        #[arg(long = "max-age-hours", default_value_t = 24)]
+        max_age_hours: u32,
+    },
+    /// Print the active session as JSON, or `{"active":false}`.
+    Show,
+    /// Delete the active-session file and clear the hint marker.
+    /// Idempotent — succeeds when no session is set.
+    End,
 }
 
 #[derive(Subcommand)]
@@ -215,6 +260,32 @@ async fn main() {
             emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)
         }
         Commands::Update => commands::update::run().await,
+        Commands::Session { action } => {
+            let clock = SystemClock;
+            match action {
+                SessionAction::Start {
+                    agent,
+                    model,
+                    provider,
+                    thinking_effort,
+                    session_id,
+                    max_age_hours,
+                } => commands::session::run_start(
+                    &env,
+                    &clock,
+                    commands::session::StartArgs {
+                        agent: &agent,
+                        model: model.as_deref(),
+                        provider: provider.as_deref(),
+                        thinking_effort: thinking_effort.as_deref(),
+                        session_id: session_id.as_deref(),
+                        max_age_hours,
+                    },
+                ),
+                SessionAction::Show => commands::session::run_show(&env, &clock),
+                SessionAction::End => commands::session::run_end(&env),
+            }
+        }
     };
     std::process::exit(exit);
 }

@@ -1,11 +1,18 @@
-//! Local JSON Schema validation against the bundled event-type schemas.
+//! Local JSON Schema validation against the bundled schemas.
 //!
-//! Mirrors the TS reference at `src/cli/lib/schema-validate.ts`:
-//! `validateEventLocally(typeId, data) → ValidationIssue[]`. The Rust
-//! port returns `Option<Vec<ValidationIssue>>`:
-//!   - `None`              — unknown type id (TS guards via `isKnownEventType`)
-//!   - `Some(Vec::new())`  — valid
-//!   - `Some(issues)`      — invalid; path is dot-joined for TS parity
+//! Two public validators with intentionally asymmetric signatures —
+//! the asymmetry reflects how the bundle represents each kind of
+//! schema:
+//!
+//! - [`validate(type_id, data)`] returns `Option<Vec<ValidationIssue>>`
+//!   because event-type schemas are keyed by `type_id` and the caller
+//!   may pass a `type_id` the bundle doesn't know about. `None` is the
+//!   "unknown type" signal, distinct from `Some(empty)` ("known and
+//!   valid"). Callers map `None` to `unknown_event_type` exits.
+//! - [`validate_metadata(metadata)`] returns `Vec<ValidationIssue>`
+//!   directly because the metadata schema is a singleton in the
+//!   bundle — there's no "unknown" arm to encode. An empty `Vec` means
+//!   "valid"; non-empty means "invalid".
 //!
 //! Bundle source: `build.rs` fetches the `schemas-v<VERSION>.json.gz`
 //! asset from the no-tickets-service GH Release, verifies the
@@ -118,15 +125,7 @@ pub fn validate(type_id: &str, data: &Value) -> Option<Vec<ValidationIssue>> {
         .entries
         .iter()
         .find_map(|(k, v)| (k == type_id).then_some(v))?;
-
-    let issues: Vec<ValidationIssue> = validator
-        .iter_errors(data)
-        .map(|err| ValidationIssue {
-            path: json_pointer_to_dot_path(&err.instance_path().to_string()),
-            message: err.to_string(),
-        })
-        .collect();
-    Some(issues)
+    Some(collect_issues(validator, data))
 }
 
 /// Validate the envelope-level `metadata` block against the canonical
@@ -141,9 +140,17 @@ pub fn validate(type_id: &str, data: &Value) -> Option<Vec<ValidationIssue>> {
 /// wrapper — the metadata schema is a singleton in the bundle, always
 /// present in a v0.2.2+ release.
 pub fn validate_metadata(metadata: &Value) -> Vec<ValidationIssue> {
-    bundle()
-        .metadata_validator
-        .iter_errors(metadata)
+    collect_issues(&bundle().metadata_validator, metadata)
+}
+
+/// Run a compiled `jsonschema` validator over `data` and collect every
+/// surfaced error as a `ValidationIssue` with a dot-joined path. Shared
+/// helper for `validate` and `validate_metadata` — keeps their issue
+/// shapes (path + message) byte-identical via a single point of
+/// translation.
+fn collect_issues(validator: &Validator, data: &Value) -> Vec<ValidationIssue> {
+    validator
+        .iter_errors(data)
         .map(|err| ValidationIssue {
             path: json_pointer_to_dot_path(&err.instance_path().to_string()),
             message: err.to_string(),

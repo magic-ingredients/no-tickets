@@ -27,6 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── GitHub Actions workflow lint ────────────────────────────
+      # Catches shell-injection patterns, broken expression syntax,
+      # and outdated action references before they hit a real
+      # release. Cheap (~5s); runs before the heavier Rust/Node
+      # steps so an actionlint break fails CI fast.
+      - name: Lint workflow files
+        uses: raven-actions/actionlint@v2
+
       # ── Rust workspace — canonical product surface ──────────────
       # Run first so a Rust break fails CI fast; the TS SDK is a
       # smaller surface (markdown helpers + frontmatter parser) and

@@ -622,10 +622,14 @@ mod tests {
     fn emit_docs_bool_flag_renders_without_value_placeholder() {
         // `--quiet` with `ArgAction::SetTrue` is a presence-only flag;
         // appending `<QUIET>` would falsely suggest it takes a value.
+        // Explicitly set `value_name("QUIET")` so the ArgAction filter
+        // is what's preventing the placeholder, not clap's default
+        // behaviour for un-named SetTrue args.
         let cmd = Command::new("nt").subcommand(
             Command::new("foo").about("Foo.").arg(
                 Arg::new("quiet")
                     .long("quiet")
+                    .value_name("QUIET")
                     .action(clap::ArgAction::SetTrue),
             ),
         );
@@ -643,7 +647,27 @@ mod tests {
         );
         assert!(
             !foo.content.contains("<QUIET>"),
-            "bool flag must NOT show the auto-derived value name; got:\n{}",
+            "bool flag must NOT show the value name even when explicitly set; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_value_taking_flag_renders_value_placeholder() {
+        // Companion to the bool-flag test: a flag that DOES take a
+        // value must render `--flag <VALUE>` in the table. Pins the
+        // non-bool arm of `value_placeholder` — a mutant that
+        // collapsed it to `None` always would let this test fail.
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo")
+                .about("Foo.")
+                .arg(Arg::new("name").long("name").value_name("NAME")),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content.contains("`--name <NAME>`"),
+            "value-taking flag must render `<VALUE>` placeholder; got:\n{}",
             foo.content,
         );
     }
@@ -653,11 +677,19 @@ mod tests {
         // Clap auto-injects `--help` (and `--version` if `version` is
         // set on the root). Both rows would pollute every command's
         // flag table for zero useful signal. Filter them out by
-        // ArgAction — robust to id-shadowing.
+        // ArgAction — robust to id-shadowing. The builder API doesn't
+        // auto-inject these the way the derive macro does, so we wire
+        // them up explicitly to exercise the filter path here.
         let cmd = Command::new("nt").version("0.0.0").subcommand(
             Command::new("foo")
                 .about("Foo.")
-                .arg(Arg::new("name").long("name")),
+                .arg(Arg::new("name").long("name"))
+                .arg(Arg::new("help").long("help").action(clap::ArgAction::Help))
+                .arg(
+                    Arg::new("version")
+                        .long("version")
+                        .action(clap::ArgAction::Version),
+                ),
         );
         let files = emit_docs(&cmd);
         let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
@@ -668,12 +700,39 @@ mod tests {
         );
         assert!(
             !foo.content.contains("`--help`"),
-            "auto-injected --help must NOT appear in flag table; got:\n{}",
+            "ArgAction::Help args must NOT appear in flag table; got:\n{}",
             foo.content,
         );
         assert!(
             !foo.content.contains("`--version`"),
-            "auto-injected --version must NOT appear in flag table; got:\n{}",
+            "ArgAction::Version args must NOT appear in flag table; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_filters_out_hidden_args() {
+        // Args marked `hide = true` are intentionally invisible
+        // (e.g. internal escape-hatch flags). They must not surface
+        // in the public docs table. Pins the `is_hide_set` branch of
+        // `is_visible_user_flag` — a mutant that flipped `||` to `&&`
+        // would let hidden non-positional args through.
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo")
+                .about("Foo.")
+                .arg(Arg::new("public").long("public"))
+                .arg(Arg::new("secret").long("secret").hide(true)),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content.contains("`--public`"),
+            "visible arg must appear; got:\n{}",
+            foo.content,
+        );
+        assert!(
+            !foo.content.contains("`--secret`"),
+            "hidden arg must NOT appear in flag table; got:\n{}",
             foo.content,
         );
     }

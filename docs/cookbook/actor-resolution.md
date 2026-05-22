@@ -275,5 +275,9 @@ this single publish to come from the human identity.
 
 - [`../cli-reference.md`](../cli-reference.md) — full flag surface
   and resolution-precedence reference
-- [`../prd/event-actor-metadata/prd.md`](../prd/event-actor-metadata/prd.md)
-  — design rationale + non-goals
+- [`event-actor-metadata` PRD](https://github.com/magic-ingredients/no-tickets-service/blob/main/docs/prd/event-actor-metadata/prd.md)
+  — design rationale + non-goals (canonical home; lives in the
+  `no-tickets-service` repo because most of the work + the schema
+  source-of-truth live there)
+- [`../fixes/event-actor-metadata-client.md`](../fixes/event-actor-metadata-client.md)
+  — client-side task tracker (this repo)

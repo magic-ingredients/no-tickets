@@ -19,14 +19,13 @@ The full PRD spans both the `no-tickets-client` and `no-tickets-service`
 repos. Its canonical home is the service repo (most of the work lives
 there, and the schema source-of-truth lives there too):
 
-<!--
-TODO: paste the no-tickets-service PRD URL once the move PR lands.
-Until then, the local commit `3ba6563 chore(docs): rework
-event-actor-metadata PRD to opt-in attribution` is the latest snapshot
-of the spec in this repo (PRD dir removed in a follow-up commit).
--->
+**Canonical PRD:** https://github.com/magic-ingredients/no-tickets-service/blob/main/docs/prd/event-actor-metadata/prd.md
 
-**Canonical PRD:** `https://github.com/magic-ingredients/no-tickets-service/blob/main/docs/prd/event-actor-metadata/prd.md`
+Adopted into the service repo at commit `1029c321` (on `staging`; merges
+to `main` via the standard CI/PR flow). The PRD's previous home in
+this repo (`docs/prd/event-actor-metadata/`) was removed in the same
+commit that finalised this fix doc — see the git history if you need
+the pre-move snapshot.
 
 This fix tracks ONLY the client-repo work for that PRD. Server-side
 tasks (schema definitions, envelope acceptance, DB column, indexes,

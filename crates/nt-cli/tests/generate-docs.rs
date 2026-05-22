@@ -32,6 +32,22 @@ fn read(target: &Path, relative: &str) -> String {
         .unwrap_or_else(|e| panic!("read {relative} under {target:?}: {e}"))
 }
 
+/// Slice an MDX body between `## <section>` and the next `## ` heading
+/// (or end-of-file). Returns `None` if the section header isn't
+/// present. Used by integration tests to anchor "this content appears
+/// in section X" assertions instead of relying on body-wide substring
+/// matches.
+fn section<'a>(body: &'a str, name: &str) -> Option<&'a str> {
+    let header = format!("## {name}\n");
+    let start = body.find(&header)?;
+    let after_header = &body[start + header.len()..];
+    let end = after_header
+        .find("\n## ")
+        .map(|n| start + header.len() + n)
+        .unwrap_or(body.len());
+    Some(&body[start..end])
+}
+
 // ─── subcommand existence ──────────────────────────────────────────────────
 
 #[test]
@@ -113,11 +129,32 @@ fn generated_publish_mdx_has_frontmatter_and_required_sections() {
         "publish has flags → `## Flags` must appear; body:\n{body}",
     );
     // The wire field on `publish` includes `--actor-type` (added in
-    // event-actor-metadata Phase 1). A regression that filters out
-    // the actor flags would show up here.
+    // event-actor-metadata Phase 1). Anchor the assertion to the
+    // `## Flags` section so a regression that moves the table out
+    // (or accidentally inlines the flag in narrative prose only)
+    // still fails the test.
+    let flags = section(&body, "Flags").expect("## Flags section present");
     assert!(
-        body.contains("--actor-type"),
-        "flag table must include `--actor-type`; body:\n{body}",
+        flags.contains("--actor-type"),
+        "## Flags section must include `--actor-type`; section was:\n{flags}",
+    );
+}
+
+#[test]
+fn generated_publish_mdx_does_not_emit_help_or_version_rows_in_flags_table() {
+    // Clap auto-injects `--help`/`--version` flags on every command.
+    // The MDX flag table must skip them — they're meta-flags every
+    // CLI has, not part of the command's actual interface.
+    let target = target_with_docs();
+    let body = read(target.path(), "publish.mdx");
+    let flags = section(&body, "Flags").expect("## Flags section present");
+    assert!(
+        !flags.contains("`--help`"),
+        "auto-injected `--help` must NOT appear in the flag table; section was:\n{flags}",
+    );
+    assert!(
+        !flags.contains("`--version`"),
+        "auto-injected `--version` must NOT appear in the flag table; section was:\n{flags}",
     );
 }
 

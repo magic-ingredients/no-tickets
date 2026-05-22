@@ -83,7 +83,7 @@ fn page_path(path: &[&str]) -> PathBuf {
 /// Render the MDX body for one command.
 fn render_page(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String {
     let title = path.join(" ");
-    let description = cmd
+    let description_raw = cmd
         .get_about()
         .map(|s| s.to_string())
         .unwrap_or_default()
@@ -93,7 +93,11 @@ fn render_page(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String 
     let mut out = String::new();
     out.push_str("---\n");
     let _ = writeln!(out, "title: {title}");
-    let _ = writeln!(out, "description: {description}");
+    // Quote the description as a YAML double-quoted scalar so colons,
+    // hash chars, leading dashes, and embedded quotes in command help
+    // text don't produce invalid frontmatter. The escape rules below
+    // cover `"` and `\`; everything else is safe inside double quotes.
+    let _ = writeln!(out, "description: {}", yaml_double_quote(&description_raw));
     out.push_str("---\n\n");
 
     out.push_str("## Usage\n\n");
@@ -114,38 +118,25 @@ fn render_page(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String 
 
     if let Some(examples) = cmd.get_after_long_help() {
         let body = examples.to_string();
-        if !body.trim().is_empty() {
+        let trimmed = body.trim_end_matches('\n');
+        if !trimmed.trim().is_empty() {
             out.push_str("\n## Examples\n\n");
-            out.push_str(&body);
-            if !body.ends_with('\n') {
-                out.push('\n');
-            }
+            out.push_str(trimmed);
+            out.push('\n');
         }
     }
 
     out
 }
 
-/// Build the synopsis line — `no-tickets <command> [...required] [OPTIONS]`.
-/// Doesn't claim to be a copy-pasteable command for every shape; it's a
-/// signal of "what does invoking this look like".
+/// Build the synopsis line — `<binary> <command> [OPTIONS]`. Conditionally
+/// required flags (`required_unless_present`) and explicit `--flag` lists
+/// vary by command and are best documented in the `## Flags` table; the
+/// synopsis stays minimal so a reader gets the invocation shape without
+/// false precision.
 fn synopsis(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String {
     let mut out = format!("{binary_name} {}", path.join(" "));
-    let mut required_flags: Vec<&clap::Arg> = cmd
-        .get_arguments()
-        .filter(|a| !a.is_hide_set() && !a.is_positional() && a.is_required_set())
-        .collect();
-    required_flags.sort_by_key(|a| a.get_long().unwrap_or(""));
-    for arg in required_flags {
-        if let Some(long) = arg.get_long() {
-            let value = arg_value_name(arg).unwrap_or_else(|| arg.get_id().as_str().to_uppercase());
-            let _ = write!(out, " --{long} <{value}>");
-        }
-    }
-    let has_optional = cmd
-        .get_arguments()
-        .any(|a| !a.is_hide_set() && !a.is_required_set());
-    if has_optional {
+    if has_visible_flags(cmd) {
         out.push_str(" [OPTIONS]");
     }
     out
@@ -154,16 +145,46 @@ fn synopsis(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String {
 fn flag_rows(cmd: &clap::Command) -> Vec<String> {
     let mut args: Vec<&clap::Arg> = cmd
         .get_arguments()
-        .filter(|a| !a.is_hide_set() && !a.is_positional())
+        .filter(|a| is_visible_user_flag(a))
         .collect();
     args.sort_by_key(|a| a.get_long().unwrap_or("").to_string());
     args.iter().map(|a| render_flag_row(a)).collect()
 }
 
+/// Whether `cmd` carries at least one user-visible flag (skipping
+/// `--help` / `--version`, hidden args, and positionals). Used to gate
+/// the `[OPTIONS]` synopsis suffix and the `## Flags` section
+/// emission.
+fn has_visible_flags(cmd: &clap::Command) -> bool {
+    cmd.get_arguments().any(is_visible_user_flag)
+}
+
+/// Filter: keep only the args we want in the docs table — non-hidden,
+/// non-positional, and not auto-injected by Clap (`--help` /
+/// `--version`). Discriminating on `ArgAction` is more robust than
+/// matching `get_id() == "help"` because users could shadow the ids;
+/// the action stays Help / Version regardless.
+fn is_visible_user_flag(a: &clap::Arg) -> bool {
+    if a.is_hide_set() || a.is_positional() {
+        return false;
+    }
+    !matches!(
+        a.get_action(),
+        clap::ArgAction::Help
+            | clap::ArgAction::HelpShort
+            | clap::ArgAction::HelpLong
+            | clap::ArgAction::Version
+    )
+}
+
 fn render_flag_row(arg: &clap::Arg) -> String {
+    // `flag_rows` filters out positional args, so every arg arriving
+    // here has a `--long`. The defensive `None` arm below stays so a
+    // future filter change (e.g. allowing short-only flags) doesn't
+    // panic at runtime.
     let long = match arg.get_long() {
         Some(l) => {
-            let value = arg_value_name(arg)
+            let value = value_placeholder(arg)
                 .map(|v| format!(" <{v}>"))
                 .unwrap_or_default();
             format!("`--{l}{value}`")
@@ -184,13 +205,43 @@ fn render_flag_row(arg: &clap::Arg) -> String {
         .get_help()
         .map(|s| s.to_string().replace('\n', " "))
         .unwrap_or_default();
-    format!("| {long} | {short} | {default} | {description} |")
+    format!(
+        "| {} | {} | {} | {} |",
+        escape_pipe(&long),
+        escape_pipe(&short),
+        escape_pipe(&default),
+        escape_pipe(&description),
+    )
 }
 
-fn arg_value_name(arg: &clap::Arg) -> Option<String> {
-    arg.get_value_names()
-        .and_then(|v| v.first())
-        .map(|s| s.to_string())
+/// Returns the value placeholder for an arg's `--flag <VALUE>` form,
+/// or `None` for bool / counting flags that don't take a value. Bool
+/// flags (`SetTrue` / `SetFalse`) and counters (`Count`) are presence-
+/// only — appending a `<NAME>` to them is a category error that broke
+/// the original implementation on `--quiet`.
+fn value_placeholder(arg: &clap::Arg) -> Option<String> {
+    match arg.get_action() {
+        clap::ArgAction::SetTrue | clap::ArgAction::SetFalse | clap::ArgAction::Count => None,
+        _ => arg
+            .get_value_names()
+            .and_then(|v| v.first())
+            .map(|s| s.to_string()),
+    }
+}
+
+/// Escape `|` inside a markdown table cell. A raw pipe ends the cell
+/// early, breaking the row alignment for every subsequent column. GFM
+/// table syntax uses `\|` for a literal pipe.
+fn escape_pipe(s: &str) -> String {
+    s.replace('|', "\\|")
+}
+
+/// Quote a string as a YAML double-quoted scalar. Escapes `\` and `"`;
+/// other characters are safe inside double quotes (no special handling
+/// needed for `:`, `#`, leading `-`, etc.).
+fn yaml_double_quote(s: &str) -> String {
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
 }
 
 /// CLI entrypoint for `no-tickets internal generate-docs <target>`.
@@ -371,9 +422,11 @@ mod tests {
     fn emit_docs_renders_frontmatter_description_from_about_text() {
         let files = emit_docs(&sample_root());
         let publish = find_file(&files, "publish.mdx").expect("publish.mdx emitted");
+        // Description is always YAML-quoted so colons / hash chars in
+        // command help text don't break the frontmatter parse.
         assert!(
-            publish.content.contains("description: Publish events."),
-            "description must come from the command's `about` text; got:\n{}",
+            publish.content.contains("description: \"Publish events.\""),
+            "description must be YAML-quoted from the command's `about` text; got:\n{}",
             publish.content,
         );
     }
@@ -505,6 +558,205 @@ mod tests {
         assert_eq!(
             first, second,
             "two consecutive emit_docs calls must produce identical output",
+        );
+    }
+
+    // ─── escaping + safety ─────────────────────────────────────────────────
+
+    #[test]
+    fn emit_docs_escapes_pipe_in_flag_help_text() {
+        // A raw `|` inside a `--help` description ends the markdown
+        // table cell early, breaking alignment for every subsequent
+        // column. The renderer must escape `|` as `\|`.
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo")
+                .about("Foo command.")
+                .arg(Arg::new("mode").long("mode").help("one of: a | b | c")),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            !foo.content.contains("a | b | c"),
+            "raw `|` in help text must be escaped — table-cell breakage; got:\n{}",
+            foo.content,
+        );
+        assert!(
+            foo.content.contains("a \\| b \\| c"),
+            "pipe must be rendered as `\\|`; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_yaml_quotes_description_so_colons_dont_break_frontmatter() {
+        // A description like `Foo: do the X thing` would, unquoted,
+        // parse as a YAML mapping. Wrap in double quotes so colons,
+        // hash chars, and leading dashes stay literal.
+        let cmd =
+            Command::new("nt").subcommand(Command::new("foo").about("Foo: does the thing #urgent"));
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content
+                .contains("description: \"Foo: does the thing #urgent\""),
+            "description must be YAML-quoted; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_yaml_escapes_double_quotes_inside_description() {
+        let cmd =
+            Command::new("nt").subcommand(Command::new("foo").about(r#"Quote-using: "the" thing"#));
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content
+                .contains(r#"description: "Quote-using: \"the\" thing""#),
+            "inner double quotes must be `\\\"`-escaped; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_bool_flag_renders_without_value_placeholder() {
+        // `--quiet` with `ArgAction::SetTrue` is a presence-only flag;
+        // appending `<QUIET>` would falsely suggest it takes a value.
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo").about("Foo.").arg(
+                Arg::new("quiet")
+                    .long("quiet")
+                    .action(clap::ArgAction::SetTrue),
+            ),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content.contains("`--quiet`"),
+            "bool flag must render the long flag name; got:\n{}",
+            foo.content,
+        );
+        assert!(
+            !foo.content.contains("--quiet <"),
+            "bool flag must NOT render a value placeholder; got:\n{}",
+            foo.content,
+        );
+        assert!(
+            !foo.content.contains("<QUIET>"),
+            "bool flag must NOT show the auto-derived value name; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_filters_out_auto_injected_help_and_version_rows() {
+        // Clap auto-injects `--help` (and `--version` if `version` is
+        // set on the root). Both rows would pollute every command's
+        // flag table for zero useful signal. Filter them out by
+        // ArgAction — robust to id-shadowing.
+        let cmd = Command::new("nt").version("0.0.0").subcommand(
+            Command::new("foo")
+                .about("Foo.")
+                .arg(Arg::new("name").long("name")),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content.contains("`--name`"),
+            "user flag must appear in the table; got:\n{}",
+            foo.content,
+        );
+        assert!(
+            !foo.content.contains("`--help`"),
+            "auto-injected --help must NOT appear in flag table; got:\n{}",
+            foo.content,
+        );
+        assert!(
+            !foo.content.contains("`--version`"),
+            "auto-injected --version must NOT appear in flag table; got:\n{}",
+            foo.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_flag_table_renders_default_value_in_default_column() {
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo")
+                .about("Foo.")
+                .arg(Arg::new("retries").long("retries").default_value("3")),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        // The Default column is the 3rd `|`-separated cell after the
+        // pipe table opens. Use a structural check: locate the row
+        // containing `--retries`, split on `|`, and assert the default
+        // cell holds `3`.
+        let row = foo
+            .content
+            .lines()
+            .find(|l| l.contains("--retries"))
+            .expect("row for --retries present");
+        let cells: Vec<&str> = row.split('|').map(str::trim).collect();
+        // Cells layout: ["", "`--retries`", "", "3", "", ""] (with
+        // empty leading + trailing from the surrounding `|`s).
+        assert!(
+            cells.contains(&"3"),
+            "Default column must hold `3`; row was: {row:?} cells: {cells:?}",
+        );
+    }
+
+    // ─── synopsis branches ──────────────────────────────────────────────────
+
+    #[test]
+    fn emit_docs_synopsis_omits_options_suffix_for_flagless_commands() {
+        let cmd = Command::new("nt").subcommand(Command::new("ping").about("Ping."));
+        let files = emit_docs(&cmd);
+        let ping = find_file(&files, "ping.mdx").expect("ping.mdx emitted");
+        assert!(
+            !ping.content.contains("[OPTIONS]"),
+            "flagless command must NOT show `[OPTIONS]` in synopsis; got:\n{}",
+            ping.content,
+        );
+    }
+
+    #[test]
+    fn emit_docs_synopsis_appends_options_for_commands_with_flags() {
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo")
+                .about("Foo.")
+                .arg(Arg::new("name").long("name")),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        assert!(
+            foo.content.contains("nt foo [OPTIONS]"),
+            "command with flags must show `[OPTIONS]`; got:\n{}",
+            foo.content,
+        );
+    }
+
+    // ─── examples whitespace ────────────────────────────────────────────────
+
+    #[test]
+    fn emit_docs_examples_section_normalises_trailing_newlines() {
+        // Multi-line `after_long_help` bodies sometimes end with
+        // multiple `\n`s. The renderer must collapse trailing
+        // whitespace to a single newline so the next section's heading
+        // doesn't pick up an empty line in front of it (the markdown
+        // renderer treats a missing blank line as run-on text).
+        let cmd = Command::new("nt").subcommand(
+            Command::new("foo")
+                .about("Foo.")
+                .after_long_help("$ nt foo\n$ nt foo --x\n\n\n"),
+        );
+        let files = emit_docs(&cmd);
+        let foo = find_file(&files, "foo.mdx").expect("foo.mdx emitted");
+        // The Examples body should end with exactly one `\n`, no
+        // trailing blank lines.
+        assert!(
+            foo.content.ends_with("$ nt foo --x\n"),
+            "trailing newlines must be collapsed to one; got:\n{}",
+            foo.content,
         );
     }
 

@@ -1,0 +1,21 @@
+---
+title: session start
+description: "Declare an agent identity. Only `--agent` is required"
+---
+
+## Usage
+
+```bash
+no-tickets session start [OPTIONS]
+```
+
+## Flags
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--agent <AGENT>` |  |  | Agent id (e.g., `claude`, `codex`, `tiny-brain`, `github-actions`) |
+| `--max-age-hours <MAX_AGE_HOURS>` |  | 24 | Max age of the session before `show`/publish treat it as expired. Default 24, valid range 1..=168 (7-day hard cap) |
+| `--model <MODEL>` |  |  | LLM model name (omit for non-LLM systems) |
+| `--provider <PROVIDER>` |  |  | LLM provider (e.g., `anthropic`, `openai`) |
+| `--session-id <SESSION_ID>` |  |  | Opaque session id for grouping events from one harness run |
+| `--thinking-effort <THINKING_EFFORT>` |  |  | Thinking-effort hint: `low`, `medium`, or `high` |

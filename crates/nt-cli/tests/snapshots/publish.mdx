@@ -1,0 +1,36 @@
+---
+title: publish
+description: "Publish one or more events to the configured no-tickets API"
+---
+
+## Usage
+
+```bash
+no-tickets publish [OPTIONS]
+```
+
+## Flags
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--actor-type <ACTOR_TYPE>` |  |  | Override the actor type: `agent` or `human`. Defaults to whatever the resolver picks via the precedence chain |
+| `--agent-id <AGENT_ID>` |  |  | Agent id when `--actor-type=agent`. Presence triggers the flag-driven actor branch (skips session lookup) |
+| `--call-id <CALL_ID>` |  |  | Per-call id stamped on this single publish only |
+| `--completion-tokens <COMPLETION_TOKENS>` |  |  | Completion-token count for this single publish |
+| `--data <DATA>` |  |  | Event payload as a JSON string. Required in single-event mode; unused (and forbidden) with `--file` |
+| `--dedupe-key <DEDUPE_KEY>` |  |  | Idempotency key (`dedupeKey` on the wire) |
+| `--file <PATH>` |  |  | Read a JSONL batch of events from <PATH>, or `-` for stdin. One JSON object per line. Mutually exclusive with `--type` and `--data` |
+| `--latency-ms <LATENCY_MS>` |  |  | Wall-clock latency in milliseconds for this single publish |
+| `--model <MODEL>` |  |  | LLM model identifier for an agent actor |
+| `--parent <PARENT>` |  |  | Parent event id (`parentEventId` on the wire) |
+| `--project <PROJECT>` |  |  | Local project key — looks up the push token registered via `no-tickets token add`. The server resolves the actual project from the token; this value is not sent on the wire |
+| `--prompt-tokens <PROMPT_TOKENS>` |  |  | Prompt-token count for this single publish |
+| `--provider <PROVIDER>` |  |  | LLM provider identifier for an agent actor |
+| `--quiet` |  |  | Suppress the one-time first-publish hint on stderr. The state.json marker is still written, so the env-var doesn't have to stay set forever after the first opt-out |
+| `--session-file <SESSION_FILE>` |  |  | Alternate session-file path. Equivalent to setting `NO_TICKETS_SESSION_FILE` in the environment |
+| `--session-id <ACTOR_SESSION_ID>` |  |  | Opaque session id grouping events from one harness run |
+| `--source-attribute <KEY=VALUE>` |  |  | Add an attribute to `source.attributes` as `KEY=VALUE`. May be repeated; last value wins on duplicate keys |
+| `--source-name <SOURCE_NAME>` |  |  | Override the default `source.name` ("no-tickets-cli") |
+| `--thinking-effort <THINKING_EFFORT>` |  |  | Thinking-effort hint for an agent actor |
+| `--trace <TRACE>` |  |  | Trace id (`traceId` on the wire) |
+| `--type <TYPE>` |  |  | Event type id (e.g., `ai.task.completed.v1`). Required in single-event mode; unused (and forbidden) with `--file` |

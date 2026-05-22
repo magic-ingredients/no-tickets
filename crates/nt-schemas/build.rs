@@ -24,7 +24,10 @@ use sha2::{Digest, Sha256};
 
 /// Pinned schemas-package version. Bumping this is the only change
 /// needed to track a new no-tickets-service schemas release.
-const SCHEMAS_VERSION: &str = "0.2.1";
+///
+/// v0.2.2 adds `metadataSchema` as a top-level bundle entry (the
+/// envelope-level `{ actor }` schema for opt-in actor attribution).
+const SCHEMAS_VERSION: &str = "0.2.2";
 
 const REPO: &str = "magic-ingredients/no-tickets-service";
 

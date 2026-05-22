@@ -42,6 +42,11 @@ struct BundleFile {
     // those keys verbatim — both the test ordering pin and TS object-
     // literal stability ride on this.
     schemas: BTreeMap<String, Value>,
+    /// Envelope-level `metadata` block schema — singleton, shared by
+    /// every event type. Added to the bundle at schemas-v0.2.2.
+    /// Consumed by `validate_metadata`.
+    #[serde(rename = "metadataSchema")]
+    metadata_schema: Value,
 }
 
 struct CompiledBundle {
@@ -50,6 +55,7 @@ struct CompiledBundle {
     /// HashMap because n=11 and `known_type_ids` needs a stable
     /// iteration order anyway.
     entries: Vec<(String, Validator)>,
+    metadata_validator: Validator,
 }
 
 fn bundle() -> &'static CompiledBundle {
@@ -73,9 +79,14 @@ fn bundle() -> &'static CompiledBundle {
                 (type_id, validator)
             })
             .collect();
+        let metadata_validator = jsonschema::draft202012::options()
+            .should_validate_formats(true)
+            .build(&parsed.metadata_schema)
+            .unwrap_or_else(|e| panic!("metadataSchema failed to compile: {e}"));
         CompiledBundle {
             version: parsed.version,
             entries,
+            metadata_validator,
         }
     })
 }
@@ -129,11 +140,15 @@ pub fn validate(type_id: &str, data: &Value) -> Option<Vec<ValidationIssue>> {
 /// Returns a (possibly empty) `Vec<ValidationIssue>`. No `Option`
 /// wrapper — the metadata schema is a singleton in the bundle, always
 /// present in a v0.2.2+ release.
-pub fn validate_metadata(_metadata: &Value) -> Vec<ValidationIssue> {
-    // RED stub: claims everything is valid. Tests for invalid shapes
-    // assert non-empty issues and so fail; tests for valid shapes
-    // accidentally pass (the GREEN impl will keep them passing).
-    Vec::new()
+pub fn validate_metadata(metadata: &Value) -> Vec<ValidationIssue> {
+    bundle()
+        .metadata_validator
+        .iter_errors(metadata)
+        .map(|err| ValidationIssue {
+            path: json_pointer_to_dot_path(&err.instance_path().to_string()),
+            message: err.to_string(),
+        })
+        .collect()
 }
 
 /// Convert a JSON Pointer (`/foo/bar`, `/items/0/name`) to the

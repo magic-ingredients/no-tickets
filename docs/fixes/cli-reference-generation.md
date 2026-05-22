@@ -3,7 +3,7 @@ id: cli-reference-generation
 type: fix
 title: Auto-generate CLI reference MDX from the nt-cli Clap tree
 phase: development
-status: not_started
+status: in_progress
 severity: low
 created: 2026-05-22T00:00:00.000Z
 updated: 2026-05-22T00:00:00.000Z
@@ -69,7 +69,8 @@ command.
   byte-identical output (no timestamps in frontmatter).
 
 ### 2. Snapshot test pinning the emitter output
-status: not_started
+status: completed
+commitSha: dd662ef
 
 The generator's output is the wire contract between the client repo
 and the docs repo. Snapshot tests fix a regression where, say, a
@@ -81,7 +82,8 @@ silently.
 - `crates/nt-cli/tests/snapshots/` — committed MDX fixtures
 
 ### 3. Release-tag workflow that syncs MDX into the docs repo
-status: not_started
+status: completed
+commitSha: 098b2c8
 
 On every release tag, run the emitter against a fresh checkout of
 `no-tickets-docs` and open a PR (or push directly to a

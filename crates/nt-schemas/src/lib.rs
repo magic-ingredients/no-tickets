@@ -118,6 +118,24 @@ pub fn validate(type_id: &str, data: &Value) -> Option<Vec<ValidationIssue>> {
     Some(issues)
 }
 
+/// Validate the envelope-level `metadata` block against the canonical
+/// `eventMetadataSchema` from `@magic-ingredients/no-tickets-schemas`.
+///
+/// The argument is the full metadata object (`{ "actor": {...} }`), not
+/// the actor block in isolation — the schema is strict at both the
+/// envelope level and the actor variants, so validating the wrapper
+/// catches extras at either level.
+///
+/// Returns a (possibly empty) `Vec<ValidationIssue>`. No `Option`
+/// wrapper — the metadata schema is a singleton in the bundle, always
+/// present in a v0.2.2+ release.
+pub fn validate_metadata(_metadata: &Value) -> Vec<ValidationIssue> {
+    // RED stub: claims everything is valid. Tests for invalid shapes
+    // assert non-empty issues and so fail; tests for valid shapes
+    // accidentally pass (the GREEN impl will keep them passing).
+    Vec::new()
+}
+
 /// Convert a JSON Pointer (`/foo/bar`, `/items/0/name`) to the
 /// dot-joined path style TS uses (`foo.bar`, `items.0.name`). Empty
 /// pointer (i.e. error at the document root) becomes the empty string.

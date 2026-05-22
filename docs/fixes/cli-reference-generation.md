@@ -43,7 +43,8 @@ surface — no hand-edited reference drifting away from `--help`.
 ## Tasks
 
 ### 1. Hidden `no-tickets internal generate-docs` subcommand
-status: not_started
+status: completed
+commitSha: 08f10c1
 
 Walk the Clap tree and emit one MDX file per subcommand into the
 target directory. `internal` namespace + hidden flag keeps it out of

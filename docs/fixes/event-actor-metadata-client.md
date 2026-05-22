@@ -31,9 +31,9 @@ This fix tracks ONLY the client-repo work for that PRD. Server-side
 tasks (schema definitions, envelope acceptance, DB column, indexes,
 read APIs, UI) live in the service repo and aren't tracked here.
 
-## In scope here
+## Tasks
 
-Tasks below correspond to the client-side subset of the PRD's
+In-scope here: the client-side subset of the canonical PRD's
 Feature 1 (Schemas + `no-tickets session` + publish actor wiring),
 plus the client portion of Feature 4 (per-language wrappers).
 

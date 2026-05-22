@@ -168,6 +168,99 @@ fn generated_session_start_mdx_uses_full_invocation_path_as_title() {
     );
 }
 
+// ─── snapshot fixtures ─────────────────────────────────────────────────────
+//
+// The emitter's output is the wire contract between this repo and
+// `no-tickets-docs`. Field-level assertions (above) pin individual
+// invariants; the snapshot test pins the *exact* byte sequence so a
+// clap-derive macro upgrade or a renderer tweak that changes the
+// rendered shape — even cosmetically — fails loudly and forces a
+// reviewed fixture update.
+//
+// Fixtures live at `crates/nt-cli/tests/snapshots/`. To regenerate
+// after an intentional change:
+//
+//     cargo run --bin no-tickets -- internal generate-docs \
+//         crates/nt-cli/tests/snapshots
+//
+// Then `git diff` shows the contract change for review.
+
+const SNAPSHOT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots");
+
+fn walk_mdx(root: &Path) -> Vec<std::path::PathBuf> {
+    fn recurse(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {dir:?}: {e}")) {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                recurse(&path, out);
+            } else if path.extension().is_some_and(|e| e == "mdx") {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    recurse(root, &mut out);
+    out.sort();
+    out
+}
+
+fn relative_paths(root: &Path) -> Vec<String> {
+    walk_mdx(root)
+        .into_iter()
+        .map(|p| {
+            p.strip_prefix(root)
+                .expect("under root")
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect()
+}
+
+#[test]
+fn snapshot_file_set_matches_committed_fixtures() {
+    // Detects: new commands added without a fixture, or fixtures left
+    // behind after a command was removed. Either case is a contract
+    // change that needs an explicit fixture update.
+    let target = target_with_docs();
+    let snapshot_root = Path::new(SNAPSHOT_DIR);
+    assert!(
+        snapshot_root.is_dir(),
+        "snapshot fixtures directory missing: {SNAPSHOT_DIR}\n\
+         regenerate with: cargo run --bin no-tickets -- internal generate-docs {SNAPSHOT_DIR}",
+    );
+    let actual = relative_paths(target.path());
+    let expected = relative_paths(snapshot_root);
+    assert_eq!(
+        actual, expected,
+        "emitter file set drifted from committed fixtures\n\
+         regenerate with: cargo run --bin no-tickets -- internal generate-docs {SNAPSHOT_DIR}",
+    );
+}
+
+#[test]
+fn snapshot_file_contents_match_committed_fixtures() {
+    // Byte-identical match per file. A diff in any single file fails
+    // the test and prints which file drifted so the dev can inspect
+    // the change before regenerating fixtures.
+    let target = target_with_docs();
+    let snapshot_root = Path::new(SNAPSHOT_DIR);
+    assert!(
+        snapshot_root.is_dir(),
+        "snapshot fixtures directory missing: {SNAPSHOT_DIR}\n\
+         regenerate with: cargo run --bin no-tickets -- internal generate-docs {SNAPSHOT_DIR}",
+    );
+    for relative in relative_paths(snapshot_root) {
+        let actual = read(target.path(), &relative);
+        let expected = read(snapshot_root, &relative);
+        assert_eq!(
+            actual, expected,
+            "snapshot drift in {relative}\n\
+             regenerate with: cargo run --bin no-tickets -- internal generate-docs {SNAPSHOT_DIR}",
+        );
+    }
+}
+
 // ─── idempotence ──────────────────────────────────────────────────────────
 
 #[test]

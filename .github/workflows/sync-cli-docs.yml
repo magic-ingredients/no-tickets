@@ -1,0 +1,172 @@
+# Auto-sync the generated CLI reference into the no-tickets-docs repo
+# on every release tag. The emitter (`no-tickets internal generate-docs`)
+# walks Clap and writes one MDX file per public subcommand; this
+# workflow drives that emitter against a fresh checkout of the docs
+# repo and opens a PR if anything changed.
+#
+# Why a PR and not a direct push:
+#   1. Mintlify previews on PRs let docs owners eyeball the change
+#      before merging — a renderer regression that breaks the
+#      navigation would be invisible if we pushed straight to main.
+#   2. The PR is authored as a real user (the PAT owner), not
+#      `github-actions[bot]`, so CODEOWNERS notifications and review
+#      assignment work normally.
+#
+# Why diff-aware (no PR when MDX is unchanged):
+#   Most releases ship code that doesn't touch the CLI surface. An
+#   "empty" PR per release would train docs reviewers to merge
+#   without reading; exiting clean keeps the signal-to-noise high.
+#
+# Hardening notes (mirrors release.yml's conventions):
+#   - actions/checkout pinned to commit SHA, not @v6 floating tag.
+#   - persist-credentials: false on the client-repo checkout so the
+#     default GITHUB_TOKEN doesn't leak into the docs-repo `git push`
+#     (which uses the fine-grained DOCS_SYNC_TOKEN PAT instead).
+#   - build step gets SCHEMAS_READ_TOKEN: nt-schemas' build.rs shells
+#     out to the gh CLI to fetch the bundled schemas from the private
+#     no-tickets-service repo. Identical setup to release.yml.
+
+name: Sync CLI reference to docs
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: >-
+          git ref to emit from (defaults to the release tag, or the
+          branch this workflow was dispatched on). Use this for
+          manual back-fills against a historical tag.
+        required: false
+        type: string
+
+# Read-only on this repo; docs-repo writes go through DOCS_SYNC_TOKEN.
+permissions:
+  contents: read
+
+# Serialise runs: two overlapping releases would otherwise race on the
+# `cli-sync-<tag>` branch in the docs repo.
+concurrency:
+  group: sync-cli-docs
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    env:
+      DOCS_REPO: magic-ingredients/no-tickets-docs
+      # MDX lands here in the docs repo's working tree. Path is the
+      # contract pinned in no-tickets-docs/docs/runbooks/docs-site.md;
+      # change there first, then here.
+      DOCS_PATH: cli-reference
+    steps:
+      - name: Checkout client (this repo)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          submodules: recursive
+
+      - name: Build no-tickets binary
+        env:
+          # Cross-repo schemas fetch — same rationale as release.yml.
+          GH_TOKEN: ${{ secrets.SCHEMAS_READ_TOKEN }}
+        run: cargo build --release --bin no-tickets
+
+      - name: Checkout docs repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: ${{ env.DOCS_REPO }}
+          # Fine-grained PAT with Contents:write + Pull requests:write
+          # on no-tickets-docs only. Owner is the bot/service account
+          # whose name should appear on the PR.
+          token: ${{ secrets.DOCS_SYNC_TOKEN }}
+          path: docs-repo
+          persist-credentials: true
+          submodules: false
+
+      - name: Emit MDX into docs repo working tree
+        run: |
+          set -euo pipefail
+          target="docs-repo/${DOCS_PATH}"
+          mkdir -p "$target"
+          ./target/release/no-tickets internal generate-docs "$target"
+
+      - name: Open PR if MDX changed
+        working-directory: docs-repo
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_SYNC_TOKEN }}
+          # Release events expose the tag at .release.tag_name. For
+          # workflow_dispatch, fall back to the dispatched ref so a
+          # manual back-fill still gets a meaningful branch name.
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.ref || github.ref_name }}
+          CLIENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # `git add` first so newly-emitted files (untracked) and
+          # removed-command leftovers (deletions) both register in
+          # the cached diff. Plain `git diff` would miss untracked.
+          git add -- "${DOCS_PATH}"
+          if git diff --cached --quiet -- "${DOCS_PATH}"; then
+            echo "No CLI reference changes for ${TAG} — exiting clean, no PR opened."
+            exit 0
+          fi
+
+          branch="cli-sync-${TAG}"
+          # Bot identity for the commit — distinct from the PAT
+          # owner's name so the audit trail shows "machine wrote
+          # this, human reviewed it".
+          git config user.name "no-tickets-cli-sync"
+          git config user.email "no-tickets-cli-sync@magic-ingredients.com"
+
+          # `switch -C` resets the branch if it already exists from
+          # a prior run on the same tag (e.g. dispatch back-fill
+          # after a release-event run). Combined with the
+          # force-with-lease push below, this is safe: the branch is
+          # only ever written by this workflow.
+          git switch -C "$branch"
+
+          # Write commit message and PR body to tempfiles so the
+          # YAML block indentation doesn't bleed into the rendered
+          # output. `git commit -F` and `gh pr create --body-file`
+          # both read the file verbatim.
+          msg_file=$(mktemp)
+          {
+            printf 'chore(cli-reference): sync from no-tickets-client@%s\n\n' "$TAG"
+            printf 'Generated by no-tickets-client commit %s\n' "$CLIENT_SHA"
+            printf 'via .github/workflows/sync-cli-docs.yml.\n'
+          } > "$msg_file"
+          git commit -F "$msg_file"
+          # `--force` is safe here: this branch is single-writer
+          # (only this workflow ever pushes to `cli-sync-<tag>`).
+          # `--force-with-lease` would need a fetched remote ref to
+          # compare against and trips on first-time creation.
+          git push --force origin "$branch"
+
+          # Reuse the existing PR if this branch already has one
+          # open (idempotent re-runs against the same tag); otherwise
+          # open a fresh one.
+          existing=$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for ${branch}; updated with new commit."
+            exit 0
+          fi
+
+          body_file=$(mktemp)
+          {
+            printf 'Auto-generated by [`.github/workflows/sync-cli-docs.yml`](https://github.com/magic-ingredients/no-tickets-client/blob/main/.github/workflows/sync-cli-docs.yml) in no-tickets-client.\n\n'
+            printf 'Source: no-tickets-client tag `%s` (commit `%s`).\n\n' "$TAG" "$CLIENT_SHA"
+            printf 'To reproduce locally:\n\n'
+            printf '```bash\n'
+            printf 'cargo run --bin no-tickets -- internal generate-docs %s\n' "$DOCS_PATH"
+            printf '```\n\n'
+            printf 'Mintlify will render a preview against this branch — eyeball the navigation and a couple of command pages before merging.\n'
+          } > "$body_file"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Sync CLI reference from no-tickets-client@${TAG}" \
+            --body-file "$body_file"

@@ -64,7 +64,8 @@ appended Phase 1 notes to `docs/rust-spike-notes.md`. Maps to
 Feature 1 / Task 6 of the canonical PRD.
 
 ### 4. Wire `validate_metadata` into the Rust `nt-schemas` crate
-status: not_started
+status: completed
+commitSha: e7d0172
 
 Maps to Feature 1 / Task 3 of the canonical PRD. Blocked on the
 service repo shipping a schemas bundle that includes `metadataSchema`

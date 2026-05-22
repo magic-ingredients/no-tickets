@@ -18,7 +18,7 @@ mod urls;
 
 use std::io::IsTerminal;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::clock::SystemClock;
 use crate::env::SystemEnv;
@@ -369,7 +369,8 @@ async fn main() {
         Commands::Update => commands::update::run().await,
         Commands::Internal { action } => match action {
             InternalAction::GenerateDocs { target } => {
-                commands::internal::generate_docs::run(&target)
+                let root = Cli::command();
+                commands::internal::generate_docs::run(&root, &target)
             }
         },
         Commands::Session { action } => {

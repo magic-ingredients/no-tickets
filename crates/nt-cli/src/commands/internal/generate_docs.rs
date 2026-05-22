@@ -18,6 +18,8 @@
 //!    byte-identical output. No timestamps in frontmatter, no
 //!    nondeterministic argument-iteration order.
 
+use std::fmt::Write as _;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 /// One emitted MDX page. `path` is relative to the caller's target
@@ -33,22 +35,185 @@ pub struct EmittedFile {
 /// non-hidden command. The root itself is skipped — `no-tickets` as
 /// a whole has its own hand-written overview page in the docs-site
 /// repo; this emitter handles the per-command reference only.
-#[allow(dead_code, unused_variables)] // wired in by GREEN
 pub fn emit_docs(root: &clap::Command) -> Vec<EmittedFile> {
-    // RED stub: returns nothing. Tests that expect at least one
-    // file fail; the "no subcommands → empty output" test passes
-    // (correctly, by accident).
-    Vec::new()
+    let mut files = Vec::new();
+    let mut subs: Vec<&clap::Command> = root.get_subcommands().collect();
+    // Stable alphabetical order — closes the door on Clap returning
+    // subcommands in registration order (which would churn the docs
+    // PR every time a new flag landed mid-list).
+    subs.sort_by_key(|c| c.get_name());
+    for sub in subs {
+        emit_recursive(sub, root.get_name(), &[], &mut files);
+    }
+    files
+}
+
+/// Recursive walker. `binary_name` is the root command's name (e.g.
+/// `no-tickets`) — used to build the synopsis line. `parents` is the
+/// chain of names between the root and `cmd`, used for the full
+/// invocation path in titles and the relative output path.
+fn emit_recursive(
+    cmd: &clap::Command,
+    binary_name: &str,
+    parents: &[&str],
+    out: &mut Vec<EmittedFile>,
+) {
+    if cmd.is_hide_set() {
+        return;
+    }
+    let mut path = parents.to_vec();
+    path.push(cmd.get_name());
+
+    out.push(EmittedFile {
+        path: page_path(&path),
+        content: render_page(cmd, binary_name, &path),
+    });
+
+    let mut subs: Vec<&clap::Command> = cmd.get_subcommands().collect();
+    subs.sort_by_key(|c| c.get_name());
+    for sub in subs {
+        emit_recursive(sub, binary_name, &path, out);
+    }
+}
+
+fn page_path(path: &[&str]) -> PathBuf {
+    PathBuf::from(format!("{}.mdx", path.join("/")))
+}
+
+/// Render the MDX body for one command.
+fn render_page(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String {
+    let title = path.join(" ");
+    let description = cmd
+        .get_about()
+        .map(|s| s.to_string())
+        .unwrap_or_default()
+        // Frontmatter values must be a single line; collapse newlines
+        // defensively even though `about` is typically one line.
+        .replace('\n', " ");
+    let mut out = String::new();
+    out.push_str("---\n");
+    let _ = writeln!(out, "title: {title}");
+    let _ = writeln!(out, "description: {description}");
+    out.push_str("---\n\n");
+
+    out.push_str("## Usage\n\n");
+    out.push_str("```bash\n");
+    let _ = writeln!(out, "{}", synopsis(cmd, binary_name, path));
+    out.push_str("```\n");
+
+    let flag_rows = flag_rows(cmd);
+    if !flag_rows.is_empty() {
+        out.push_str("\n## Flags\n\n");
+        out.push_str("| Flag | Short | Default | Description |\n");
+        out.push_str("|---|---|---|---|\n");
+        for row in flag_rows {
+            out.push_str(&row);
+            out.push('\n');
+        }
+    }
+
+    if let Some(examples) = cmd.get_after_long_help() {
+        let body = examples.to_string();
+        if !body.trim().is_empty() {
+            out.push_str("\n## Examples\n\n");
+            out.push_str(&body);
+            if !body.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+    }
+
+    out
+}
+
+/// Build the synopsis line — `no-tickets <command> [...required] [OPTIONS]`.
+/// Doesn't claim to be a copy-pasteable command for every shape; it's a
+/// signal of "what does invoking this look like".
+fn synopsis(cmd: &clap::Command, binary_name: &str, path: &[&str]) -> String {
+    let mut out = format!("{binary_name} {}", path.join(" "));
+    let mut required_flags: Vec<&clap::Arg> = cmd
+        .get_arguments()
+        .filter(|a| !a.is_hide_set() && !a.is_positional() && a.is_required_set())
+        .collect();
+    required_flags.sort_by_key(|a| a.get_long().unwrap_or(""));
+    for arg in required_flags {
+        if let Some(long) = arg.get_long() {
+            let value = arg_value_name(arg).unwrap_or_else(|| arg.get_id().as_str().to_uppercase());
+            let _ = write!(out, " --{long} <{value}>");
+        }
+    }
+    let has_optional = cmd
+        .get_arguments()
+        .any(|a| !a.is_hide_set() && !a.is_required_set());
+    if has_optional {
+        out.push_str(" [OPTIONS]");
+    }
+    out
+}
+
+fn flag_rows(cmd: &clap::Command) -> Vec<String> {
+    let mut args: Vec<&clap::Arg> = cmd
+        .get_arguments()
+        .filter(|a| !a.is_hide_set() && !a.is_positional())
+        .collect();
+    args.sort_by_key(|a| a.get_long().unwrap_or("").to_string());
+    args.iter().map(|a| render_flag_row(a)).collect()
+}
+
+fn render_flag_row(arg: &clap::Arg) -> String {
+    let long = match arg.get_long() {
+        Some(l) => {
+            let value = arg_value_name(arg)
+                .map(|v| format!(" <{v}>"))
+                .unwrap_or_default();
+            format!("`--{l}{value}`")
+        }
+        None => String::new(),
+    };
+    let short = arg
+        .get_short()
+        .map(|c| format!("`-{c}`"))
+        .unwrap_or_default();
+    let default = arg
+        .get_default_values()
+        .iter()
+        .map(|v| v.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let description = arg
+        .get_help()
+        .map(|s| s.to_string().replace('\n', " "))
+        .unwrap_or_default();
+    format!("| {long} | {short} | {default} | {description} |")
+}
+
+fn arg_value_name(arg: &clap::Arg) -> Option<String> {
+    arg.get_value_names()
+        .and_then(|v| v.first())
+        .map(|s| s.to_string())
 }
 
 /// CLI entrypoint for `no-tickets internal generate-docs <target>`.
-/// Resolves the Clap tree via `<Cli as CommandFactory>::command()` in
-/// `main.rs` (so the emitter sees the exact same surface as live
-/// argument parsing), calls [`emit_docs`], and writes each file under
-/// `target`.
-#[allow(dead_code, unused_variables)] // wired in by GREEN
-pub fn run(target: &Path) -> i32 {
-    // RED stub: pretends success without writing anything.
+/// `root` is the Clap `Command` from `<Cli as CommandFactory>::command()`
+/// in `main.rs` — passed in (rather than re-built here) so the emitter
+/// sees the exact same surface as live argument parsing and the `Cli`
+/// struct stays private to `main.rs`.
+pub fn run(root: &clap::Command, target: &Path) -> i32 {
+    let files = emit_docs(root);
+    for file in &files {
+        let full = target.join(&file.path);
+        if let Some(parent) = full.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                eprintln!("create_dir_all({parent:?}): {e}");
+                return 1;
+            }
+        }
+        if let Err(e) = fs::write(&full, &file.content) {
+            eprintln!("write({full:?}): {e}");
+            return 1;
+        }
+    }
+    println!("emitted {} files to {}", files.len(), target.display());
     0
 }
 

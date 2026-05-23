@@ -1,4 +1,5 @@
 pub mod init;
+pub mod internal;
 pub mod logout;
 pub mod publish;
 pub mod publish_batch;

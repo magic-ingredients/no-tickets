@@ -18,7 +18,7 @@ mod urls;
 
 use std::io::IsTerminal;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::clock::SystemClock;
 use crate::env::SystemEnv;
@@ -161,6 +161,13 @@ enum Commands {
     },
     /// Update the no-tickets binary (install.sh / direct-download installs only).
     Update,
+    /// Build-only tooling. Hidden from public `--help` — these
+    /// subcommands are invoked by release-tag workflows, not humans.
+    #[command(hide = true)]
+    Internal {
+        #[command(subcommand)]
+        action: InternalAction,
+    },
     /// Declare an agent-harness identity for opt-in actor attribution.
     ///
     /// `start` writes <config-dir>/active-session.json so subsequent
@@ -170,6 +177,17 @@ enum Commands {
     Session {
         #[command(subcommand)]
         action: SessionAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum InternalAction {
+    /// Emit one Mintlify MDX page per (sub)command into <TARGET>.
+    /// Used by the release-tag workflow to keep the public docs site
+    /// in lock-step with the binary's actual surface.
+    GenerateDocs {
+        /// Directory the MDX tree is written into.
+        target: std::path::PathBuf,
     },
 }
 
@@ -349,6 +367,12 @@ async fn main() {
             emit_and_exit_code(result, &mut std::io::stderr().lock(), is_tty)
         }
         Commands::Update => commands::update::run().await,
+        Commands::Internal { action } => match action {
+            InternalAction::GenerateDocs { target } => {
+                let root = Cli::command();
+                commands::internal::generate_docs::run(&root, &target)
+            }
+        },
         Commands::Session { action } => {
             let clock = SystemClock;
             match action {

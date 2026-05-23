@@ -1,0 +1,230 @@
+# Auto-sync the generated CLI reference into the no-tickets-docs repo
+# on every release tag. The emitter (`no-tickets internal generate-docs`)
+# walks Clap and writes one MDX file per public subcommand; this
+# workflow drives that emitter against a fresh checkout of the docs
+# repo and opens a PR if anything changed.
+#
+# Why a PR and not a direct push:
+#   1. Mintlify previews on PRs let docs owners eyeball the change
+#      before merging — a renderer regression that breaks the
+#      navigation would be invisible if we pushed straight to main.
+#   2. The PR is authored as a real user (the PAT owner), not
+#      `github-actions[bot]`, so CODEOWNERS notifications and review
+#      assignment work normally.
+#
+# Why diff-aware (no PR when MDX is unchanged):
+#   Most releases ship code that doesn't touch the CLI surface. An
+#   "empty" PR per release would train docs reviewers to merge
+#   without reading; exiting clean keeps the signal-to-noise high.
+#
+# Why a dedicated `commands/` subdir under cli-reference/:
+#   `cli-reference/overview.mdx` is hand-written narrative content
+#   that this workflow must NOT touch. Emitting into a sibling
+#   subdirectory means the workflow can scorched-earth its own
+#   output (rm -rf) without risking the hand-edited file —
+#   critical for correctly pruning pages of renamed/removed
+#   commands.
+#
+# Hardening notes (mirrors release.yml's conventions):
+#   - actions/checkout pinned to commit SHA, not @v6 floating tag.
+#   - persist-credentials: false on the client-repo checkout so the
+#     default GITHUB_TOKEN doesn't leak into the docs-repo `git push`
+#     (which uses the fine-grained DOCS_SYNC_TOKEN PAT instead).
+#   - build step gets SCHEMAS_READ_TOKEN: nt-schemas' build.rs shells
+#     out to the gh CLI to fetch the bundled schemas from the private
+#     no-tickets-service repo. Identical setup to release.yml.
+
+name: Sync CLI reference to docs
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: >-
+          git tag (or other ref) to emit from. Required because
+          falling back to the dispatched branch (usually `main`)
+          would produce a nonsensical `cli-sync-main` branch and a
+          PR title that lies about its source tag.
+        required: true
+        type: string
+
+# Read-only on this repo; docs-repo writes go through DOCS_SYNC_TOKEN.
+permissions:
+  contents: read
+
+# Serialise runs: two overlapping releases would otherwise race on the
+# `cli-sync-<tag>` branch in the docs repo.
+concurrency:
+  group: sync-cli-docs
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    env:
+      DOCS_REPO: magic-ingredients/no-tickets-docs
+      # MDX lands here in the docs repo's working tree. Path is the
+      # contract pinned in no-tickets-docs/docs/runbooks/docs-site.md;
+      # change there first, then here. The trailing `/commands` keeps
+      # this directory disjoint from the hand-written overview.mdx
+      # one level up.
+      DOCS_PATH: cli-reference/commands
+    steps:
+      - name: Checkout client (this repo)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # rust-cache short-circuits the cold cargo build (~5 min) on
+      # back-to-back releases. The cache key includes Cargo.lock and
+      # the rustc version, so a real toolchain or dep change still
+      # rebuilds.
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+
+      - name: Build no-tickets binary
+        env:
+          # Cross-repo schemas fetch — same rationale as release.yml.
+          GH_TOKEN: ${{ secrets.SCHEMAS_READ_TOKEN }}
+        run: cargo build --release --bin no-tickets
+
+      - name: Checkout docs repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: ${{ env.DOCS_REPO }}
+          # Fine-grained PAT with Contents:write + Pull requests:write
+          # on no-tickets-docs only. Owner is the bot/service account
+          # whose name should appear on the PR.
+          token: ${{ secrets.DOCS_SYNC_TOKEN }}
+          path: docs-repo
+          persist-credentials: true
+
+      - name: Emit MDX into docs repo working tree
+        run: |
+          set -euo pipefail
+          target="docs-repo/${DOCS_PATH}"
+          # Scorched-earth before emit so a renamed or removed CLI
+          # command can't leave a stale MDX page live on the site.
+          # Safe because DOCS_PATH points at the emitter-owned
+          # subdirectory; the hand-written cli-reference/overview.mdx
+          # lives one level up and is untouched.
+          rm -rf "$target"
+          mkdir -p "$target"
+          ./target/release/no-tickets internal generate-docs "$target"
+
+      - name: Open PR if MDX changed
+        working-directory: docs-repo
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_SYNC_TOKEN }}
+          # Release events expose the tag at .release.tag_name. The
+          # workflow_dispatch path requires the input (validated
+          # above) so this fallback chain always resolves to
+          # something tag-shaped.
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.ref }}
+          CLIENT_SHA: ${{ github.sha }}
+          CLIENT_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # `git add` first so newly-emitted files (untracked) and
+          # removed-command leftovers (deletions, made possible by
+          # the scorched-earth step above) both register in the
+          # cached diff. Plain `git diff` would miss untracked.
+          git add -- "${DOCS_PATH}"
+          if git diff --cached --quiet -- "${DOCS_PATH}"; then
+            echo "No CLI reference changes for ${TAG} — exiting clean, no PR opened."
+            exit 0
+          fi
+
+          # Sanitise the tag for use as a branch name. Cargo-dist
+          # supports `releases/v1.0.0`-style nested tags; left as-is
+          # those produce `cli-sync-releases/v1.0.0`, breaking the
+          # `gh pr list --head` lookup and the `git switch -C`
+          # idempotency. `+` is also legal in semver build-metadata
+          # but invalid in branch names on some hosts.
+          safe_tag=$(printf '%s' "$TAG" | tr '/+' '--')
+          branch="cli-sync-${safe_tag}"
+
+          # Bot identity for the commit — distinct from the PAT
+          # owner's name so the audit trail shows "machine wrote
+          # this, human reviewed it".
+          bot_email="no-tickets-cli-sync@magic-ingredients.com"
+          git config user.name "no-tickets-cli-sync"
+          git config user.email "$bot_email"
+
+          # Before force-pushing, check the existing remote tip (if
+          # any) was authored by the sync bot. Force-pushing past a
+          # reviewer fixup would silently destroy their work; the
+          # normal idempotent re-run (where the previous workflow
+          # run wrote the existing tip) passes through. Only the
+          # tip matters because that's the commit force-push would
+          # replace — older history on the branch is what we'd
+          # rewind to and re-emit on top of.
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null 2>&1; then
+            git fetch --depth 1 origin "$branch:refs/remotes/origin/$branch"
+            tip_email=$(git log -1 "refs/remotes/origin/$branch" --format='%ae')
+            if [ "$tip_email" != "$bot_email" ]; then
+              echo "ERROR: branch ${branch} tip is authored by ${tip_email}, not ${bot_email}." >&2
+              echo "Refusing to force-push and destroy non-bot work." >&2
+              echo "Resolve manually: merge or close the existing PR, delete ${branch}, then re-run." >&2
+              exit 1
+            fi
+          fi
+
+          # `switch -C` resets the local branch from the current
+          # commit. Force-push to the same remote branch — checked
+          # above to contain only bot commits, so this is safe.
+          git switch -C "$branch"
+
+          # Write commit message and PR body via heredocs.
+          # Unquoted `<<EOF` lets ${var} expand; backticks are
+          # escaped with \` so they reach the file as literal
+          # Markdown code fences rather than command substitution.
+          # The YAML `run: |` block strips the common 10-space
+          # indentation from every line before bash sees it, so the
+          # heredoc body lands at column 0 with no further stripping
+          # needed.
+          msg_file=$(mktemp)
+          cat > "$msg_file" <<EOF
+          chore(cli-reference): sync from no-tickets@${TAG}
+
+          Generated by no-tickets commit ${CLIENT_SHA}
+          via .github/workflows/sync-cli-docs.yml.
+          EOF
+          git commit -F "$msg_file"
+          git push --force origin "$branch"
+
+          # Reuse the existing PR if this branch already has one
+          # open (idempotent re-runs against the same tag); otherwise
+          # open a fresh one.
+          existing=$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for ${branch}; updated with new commit."
+            exit 0
+          fi
+
+          body_file=$(mktemp)
+          cat > "$body_file" <<EOF
+          Auto-generated by [\`.github/workflows/sync-cli-docs.yml\`](${CLIENT_REPO_URL}/blob/${CLIENT_SHA}/.github/workflows/sync-cli-docs.yml).
+
+          Source: ${GITHUB_REPOSITORY} tag \`${TAG}\` (commit \`${CLIENT_SHA}\`).
+
+          To reproduce locally — from a checkout of this client repo at \`${TAG}\`:
+
+          \`\`\`bash
+          # Run in the no-tickets client repo; <docs-checkout> is your local
+          # no-tickets-docs working copy.
+          cargo run --bin no-tickets -- internal generate-docs \\
+              <docs-checkout>/${DOCS_PATH}
+          \`\`\`
+
+          Mintlify will render a preview against this branch — eyeball the navigation and a couple of command pages before merging.
+          EOF
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Sync CLI reference from ${GITHUB_REPOSITORY}@${TAG}" \
+            --body-file "$body_file"

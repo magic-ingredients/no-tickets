@@ -1,0 +1,17 @@
+---
+title: validate
+description: "Validate a payload locally against the bundled JSON Schema for the given event type. No auth, no network"
+---
+
+## Usage
+
+```bash
+no-tickets validate [OPTIONS]
+```
+
+## Flags
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--data <DATA>` |  |  | Event payload as a JSON string |
+| `--type <TYPE>` |  |  | Event type id (e.g., `ai.task.completed.v1`) |

@@ -47,7 +47,7 @@ status: not_started
 ### Step 4: Sync and Push
 
 ```bash
-npx no-tickets push
+no-tickets push
 ```
 
 ### Step 5: Confirm
@@ -87,6 +87,6 @@ Claude:
    **Files to modify/create:**
    - `src/routes/verify.ts`
    - `src/middleware/rate-limit.ts`
-4. Run `npx no-tickets push`
+4. Run `no-tickets push`
 5. Confirm: "Added task 5: 'Add rate limiting' to email-verification"
 ```

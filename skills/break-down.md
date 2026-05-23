@@ -96,7 +96,7 @@ Description...
 ### Step 5: Sync and Push
 
 ```bash
-npx no-tickets push
+no-tickets push
 ```
 
 ### Step 6: Confirm
@@ -140,6 +140,6 @@ Claude:
 ├── webhook-handling.md        # 3 tasks
 └── invoice-generation.md      # 3 tasks
 
-3. Run `npx no-tickets push`
+3. Run `no-tickets push`
 4. Confirm: "Created epic 'Payment System' with 4 features and 13 total tasks"
 ```

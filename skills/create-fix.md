@@ -103,7 +103,7 @@ Fix the root cause.
 ### Step 7: Sync and Push
 
 ```bash
-npx no-tickets push
+no-tickets push
 ```
 
 ### Step 8: Confirm and Offer Implementation
@@ -137,7 +137,7 @@ Claude:
 2. Identify: "Auth timeout is 5s, too short for 3G"
 3. Create: .notickets/user-onboarding/fix-login-timeout.md
 4. Document root cause, test plan, fix tasks
-5. Run `npx no-tickets push`
+5. Run `no-tickets push`
 6. Confirm: "Created fix document with 2 tasks"
 7. Ask: "Would you like me to implement this fix now?"
 ```

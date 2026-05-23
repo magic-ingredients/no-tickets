@@ -67,6 +67,8 @@ jobs:
       # The npm package ships the markdown / frontmatter SDK only
       # (Phase 4 will add a thin spawn-based client per ADR-0003);
       # CI keeps it linted and tested so the SDK contract holds.
+      # Lives under `sdk/` so the repo root stays Rust-dominant —
+      # all pnpm invocations run from there.
 
       - run: corepack enable
 
@@ -74,10 +76,16 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+          cache-dependency-path: sdk/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
+        working-directory: sdk
 
       - run: pnpm run typecheck
+        working-directory: sdk
       - run: pnpm run build
+        working-directory: sdk
       - run: pnpm run lint
+        working-directory: sdk
       - run: pnpm run test
+        working-directory: sdk

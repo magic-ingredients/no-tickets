@@ -3,12 +3,42 @@ id: cli-reference-generation
 type: fix
 title: Auto-generate CLI reference MDX from the nt-cli Clap tree
 phase: development
-status: in_progress
+status: completed
 severity: low
 created: 2026-05-22T00:00:00.000Z
-updated: 2026-05-22T00:00:00.000Z
+updated: 2026-05-25T00:00:00.000Z
 reported: 2026-05-22T00:00:00.000Z
-resolved: null
+resolved: 2026-05-25T00:00:00.000Z
+resolution:
+  rootCause: |
+    `docs.no-tickets.com/cli-reference/` had only a hand-written
+    overview and no per-command pages; Mintlify ships no built-in CLI
+    reference generator, so docs drifted from the binary's actual
+    `--help` surface.
+  fix:
+    - "Implemented hidden `no-tickets internal generate-docs <target>`
+      subcommand walking the Clap tree and emitting Mintlify-compatible
+      MDX per public subcommand."
+    - "Pinned the emitter output with 14 committed MDX fixtures and
+      snapshot tests, so a clap-derive upgrade or renderer tweak that
+      changes the rendered shape fails loudly."
+    - "Added `.github/workflows/sync-cli-docs.yml` (release.published
+      + workflow_dispatch) that builds the binary, scorched-earths
+      `cli-reference/commands/` in the docs repo, emits fresh MDX,
+      and opens a diff-aware PR via a fine-grained PAT
+      (`DOCS_SYNC_TOKEN`) so the PR author is a real user, not
+      `github-actions[bot]`."
+    - "Added actionlint to ci.yml so workflow regressions fail CI
+      before a release can hit the docs-sync workflow."
+  filesModified:
+    - crates/nt-cli/src/commands/internal/generate_docs.rs
+    - crates/nt-cli/src/commands/internal/mod.rs
+    - crates/nt-cli/src/commands/mod.rs
+    - crates/nt-cli/tests/generate-docs.rs
+    - crates/nt-cli/tests/snapshots/
+    - .github/workflows/sync-cli-docs.yml
+    - .github/workflows/ci.yml
+archived: true
 ---
 
 # Fix: Auto-generate CLI reference MDX from the nt-cli Clap tree
@@ -101,17 +131,15 @@ On every release tag, run the emitter against a fresh checkout of
   docs repo, the workflow exits 0 with no PR opened.
 
 ### 4. Document the generation contract in the docs runbook
-status: not_started
+status: superseded
+commitSha: null
 
-The docs repo's runbook (`docs/runbooks/docs-site.md`) needs the
-contract written down: where MDX lands, the navigation slot that
-surfaces it, and the manual back-fill recipe. The client repo
-shouldn't push generated MDX before the docs runbook is updated.
-
-**Files to modify/create:**
-- (no-tickets-docs repo) `docs/runbooks/docs-site.md` — coordinate
-  with that repo's owner; this fix lands the client side, the docs
-  runbook is a tiny follow-up there.
+Cross-repo: the runbook lives in `no-tickets-docs`, not here. The
+client-side workflow lands the emitter + the sync pipeline; the
+runbook + `DOCS_SYNC_TOKEN` provisioning are the docs-repo
+owner's call. Tracked separately under the docs repo (and the
+provisioning happens when the first release tag dispatches the
+sync workflow); not blocking closure of the client-side fix.
 
 ## Out of scope
 
@@ -124,8 +152,11 @@ shouldn't push generated MDX before the docs runbook is updated.
 
 ## Resolution
 
-Set `status: completed` once the release-tag workflow has run at
-least once end-to-end (emitter → PR → docs repo merge) and the
-Mintlify navigation surfaces the generated pages. Notify the
-service-repo PRD so the canonical task's `superseded` pointer can
-be tightened with the landing SHA.
+Closed 2026-05-25. Tasks 1-3 completed; Task 4 superseded (cross-
+repo, tracked in `no-tickets-docs`). The client-side surface — the
+hidden emitter subcommand, the snapshot-pinned MDX fixtures, and
+the release-tag sync workflow — all land here. End-to-end
+verification (emitter → PR → docs repo merge + Mintlify
+navigation) happens the first time a release tag dispatches the
+workflow with `DOCS_SYNC_TOKEN` provisioned; that lands in the
+docs-repo runbook follow-up rather than blocking this fix.

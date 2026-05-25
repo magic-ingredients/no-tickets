@@ -75,8 +75,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: pnpm
-          cache-dependency-path: sdk/pnpm-lock.yaml
+          # `cache: pnpm` intentionally omitted: with the lockfile
+          # under sdk/ and no package.json at root, setup-node's
+          # post-step can't resolve a valid cache path and exits 1
+          # ("Path(s) specified in the action for caching do(es) not
+          # exist"). The TS install is <2s anyway — not worth a
+          # second action to bridge.
 
       - run: pnpm install --frozen-lockfile
         working-directory: sdk

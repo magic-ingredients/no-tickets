@@ -36,11 +36,11 @@
       "coverage": "vitest run --coverage"
     },
     "lint": {
-      "command": "eslint src/",
+      "command": "eslint sdk/src/",
       "tool": "eslint"
     },
     "build": {
-      "command": "tsc -p tsconfig.build.json",
+      "command": "pnpm --dir sdk run build",
       "tool": "typescript"
     },
     "dev": {
@@ -82,10 +82,10 @@
       "name": "ESLint",
       "variant": null,
       "configPaths": [
-        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/eslint.config.js"
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/sdk/eslint.config.js"
       ],
       "commands": {
-        "quality": "npx eslint /Users/andyrichardson/work/repos/no-tickets/no-tickets --format json",
+        "quality": "npx eslint /Users/andyrichardson/work/repos/no-tickets/no-tickets/sdk --format json",
         "pipeline": null
       },
       "categories": [
@@ -117,11 +117,11 @@
       "name": "Code Coverage",
       "variant": null,
       "configPaths": [
-        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/vitest.config.ts"
+        "/Users/andyrichardson/work/repos/no-tickets/no-tickets/sdk/vitest.config.ts"
       ],
       "commands": {
-        "quality": "npx vitest run --config /Users/andyrichardson/work/repos/no-tickets/no-tickets/vitest.config.ts --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory={outputDir}",
-        "pipeline": "npx vitest run --config {config} --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory={outputDir} --changed {sha}"
+        "quality": "pnpm --dir /Users/andyrichardson/work/repos/no-tickets/no-tickets/sdk exec vitest run --config /Users/andyrichardson/work/repos/no-tickets/no-tickets/sdk/vitest.config.ts --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory={outputDir}",
+        "pipeline": "pnpm --dir /Users/andyrichardson/work/repos/no-tickets/no-tickets/sdk exec vitest run --config {config} --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory={outputDir} --changed {sha}"
       },
       "categories": [
         "Testing"

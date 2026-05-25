@@ -4,10 +4,12 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parseFrontmatter, parseTasks, parseGoals, parseAcceptanceCriteria, extractSection } from '../parser.js';
 
-// Real filesystem dependency: reads template files from templates/ directory.
-// These are conformance tests verifying templates match the format spec.
+// Real filesystem dependency: reads template files from the
+// repo-root templates/ directory. These are conformance tests
+// verifying templates match the format spec. Path walks up four
+// levels: __tests__ → core → src → sdk → repo-root.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TEMPLATES_DIR = join(__dirname, '..', '..', '..', 'templates');
+const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates');
 
 function readTemplate(name: string): string {
   return readFileSync(join(TEMPLATES_DIR, name), 'utf-8');

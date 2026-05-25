@@ -73,7 +73,7 @@ updated: 2026-04-05    # today's date
 ### Step 6: Sync and Push
 
 ```bash
-npx no-tickets push
+no-tickets push
 ```
 
 ## Rules

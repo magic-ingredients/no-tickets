@@ -24,9 +24,7 @@
     }
   },
   "files": [
-    "dist",
-    "templates",
-    "wrappers"
+    "dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -35,14 +33,7 @@
     "lint": "eslint src/",
     "test:coverage": "vitest run --coverage",
     "test:mutate": "npx stryker run",
-    "typecheck": "tsc --noEmit",
-    "rust:check": "cargo check --workspace --tests",
-    "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
-    "rust:fmt": "cargo fmt --all --check",
-    "rust:fmt:fix": "cargo fmt --all",
-    "rust:test": "cargo test -p no-tickets",
-    "rust:mutants": "cargo mutants --package no-tickets",
-    "rust:precommit": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@magic-ingredients/no-tickets-schemas": "^0.2.0",

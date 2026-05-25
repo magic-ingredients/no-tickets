@@ -87,7 +87,7 @@ Description...
 
 After creating files, run:
 ```bash
-npx no-tickets push
+no-tickets push
 ```
 
 This reads the `.notickets/` directory and syncs state to the dashboard.
@@ -127,6 +127,6 @@ Claude:
    - .notickets/user-onboarding/epic.md
    - .notickets/user-onboarding/email-verification.md
    - .notickets/user-onboarding/profile-setup.md
-4. Run `npx no-tickets push`
+4. Run `no-tickets push`
 5. Confirm: "Created epic 'User Onboarding' with 2 features"
 ```

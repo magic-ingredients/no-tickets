@@ -103,7 +103,7 @@ Add a reference to the new feature in `.notickets/{epic-id}/epic.md`:
 ### Step 7: Sync and Push
 
 ```bash
-npx no-tickets push
+no-tickets push
 ```
 
 ### Step 8: Confirm Creation
@@ -135,6 +135,6 @@ Claude:
 2. Discuss: "What happens on timeout? Should it support resend?"
 3. Create: .notickets/user-onboarding/email-verification.md
 4. Update: .notickets/user-onboarding/epic.md (add feature reference)
-5. Run `npx no-tickets push`
+5. Run `no-tickets push`
 6. Confirm: "Added 'Email Verification' with 4 tasks"
 ```

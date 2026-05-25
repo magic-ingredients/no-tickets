@@ -126,20 +126,22 @@ fn validate_metadata_accepts_human_with_email() {
 ///     errors that mention the offending key.
 ///   - The issue path ends in `.field` or equals `field` exactly —
 ///     typical for type-mismatch errors on a known field.
-///   - The error sits at `actor` AND the message mentions `oneOf` —
-///     the discriminated-union variant: when a required sub-field is
-///     missing on the agent / human side, the validator reports
-///     "not valid under any of the schemas listed in the 'oneOf'
-///     keyword" at the `actor` level rather than naming the missing
-///     sub-field directly. Accepting this anchor avoids a false-
-///     negative without weakening the test to `!issues.is_empty()`.
+///   - The error sits at `actor` / `initiator` AND the message
+///     mentions `oneOf` — the discriminated-union variant: when a
+///     required sub-field is missing on the agent / human side, the
+///     validator reports "not valid under any of the schemas listed
+///     in the 'oneOf' keyword" at the namespace level rather than
+///     naming the missing sub-field directly. Both `actor` and
+///     `initiator` re-use `actorSchema` so the same anchor applies
+///     to either. Accepting this anchor avoids a false-negative
+///     without weakening the test to `!issues.is_empty()`.
 fn names_field(issues: &[ValidationIssue], field: &str) -> bool {
     issues.iter().any(|i| {
         i.message.contains(&format!("\"{field}\""))
             || i.message.contains(&format!("'{field}'"))
             || i.path == field
             || i.path.ends_with(&format!(".{field}"))
-            || (i.path == "actor" && i.message.contains("oneOf"))
+            || ((i.path == "actor" || i.path == "initiator") && i.message.contains("oneOf"))
     })
 }
 

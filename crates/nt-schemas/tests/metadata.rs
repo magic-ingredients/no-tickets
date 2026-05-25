@@ -126,22 +126,30 @@ fn validate_metadata_accepts_human_with_email() {
 ///     errors that mention the offending key.
 ///   - The issue path ends in `.field` or equals `field` exactly —
 ///     typical for type-mismatch errors on a known field.
-///   - The error sits at `actor` / `initiator` AND the message
-///     mentions `oneOf` — the discriminated-union variant: when a
-///     required sub-field is missing on the agent / human side, the
-///     validator reports "not valid under any of the schemas listed
-///     in the 'oneOf' keyword" at the namespace level rather than
-///     naming the missing sub-field directly. Both `actor` and
-///     `initiator` re-use `actorSchema` so the same anchor applies
-///     to either. Accepting this anchor avoids a false-negative
-///     without weakening the test to `!issues.is_empty()`.
+///   - The error sits at one of the actor-schema-bearing namespaces
+///     (currently `actor` and `initiator`) AND the message mentions
+///     `oneOf` — the discriminated-union variant: when a required
+///     sub-field is missing on the agent / human side, the validator
+///     reports "not valid under any of the schemas listed in the
+///     'oneOf' keyword" at the namespace level rather than naming
+///     the missing sub-field directly. Accepting this anchor avoids
+///     a false-negative without weakening the test to
+///     `!issues.is_empty()`.
+///
+/// **Maintenance:** any future top-level namespace that re-uses
+/// `actorSchema` must be appended to `ACTOR_SCHEMA_NAMESPACES`
+/// below — otherwise its discriminated-union failures will surface
+/// at the new path and the helper will false-negative.
+const ACTOR_SCHEMA_NAMESPACES: &[&str] = &["actor", "initiator"];
+
 fn names_field(issues: &[ValidationIssue], field: &str) -> bool {
     issues.iter().any(|i| {
         i.message.contains(&format!("\"{field}\""))
             || i.message.contains(&format!("'{field}'"))
             || i.path == field
             || i.path.ends_with(&format!(".{field}"))
-            || ((i.path == "actor" || i.path == "initiator") && i.message.contains("oneOf"))
+            || (ACTOR_SCHEMA_NAMESPACES.contains(&i.path.as_str())
+                && i.message.contains("oneOf"))
     })
 }
 
@@ -236,9 +244,14 @@ fn validate_metadata_rejects_extra_top_level_field() {
     // future schema additions don't accidentally land in clients
     // that aren't ready for them. Pinning this is the canonical
     // forward-compat-by-versioning contract.
+    //
+    // The bait field `actors` is a deliberate near-typo of the real
+    // `actor` namespace: a sloppy emitter that pluralised the key
+    // would land here, so the pin doubles as a guard against that
+    // class of typo.
     let block = json!({
         "actor": { "type": "agent", "agentId": "claude" },
-        "unexpectedExtraKey": 42
+        "actors": 42
     });
     let issues = validate_metadata(&block);
     assert!(
@@ -464,12 +477,22 @@ fn validate_metadata_rejects_execution_location_outside_enum() {
     // `location` is a closed enum (`local` | `remote`). Anything
     // else fails closed — the canonical schema doesn't want emitters
     // inventing a third location and silently expanding the contract.
+    // Anchored on the `location` field (mirror of the
+    // `thinkingEffort` enum pin) so the test still catches a regress-
+    // ion where the validator started reporting the failure at the
+    // wrong path or with the wrong field name.
     let issues = validate_metadata(&json!({
         "execution": { "location": "edge" }
     }));
     assert!(
         !issues.is_empty(),
         "out-of-enum execution.location must produce issues",
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.path.contains("location") || i.message.contains("location")),
+        "an issue must name the offending field; got {issues:?}",
     );
 }
 
@@ -483,6 +506,69 @@ fn validate_metadata_rejects_execution_non_object() {
     assert!(
         !issues.is_empty(),
         "non-object execution must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_extra_field_inside_execution() {
+    // `execution` is `.strict()` like the actor variants — emitters
+    // can't sneak in a hand-rolled field outside the documented
+    // shape. Pinned separately from the top-level strictness
+    // (rejects_extra_top_level_field) so a sloppy implementation
+    // that strict-checks one level but not the namespace can't
+    // pass.
+    let issues = validate_metadata(&json!({
+        "execution": {
+            "location": "local",
+            "rogue": "field"
+        }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "extra field inside execution must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_execution_attempt_below_minimum() {
+    // `attempt` is `{integer, minimum: 1}` — counting starts at 1,
+    // not 0. A retry counter that off-by-ones into 0 or a signed
+    // value that lands negative must fail closed, not silently
+    // sit on the wire as a meaningless attempt index.
+    let issues = validate_metadata(&json!({
+        "execution": { "location": "local", "attempt": 0 }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "attempt=0 (below minimum 1) must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_execution_attempt_non_integer() {
+    // `attempt` is `type: integer` — fractional values get rejected.
+    // Defends against a publisher accidentally passing a float (e.g.
+    // ms-based retry exponential as `1.5`) into an integer slot.
+    let issues = validate_metadata(&json!({
+        "execution": { "location": "local", "attempt": 1.5 }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "fractional attempt must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_execution_attempt_string() {
+    // `attempt` is integer-typed, not string-typed. A stringly-
+    // typed publisher would otherwise pass numeric-looking
+    // strings (`"2"`) through without the validator catching them.
+    let issues = validate_metadata(&json!({
+        "execution": { "location": "local", "attempt": "two" }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "string attempt must produce issues",
     );
 }
 
@@ -533,6 +619,45 @@ fn validate_metadata_rejects_initiator_agent_missing_agent_id() {
     assert!(
         names_field(&issues, "agentId"),
         "an issue must specifically name agentId; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_initiator_human_missing_user_id() {
+    // Mirrors `validate_metadata_rejects_human_missing_user_id` for
+    // the `initiator` namespace. Closes the parity gap: both
+    // discriminator branches must be enforced on initiator just
+    // like on actor, not just one of them.
+    let issues = validate_metadata(&json!({
+        "initiator": { "type": "human" }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "initiator human missing userId must produce issues",
+    );
+    assert!(
+        names_field(&issues, "userId"),
+        "an issue must specifically name userId; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_extra_field_inside_initiator() {
+    // Mirrors `validate_metadata_rejects_extra_field_inside_actor`.
+    // `initiator` re-uses `actorSchema`, so the same `.strict()`
+    // discipline applies — a sloppy implementation that strict-
+    // checks the actor branch but not the initiator branch would
+    // surface here.
+    let issues = validate_metadata(&json!({
+        "initiator": {
+            "type": "agent",
+            "agentId": "claude",
+            "wat": "bonus"
+        }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "extra field inside initiator must produce issues",
     );
 }
 
@@ -591,6 +716,25 @@ fn validate_metadata_rejects_extra_array() {
     assert!(
         !issues.is_empty(),
         "array at extra must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_extra_empty_namespace_key() {
+    // `extra` is `record<string (min 1), unknown>` — namespace keys
+    // must be non-empty. An empty key is the structurally-valid-
+    // but-meaningless case: it's an object with one property, so
+    // the outer type-check passes, but the canonical schema enforces
+    // a `propertyNames: { minLength: 1 }` filter to make sure every
+    // namespace actually identifies its owner. Pinning this guards
+    // against an emitter accidentally writing `extra: { "": ... }`
+    // when it meant `extra: { "tool-name": ... }`.
+    let issues = validate_metadata(&json!({
+        "extra": { "": { "version": "0.1.3" } }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "empty namespace key in extra must produce issues",
     );
 }
 

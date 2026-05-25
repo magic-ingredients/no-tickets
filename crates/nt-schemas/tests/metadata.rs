@@ -148,8 +148,7 @@ fn names_field(issues: &[ValidationIssue], field: &str) -> bool {
             || i.message.contains(&format!("'{field}'"))
             || i.path == field
             || i.path.ends_with(&format!(".{field}"))
-            || (ACTOR_SCHEMA_NAMESPACES.contains(&i.path.as_str())
-                && i.message.contains("oneOf"))
+            || (ACTOR_SCHEMA_NAMESPACES.contains(&i.path.as_str()) && i.message.contains("oneOf"))
     })
 }
 
@@ -552,10 +551,7 @@ fn validate_metadata_rejects_execution_attempt_non_integer() {
     let issues = validate_metadata(&json!({
         "execution": { "location": "local", "attempt": 1.5 }
     }));
-    assert!(
-        !issues.is_empty(),
-        "fractional attempt must produce issues",
-    );
+    assert!(!issues.is_empty(), "fractional attempt must produce issues",);
 }
 
 #[test]
@@ -566,10 +562,7 @@ fn validate_metadata_rejects_execution_attempt_string() {
     let issues = validate_metadata(&json!({
         "execution": { "location": "local", "attempt": "two" }
     }));
-    assert!(
-        !issues.is_empty(),
-        "string attempt must produce issues",
-    );
+    assert!(!issues.is_empty(), "string attempt must produce issues",);
 }
 
 // `initiator` — re-uses `actorSchema`, so callers can record the
@@ -701,10 +694,7 @@ fn validate_metadata_rejects_extra_string() {
     let issues = validate_metadata(&json!({
         "extra": "some string"
     }));
-    assert!(
-        !issues.is_empty(),
-        "string at extra must produce issues",
-    );
+    assert!(!issues.is_empty(), "string at extra must produce issues",);
 }
 
 #[test]
@@ -713,10 +703,7 @@ fn validate_metadata_rejects_extra_array() {
     let issues = validate_metadata(&json!({
         "extra": ["one", "two"]
     }));
-    assert!(
-        !issues.is_empty(),
-        "array at extra must produce issues",
-    );
+    assert!(!issues.is_empty(), "array at extra must produce issues",);
 }
 
 #[test]

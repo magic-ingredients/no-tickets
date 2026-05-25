@@ -82,12 +82,37 @@ Maps to Feature 4 of the canonical PRD (per-language wrappers). Adds
 the TS / Python / Go wrappers. Tracked here once Phase 4 is unblocked
 by the canonical PRD's Phases 2-3 in the service repo.
 
+### 6. Bump Rust `nt-schemas` to v0.3.0 and pin the widened metadata contract
+status: not_started
+
+Maps to canonical PRD event-actor-metadata Feature 5 Task 4 (Rust
+parity), referenced as `implementedIn: no-tickets-client` in the
+service repo. Schemas v0.3.0 widens `eventMetadataSchema` to four
+optional sibling namespaces (`actor`, `execution`, `initiator`,
+`extra`), makes `actor` optional on the metadata block, and adds the
+`executionContextSchema`. Every v0.2.x payload still validates.
+
+**Files to modify/create:**
+- `crates/nt-schemas/build.rs` — bump `SCHEMAS_VERSION` to `"0.3.0"`
+- `crates/nt-schemas/tests/metadata.rs` — flip the two v0.2.2 "actor
+  required" assertions to match the widened contract; add positive
+  + negative coverage for `execution`, `initiator`, `extra`, plus a
+  cross-namespace shape.
+
+**Expected changes:**
+- `validate_metadata({})` now passes — empty metadata blocks are
+  legal in v0.3.0.
+- The "schema-non-trivially-loaded" sentinel switches its payload
+  from `{}` (now valid) to something still clearly invalid
+  (e.g., `{"actor": "not-an-object"}`).
+
 ## Resolution criteria
 
 This fix moves to `status: completed` when:
 
 - Task 4 above lands (Rust validator parity for the metadata schema).
 - Task 5 above lands (per-language wrapper integrations).
+- Task 6 above lands (v0.3.0 widened-metadata parity).
 
 Until then, the fix stays `in_progress`. The session + publish flow
 work end-to-end today against any server that accepts (or ignores)

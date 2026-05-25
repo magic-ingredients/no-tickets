@@ -1,16 +1,19 @@
 //! Parity tests for `nt_schemas::validate_metadata`.
 //!
 //! Pins the canonical `eventMetadataSchema` from `packages/schemas`
-//! against the wire shapes the client emits. The schema validates the
-//! envelope-level `{ actor: ... }` block — the discriminated union
-//! that lives between `data` and `source` on every opt-in attributed
-//! publish.
+//! against the wire shapes the client emits. As of schemas v0.3.0
+//! the metadata block holds four independently-optional sibling
+//! namespaces — `actor`, `execution`, `initiator`, `extra` — between
+//! `data` and `source` on the envelope; every v0.2.x payload (where
+//! `actor` was mandatory) still validates unchanged.
 //!
-//! Fixtures cover the seven cases the PRD calls out (valid agent
-//! minimal, valid agent full, valid human, missing agentId, missing
-//! userId, wrong discriminator, extra field) plus the
-//! `thinkingEffort` enum boundary the optional-fields contract
-//! depends on.
+//! Fixtures cover the original actor cases (valid agent minimal /
+//! full, valid human, missing agentId, missing userId, wrong
+//! discriminator, extra field) plus the `thinkingEffort` enum
+//! boundary, plus the v0.3.0 widening: `execution` (closed-enum
+//! `location`), `initiator` (re-uses `actorSchema`), `extra`
+//! (`record<string, unknown>` with non-empty namespace keys), and a
+//! cross-namespace shape that exercises all four together.
 
 use serde_json::json;
 
@@ -141,21 +144,19 @@ fn names_field(issues: &[ValidationIssue], field: &str) -> bool {
 }
 
 #[test]
-fn validate_metadata_rejects_missing_actor_field() {
-    // `eventMetadataSchema` requires `actor` at the top level. An
-    // empty object — or any object without `actor` — must fail
-    // closed. Without this pin, a schema regression that loosened
-    // the top-level required list would let unattributed publishes
-    // accidentally satisfy the validator.
-    let block = json!({});
-    let issues = validate_metadata(&block);
-    assert!(
-        !issues.is_empty(),
-        "missing required actor must produce issues",
-    );
-    assert!(
-        names_field(&issues, "actor"),
-        "an issue must specifically name the missing `actor` field; got {issues:?}",
+fn validate_metadata_accepts_empty_metadata_block() {
+    // Schemas v0.3.0 made every top-level namespace optional, so an
+    // empty `{}` is a valid metadata block (an event with no actor /
+    // execution / initiator / extra information). Pinning this
+    // positively guards against an over-eager future tightening that
+    // would re-require `actor` and break v0.3.x callers who emit
+    // unattributed envelopes by design (CI bots, internal cron, the
+    // human branch with the credentials path turned off).
+    let issues = validate_metadata(&json!({}));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "empty metadata block must validate clean under v0.3.0; got {issues:?}",
     );
 }
 
@@ -416,21 +417,231 @@ fn validate_metadata_returns_dot_joined_paths() {
     }
 }
 
+// ─── v0.3.0 widened namespaces ────────────────────────────────────────────
+
+// `execution` — closed `local`/`remote` enum on `location`, optional
+// `machineId` / `workspace` / `workerName` / `attempt`. Lets emitters
+// answer "where + how was this event produced".
+
+#[test]
+fn validate_metadata_accepts_execution_local_minimal() {
+    let issues = validate_metadata(&json!({
+        "execution": { "location": "local" }
+    }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "minimal local execution must validate clean; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_accepts_execution_remote_with_every_field() {
+    // Full shape — workspace, machineId, workerName, and attempt all
+    // populated. Pins that every documented optional field is
+    // permitted by the schema (a regression that accidentally
+    // tightened one of them would surface here).
+    let issues = validate_metadata(&json!({
+        "execution": {
+            "location": "remote",
+            "machineId": "runner-7",
+            "workspace": "github://magic-ingredients/no-tickets@main",
+            "workerName": "ci",
+            "attempt": 2
+        }
+    }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "full remote execution shape must validate clean; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_execution_location_outside_enum() {
+    // `location` is a closed enum (`local` | `remote`). Anything
+    // else fails closed — the canonical schema doesn't want emitters
+    // inventing a third location and silently expanding the contract.
+    let issues = validate_metadata(&json!({
+        "execution": { "location": "edge" }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "out-of-enum execution.location must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_execution_non_object() {
+    // `execution` is `type: object`. A string-where-object-expected
+    // is a clear shape violation.
+    let issues = validate_metadata(&json!({
+        "execution": "local"
+    }));
+    assert!(
+        !issues.is_empty(),
+        "non-object execution must produce issues",
+    );
+}
+
+// `initiator` — re-uses `actorSchema`, so callers can record the
+// upstream actor that delegated work. Same agent/human discriminated
+// union as `actor`.
+
+#[test]
+fn validate_metadata_accepts_initiator_human() {
+    let issues = validate_metadata(&json!({
+        "initiator": { "type": "human", "userId": "u-1" }
+    }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "human initiator must validate clean; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_accepts_initiator_agent() {
+    let issues = validate_metadata(&json!({
+        "initiator": {
+            "type": "agent",
+            "agentId": "github-actions",
+            "model": "claude-opus-4-7"
+        }
+    }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "agent initiator must validate clean; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_initiator_agent_missing_agent_id() {
+    // Mirrors `validate_metadata_rejects_agent_missing_agent_id`
+    // over the `initiator` namespace — proves the actor schema is
+    // wired in equivalently on both sides, not just stubbed.
+    let issues = validate_metadata(&json!({
+        "initiator": { "type": "agent" }
+    }));
+    assert!(
+        !issues.is_empty(),
+        "initiator agent missing agentId must produce issues",
+    );
+    assert!(
+        names_field(&issues, "agentId"),
+        "an issue must specifically name agentId; got {issues:?}",
+    );
+}
+
+// `extra` — `record<string (min 1), unknown>`. The outer shape is
+// pinned (object only, no primitives or arrays); the inside is
+// opaque so emitters own their per-tool taxonomy.
+
+#[test]
+fn validate_metadata_accepts_extra_with_namespaced_payload() {
+    let issues = validate_metadata(&json!({
+        "extra": {
+            "github.com/magic-ingredients/no-tickets-cli": {
+                "version": "0.1.3",
+                "channel": "stable"
+            }
+        }
+    }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "namespaced extras must validate clean; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_accepts_empty_extra_object() {
+    // The schema treats `extra` as a record — an empty object is a
+    // valid (zero-namespace) record. Distinct from "extra omitted":
+    // both must validate.
+    let issues = validate_metadata(&json!({ "extra": {} }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "empty extra object must validate clean; got {issues:?}",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_extra_string() {
+    // A primitive at `extra` breaks the record contract.
+    let issues = validate_metadata(&json!({
+        "extra": "some string"
+    }));
+    assert!(
+        !issues.is_empty(),
+        "string at extra must produce issues",
+    );
+}
+
+#[test]
+fn validate_metadata_rejects_extra_array() {
+    // Arrays aren't records — same closure as the string case.
+    let issues = validate_metadata(&json!({
+        "extra": ["one", "two"]
+    }));
+    assert!(
+        !issues.is_empty(),
+        "array at extra must produce issues",
+    );
+}
+
+// Cross-namespace: prove all four siblings co-exist on one block.
+// A schema regression that re-introduced a "mutually exclusive" or
+// "oneOf at the top level" constraint would surface here.
+
+#[test]
+fn validate_metadata_accepts_all_four_namespaces_together() {
+    let issues = validate_metadata(&json!({
+        "actor": {
+            "type": "agent",
+            "agentId": "claude",
+            "sessionId": "sess-1"
+        },
+        "execution": {
+            "location": "remote",
+            "machineId": "runner-7"
+        },
+        "initiator": {
+            "type": "human",
+            "userId": "andy"
+        },
+        "extra": {
+            "github.com/some-tool": { "flag": true }
+        }
+    }));
+    assert_eq!(
+        issues,
+        Vec::<ValidationIssue>::new(),
+        "all four namespaces together must validate clean; got {issues:?}",
+    );
+}
+
 // ─── bundle integrity ────────────────────────────────────────────────────
 
 #[test]
 fn validate_metadata_rejects_outright_when_schema_loaded() {
     // Sentinel: prove the metadata validator is non-trivially loaded
     // (not e.g. a "default-accepts-everything" fallback) by sending
-    // a payload that NO reasonable schema would accept. If the
-    // metadata schema field went missing from the bundle without the
-    // bundle parse failing, this test catches the regression. Comp-
-    // anion to `bundle_contains_every_expected_type_id` over in
-    // tests/validate.rs.
-    let issues = validate_metadata(&json!({}));
+    // a payload that NO reasonable schema would accept. v0.3.0
+    // widened the metadata block to four optional namespaces — `{}`
+    // is now valid by design — so the sentinel uses an `actor` whose
+    // shape is clearly wrong (a string where an object/discriminated
+    // union is required). If this passes, the metadataSchema field
+    // is probably missing from the bundle. Companion to
+    // `bundle_contains_every_expected_type_id` over in tests/validate.rs.
+    let issues = validate_metadata(&json!({
+        "actor": "not-an-object"
+    }));
     assert!(
         !issues.is_empty(),
-        "metadata schema must be loaded and strict — empty object should fail; \
+        "metadata schema must be loaded and strict — actor-as-string should fail; \
          if this passes, the metadataSchema field is probably missing from the bundle",
     );
 }

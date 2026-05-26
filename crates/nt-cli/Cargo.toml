@@ -6,7 +6,7 @@
 # script, crates.io) beats the cognitive overhead of `nt-vs-no-tickets`.
 # Binary is `no-tickets`; the MCP server is `no-tickets-mcp`.
 name = "no-tickets"
-version = "0.1.3"
+version = "0.1.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

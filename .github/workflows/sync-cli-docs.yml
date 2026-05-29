@@ -36,9 +36,25 @@
 
 name: Sync CLI reference to docs
 
+# Trigger on tag push, NOT `release: published`. cargo-dist creates the
+# GitHub release in-CI via `gh release create` using the default
+# GITHUB_TOKEN, which makes the release author `github-actions[bot]`.
+# GitHub deliberately suppresses downstream event triggers (including
+# `release: published`) from workflows authenticated with GITHUB_TOKEN
+# as an anti-recursion guard, so this workflow would never fire on
+# cargo-dist's releases — proven empirically against v0.1.4, which
+# published successfully but never triggered a sync run.
+#
+# Tag pushes by a real user bypass that guard. release.yml already
+# runs on the same trigger, so timing is identical; this workflow
+# doesn't depend on the GH release object (only on the source tree at
+# the tag), so racing release.yml is harmless.
+#
+# Tag filter mirrors release.yml so non-version tags don't fire this.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
     inputs:
       ref:
@@ -118,11 +134,11 @@ jobs:
         working-directory: docs-repo
         env:
           GH_TOKEN: ${{ secrets.DOCS_SYNC_TOKEN }}
-          # Release events expose the tag at .release.tag_name. The
-          # workflow_dispatch path requires the input (validated
-          # above) so this fallback chain always resolves to
-          # something tag-shaped.
-          TAG: ${{ github.event.release.tag_name || github.event.inputs.ref }}
+          # On `push: tags`, github.ref_name is the bare tag (e.g.
+          # `v0.1.4`). The workflow_dispatch path requires the input
+          # (validated above) so this fallback chain always resolves
+          # to something tag-shaped.
+          TAG: ${{ github.event.inputs.ref || github.ref_name }}
           CLIENT_SHA: ${{ github.sha }}
           CLIENT_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
